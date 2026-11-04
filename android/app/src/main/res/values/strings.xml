@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ПульсСети</string>
+    <string name="title_activity_main">ПульсСети</string>
+    <string name="package_name">ru.pulsenet.app</string>
+    <string name="custom_url_scheme">ru.pulsenet.app</string>
+</resources>

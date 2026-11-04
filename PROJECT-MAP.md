@@ -51,12 +51,20 @@
 |---|---|
 | `.github/workflows/ci.yml` | typecheck + build + build:demo на каждый push |
 | `.github/workflows/deploy-demo-pages.yml` | публикация демо на GitHub Pages |
+| `.github/workflows/android-apk.yml` | сборка debug APK на раннере, артефакт `pulsenet-debug-apk` |
+| `capacitor.config.ts` | Capacitor: `appId`, `appName`, `webDir: demo-dist`, `server.url` для боевого режима |
+| `android/` | нативный Android-проект (Capacitor): тема, иконки, сплэш, gradle |
+| `scripts/android-assets.mjs` | `demo-dist/demo.html` → `index.html` для Capacitor |
+| `scripts/generate-android-assets.sh` | иконки и сплэш из фирменного стиля (ImageMagick 6) |
 | `Dockerfile`, `docker-compose.yml` | прод-образ и запуск с томом для SQLite |
 | `.env.example` | `PORT`, `NODE_ENV`, `DATA_DIR` |
 
 ## Проверки
 
 `npm run typecheck` · `npm run build` · `npm run build:demo` — все три должны быть зелёными.
+
+Android: `npm run android:sync` (без SDK) → `npm run apk:debug` (нужны JDK 21 и Android SDK).
+APK в CI собирает `.github/workflows/android-apk.yml`.
 
 Проверка API вручную:
 

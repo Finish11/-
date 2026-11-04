@@ -89,6 +89,9 @@ npm run dev                 # http://localhost:3000
 | `npm run db:seed` | создаёт рабочую базу из `data/seed.db` (`-- --force` перезаписать) |
 | `npm run build:demo` | автономный `demo-standalone.html` (один файл, без сети) |
 | `npm run preview:demo` | локальная раздача демо-файла на :4173 |
+| `npm run android:sync` | демо-сборка + перенос в Android-проект (`demo-dist` → `android/`) |
+| `npm run apk:debug` | собрать debug APK локально (нужны JDK 21 и Android SDK) |
+| `npm run android:open` | открыть проект в Android Studio |
 
 ### Переменные окружения
 
@@ -125,6 +128,61 @@ GitHub Actions*. Получите статичную ссылку вида
 
 CI `.github/workflows/ci.yml` на каждый push проверяет типы, собирает прод и демо,
 выкладывает `demo-standalone.html` артефактом.
+
+---
+
+## Android (APK)
+
+Приложение упаковано в нативный APK через **Capacitor 8**: внутри — автономная
+демо-сборка (`demo-standalone.html`), поэтому APK работает без сети и без бэкенда.
+Размер ~5 МБ, `minSdk 24` (Android 7.0+), `targetSdk 36`.
+
+**Взять готовый APK:** вкладка *Actions* → workflow **Android APK** → нужный запуск →
+раздел *Artifacts* → `pulsenet-debug-apk`. Внутри — `pulsenet-<sha>-debug.apk`.
+Сборка на раннере использует предустановленный Android SDK, локально ничего ставить не нужно.
+
+**Установка на телефон:** скачайте и откройте `.apk` на устройстве, разрешите установку
+из этого источника (*Настройки → Приложения → Установка неизвестных приложений*).
+APK подписан отладочным ключом — для внутреннего тестирования этого достаточно,
+для RuStore/Google Play нужен release-ключ (ниже).
+
+**Локальная сборка** (нужны JDK 21 и Android SDK; проще всего через Android Studio):
+
+```bash
+npm ci
+npm run apk:debug          # → android/app/build/outputs/apk/debug/app-debug.apk
+npm run android:open       # или открыть проект в Android Studio и нажать Run
+```
+
+**Подключить APK к реальному серверу.** По умолчанию WebView открывает встроенные
+ассеты (демо-режим, мок-API). Чтобы APK стал полноценным клиентом, задеплойте бэкенд
+по HTTPS и раскомментируйте `server.url` в `capacitor.config.ts`:
+
+```ts
+server: {
+  androidScheme: 'https',
+  url: 'https://ваш-домен.ru',
+},
+```
+
+затем снова `npm run apk:debug`. Тогда работают настоящие замеры, аккаунты и VPN-подписки.
+
+**Release-сборка со своим ключом** (секреты не коммитятся):
+
+```bash
+keytool -genkeypair -v -keystore pulsenet-release.jks -alias pulsenet \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Пароли и файл ключа положите в GitHub Secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`)
+и передайте их в `android/app/build.gradle` через `signingConfigs` — либо соберите
+`./gradlew assembleRelease` локально и подпишите через Android Studio
+(*Build → Generate Signed Bundle / APK*).
+
+**Чего в APK нет:** фоновых замеров по расписанию, push-уведомлений и настоящего
+VPN-туннеля (`VpnService`) — это пункты роадмапа. Все замеры в APK сейчас
+симулированные, экран помечен как демо.
 
 ---
 

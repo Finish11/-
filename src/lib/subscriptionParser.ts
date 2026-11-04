@@ -349,6 +349,86 @@ export function parseClashYaml(text: string, groupName: string): ParsedNode[] {
   return nodes;
 }
 
+
+/**
+ * Подписки в формате sing-box (JSON-конфиг целиком: dns, inbounds, outbounds).
+ * Такие панели отдают не список ссылок, а готовый конфиг — узлы лежат в `outbounds`.
+ */
+function parseSingBoxOutbounds(
+  outbounds: Array<Record<string, unknown>>,
+  groupName: string
+): ParsedNode[] {
+  const supported = new Set([
+    'vless',
+    'vmess',
+    'trojan',
+    'shadowsocks',
+    'hysteria2',
+    'hysteria',
+    'tuic',
+    'wireguard',
+    'socks',
+    'http',
+  ]);
+  const nodes: ParsedNode[] = [];
+
+  for (const ob of outbounds) {
+    const type = String(ob.type || '').toLowerCase();
+    if (!supported.has(type)) continue;
+    const server = String(ob.server || ob.address || '');
+    const port = Number(ob.server_port || ob.port || 0);
+    if (!server || !port) continue;
+
+    const tag = String(ob.tag || `${type} ${server}`);
+    const country = Object.entries(FLAG_TO_COUNTRY).find(([flag]) => tag.includes(flag));
+    const protocol = type === 'hysteria2' ? 'hysteria2' : type;
+
+    let raw = '';
+    const tls = (ob.tls || {}) as Record<string, unknown>;
+    const sni = String(tls.server_name || tls.server || '');
+    const query = new URLSearchParams();
+    if (sni) query.set('sni', sni);
+    if (tls.reality || (tls as Record<string, unknown>).reality === null) {
+      const reality = (tls.reality || {}) as Record<string, unknown>;
+      const pbk = String(reality.public_key || '');
+      if (pbk) {
+        query.set('security', 'reality');
+        query.set('pbk', pbk);
+      }
+    }
+
+    if (protocol === 'vless' || protocol === 'trojan') {
+      const auth = String(ob.uuid || ob.password || '');
+      const qs = query.toString();
+      raw = `${protocol}://${auth}@${server}:${port}${qs ? '?' + qs : ''}#${encodeURIComponent(tag)}`;
+    } else if (protocol === 'vmess') {
+      raw = `vmess://${btoa(
+        JSON.stringify({ v: '2', ps: tag, add: server, port: String(port), id: String(ob.uuid || ''), net: 'tcp' })
+      )}`;
+    } else if (protocol === 'shadowsocks') {
+      raw = `ss://${btoa(`${String(ob.method || 'aes-256-gcm')}:${String(ob.password || '')}`)}@${server}:${port}#${encodeURIComponent(tag)}`;
+    } else {
+      raw = `${protocol}://${String(ob.password || ob.uuid || '')}@${server}:${port}#${encodeURIComponent(tag)}`;
+    }
+
+    nodes.push({
+      name: tag,
+      protocol,
+      host: server,
+      port,
+      country_code: country ? country[1].code : '',
+      location: country ? country[1].name : '',
+      provider: String((ob as Record<string, unknown>).provider || ''),
+      dpi_resistance: tls.reality ? 'high' : tls.enabled ? 'medium' : 'low',
+      whitelist_bypass: Boolean(tls.enabled || tls.reality),
+      raw_link: raw,
+      group_name: groupName || 'Подписка',
+    });
+  }
+
+  return nodes;
+}
+
 export function parseSubscriptionText(
   text: string,
   groupName = '',
@@ -368,6 +448,19 @@ export function parseSubscriptionText(
   if (body.startsWith('{') || body.startsWith('[')) {
     try {
       const json = JSON.parse(body) as unknown;
+
+      // sing-box / готовый JSON-конфиг панели
+      const conf = json as Record<string, unknown>;
+      if (conf && Array.isArray(conf.outbounds)) {
+        const singbox = parseSingBoxOutbounds(
+          conf.outbounds as Array<Record<string, unknown>>,
+          groupName
+        );
+        if (singbox.length > 0) {
+          return { nodes: singbox, format: 'json' };
+        }
+      }
+
       const list = Array.isArray(json)
         ? json
         : ((json as Record<string, unknown>).servers as unknown[]) ||

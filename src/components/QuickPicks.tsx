@@ -102,66 +102,80 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 
   return (
     <div className="mt-3">
-      {/* Мои сервисы — компактные чипы под кнопкой */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
-          Мои сервисы
-        </span>
-
-        {added.map(({ pick, site }) => (
-          <span
-            key={pick.id}
-            className={`inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-full border text-[11px] font-semibold ${chip}`}
-            title={pick.caveat || `${pick.domain} · пинг последнего замера: ${site.last_latency_ms ?? '—'} мс`}
-          >
-            <span>{pick.emoji}</span>
-            {pick.name}
-            {(() => {
-              const r = resultByDomain.get(pick.domain.replace(/^www\./, '').toLowerCase());
-              if (!r) return null;
-              return (
-                <span
-                  className={`ml-0.5 font-mono text-[10px] ${
-                    r.status === 'ok'
-                      ? 'text-emerald-400'
-                      : r.status === 'slow'
-                      ? 'text-amber-400'
-                      : 'text-rose-400'
-                  }`}
-                  title={r.status === 'blocked' ? 'Недоступен в последнем замере' : 'Доступен'}
-                >
-                  {r.latency_ms != null ? `${r.latency_ms}мс` : '×'}
-                </span>
-              );
-            })()}
-            <button
-              type="button"
-              onClick={() => handleRemove(pick, site)}
-              disabled={busy === pick.id}
-              className="p-1 rounded-full text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 active:scale-90"
-              aria-label={`Убрать ${pick.name}`}
-            >
-              {busy === pick.id ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <X className="w-3 h-3" />
-              )}
-            </button>
+      {/* Мои сервисы — крупные карточки со статусом и пингом */}
+      <div
+        className={`rounded-2xl border p-3 ${
+          darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200 shadow-sm'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
+            Мои сервисы · {added.length}
           </span>
-        ))}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-400 text-[11px] font-bold active:scale-95"
+          >
+            {expanded ? <ChevronDown className="w-3 h-3 rotate-180" /> : <Plus className="w-3 h-3" />}
+            {expanded ? 'Свернуть' : 'Добавить'}
+          </button>
+        </div>
 
-        {added.length === 0 && (
-          <span className="text-[11px] text-slate-500">пока пусто — добавьте свои ниже</span>
+        {added.length === 0 ? (
+          <p className="text-[11px] text-slate-500 py-1">
+            Пока пусто — нажмите «Добавить» и выберите сервисы, за которыми хотите следить.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {added.map(({ pick, site }) => {
+              const r = resultByDomain.get(pick.domain.replace(/^www\./, '').toLowerCase());
+              const tone =
+                !r || r.status === 'blocked'
+                  ? { dot: 'bg-rose-400', text: 'text-rose-400', label: r ? 'заблокирован' : 'не проверялся' }
+                  : r.status === 'slow'
+                  ? { dot: 'bg-amber-400', text: 'text-amber-400', label: 'медленно' }
+                  : { dot: 'bg-emerald-400', text: 'text-emerald-400', label: pick.caveat ? 'сайт открыт' : 'работает' };
+              return (
+                <div
+                  key={pick.id}
+                  className={`relative rounded-2xl border px-2.5 py-2.5 ${
+                    darkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(pick, site)}
+                    disabled={busy === pick.id}
+                    className="absolute top-1.5 right-1.5 p-1 rounded-full text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 active:scale-90"
+                    aria-label={`Убрать ${pick.name}`}
+                  >
+                    {busy === pick.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                  </button>
+
+                  <div className="flex items-center gap-1.5 pr-5">
+                    <span className="text-base leading-none">{pick.emoji}</span>
+                    <span className="text-xs font-bold truncate">{pick.name}</span>
+                  </div>
+
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${tone.dot}`} />
+                    <span className={`text-[11px] font-semibold ${tone.text}`}>{tone.label}</span>
+                    <span className="ml-auto text-[10px] font-mono text-slate-500">
+                      {r?.latency_ms != null ? `${r.latency_ms} мс` : '—'}
+                    </span>
+                  </div>
+
+                  {pick.caveat && (
+                    <p className="mt-1 text-[9px] leading-tight text-slate-500">
+                      доступность сайта, не игрового сервера
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
-
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="inline-flex items-center gap-1 pl-2 pr-2.5 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-400 text-[11px] font-bold active:scale-95"
-        >
-          {expanded ? <ChevronDown className="w-3 h-3 rotate-180" /> : <Plus className="w-3 h-3" />}
-          {expanded ? 'Свернуть' : 'Добавить сервис'}
-        </button>
       </div>
 
       {/* Раскрывающаяся сетка */}

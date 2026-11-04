@@ -25,7 +25,7 @@ export async function runRealSiteScan(
   let done = 0;
   const acc: ScanSiteResult[] = [];
 
-  const results = await mapLimit(enabled, 6, async (site) => {
+  const results = await mapLimit(enabled, 16, async (site) => {
     if (abortSignal?.aborted) {
       return {
         site_id: site.id,

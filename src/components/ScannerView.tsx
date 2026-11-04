@@ -477,50 +477,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* ==================== DIAGNOSTIC MODE TOOLBAR ==================== */}
-      <div
-        className={`p-3 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-          darkMode
-            ? 'bg-slate-900/70 border-slate-800/80'
-            : 'bg-white border-slate-200 shadow-sm'
-        }`}
-      >
-        <div className="flex items-center gap-2 text-xs">
-          <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
-          <span className="font-semibold">Режим проверки:</span>
-          <span className="text-slate-400 hidden 2xl:inline">
-            «Живая сеть» проверяет ваш реальный интернет на телефоне; пресеты позволяют протестировать сценарии
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 pb-0.5 lg:justify-end">
-          {(
-            [
-              { id: 'live', label: '📡 Живая сеть' },
-              { id: 'sim_whitelist', label: '🔴 Тест: Белые списки' },
-              { id: 'sim_vpn', label: '🛡️ Тест: С VPN' },
-              { id: 'sim_dpi', label: '🟡 Тест: ТСПУ' },
-              { id: 'sim_jamming', label: '📵 Тест: Глушение' },
-            ] as Array<{ id: SimulationMode; label: string }>
-          ).map((m) => (
-            <button
-              key={m.id}
-              disabled={phase === 'scanning' || phase === 'precheck'}
-              onClick={() => setSimMode(m.id)}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border ${
-                simMode === m.id
-                  ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-sm'
-                  : darkMode
-                  ? 'bg-slate-950/80 text-slate-400 border-slate-800 hover:text-slate-200'
-                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:text-slate-900'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* ==================== HERO MOBILE-FIRST RADAR BUTTON CARD ==================== */}
       <div
         className={`relative overflow-hidden rounded-3xl border p-6 sm:p-8 text-center transition-all ${
@@ -560,7 +516,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <span>
                 {detectedConn.vpn_detected ? 'Обнаружен VPN: ' : 'Ваша сеть: '}
                 <strong className="font-semibold">
-                  {detectedConn.country_name} • {detectedConn.isp}
+                  {detectedConn.country_name} •{' '}
+                  {appSettings.operator || netCtx?.operator || detectedConn.isp}
+                  {netCtx ? ` (${netCtx.kind === 'cellular' ? 'LTE' : netCtx.kind === 'wifi' ? 'Wi-Fi' : 'сеть'})` : ''}
+                  {appSettings.city || netCtx?.city ? `, ${appSettings.city || netCtx?.city}` : ''}
                 </strong>{' '}
                 <span className="font-mono opacity-75">({detectedConn.ip})</span>
               </span>

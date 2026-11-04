@@ -1,0 +1,11 @@
+node_modules
+dist
+demo-dist
+data/*.db
+data/*.db-wal
+data/*.db-shm
+!data/seed.db
+.git
+.github
+*.log
+.env*

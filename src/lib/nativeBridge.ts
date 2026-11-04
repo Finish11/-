@@ -1,3 +1,4 @@
+import { registerPlugin } from '@capacitor/core';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
 /**
@@ -213,4 +214,26 @@ export async function mapLimit<T, R>(
   });
   await Promise.all(workers);
   return results;
+}
+
+
+/** TCP-пинг до игрового сервера через нативный сокет (только в APK). */
+export async function tcpPing(
+  host: string,
+  port: number,
+  timeout = 5000
+): Promise<{ ok: boolean; latency_ms: number | null; error?: string }> {
+  if (!isNativeApp()) return { ok: false, latency_ms: null, error: 'только в приложении' };
+  try {
+    const res = await registerPlugin<{
+      tcpProbe(o: { host: string; port: number; timeout?: number }): Promise<{
+        ok: boolean;
+        latency_ms?: number;
+        error?: string;
+      }>;
+    }>('ApkUpdater').tcpProbe({ host, port, timeout });
+    return { ok: Boolean(res.ok), latency_ms: res.latency_ms ?? null, error: res.error };
+  } catch (err) {
+    return { ok: false, latency_ms: null, error: err instanceof Error ? err.message : 'ошибка' };
+  }
 }

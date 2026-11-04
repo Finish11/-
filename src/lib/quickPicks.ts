@@ -25,6 +25,9 @@ export interface QuickPick {
   tone: string;
   /** Оговорка, если HTTP-проба показывает сервис лишь косвенно. */
   caveat?: string;
+  /** Игровой сервер: проверяем TCP-пинг по этому адресу и порту. */
+  gameHost?: string;
+  gamePort?: number;
 }
 
 export const QUICK_PICKS: QuickPick[] = [
@@ -105,7 +108,9 @@ export const QUICK_PICKS: QuickPick[] = [
     role: 'dpi_target',
     tone: 'violet',
     caveat:
-      'Brawl Stars ограничена для РФ на стороне Supercell, игра ходит на серверы по TCP 9339 — HTTP-проверка видит только магазин Supercell, а не игровой сервер.',
+      'Игровые серверы Supercell стоят в ЕС (Франкфурт, Амстердам, Хельсинки) — ближе всего к Москве европейские узлы. Проверяем TCP 9339 до game.brawlstars.com.',
+    gameHost: 'game.brawlstars.com',
+    gamePort: 9339,
   },
 ];
 

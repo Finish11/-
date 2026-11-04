@@ -9,6 +9,9 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 
+import java.net.InetSocketAddress;
+import java.net.Socket;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -139,5 +142,48 @@ public class ApkUpdaterPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Не удалось открыть установщик: " + e.getMessage());
         }
+    }
+
+    /**
+     * TCP-проба до игрового сервера: реальный пинг по порту, без HTTP.
+     * Используется для игр (Brawl Stars — TCP 9339), где HTTP-запрос ничего не значит.
+     */
+    @PluginMethod
+    public void tcpProbe(PluginCall call) {
+        final String host = call.getString("host");
+        Integer portValue = call.getInt("port", 9339);
+        Integer timeoutValue = call.getInt("timeout", 5000);
+        if (host == null || host.isEmpty() || portValue == null) {
+            call.reject("Не передан адрес сервера");
+            return;
+        }
+        final int port = portValue;
+        final int timeout = timeoutValue == null ? 5000 : timeoutValue;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                long started = System.currentTimeMillis();
+                Socket socket = new Socket();
+                try {
+                    socket.connect(new InetSocketAddress(host, port), timeout);
+                    JSObject ret = new JSObject();
+                    ret.put("ok", true);
+                    ret.put("latency_ms", (int) (System.currentTimeMillis() - started));
+                    call.resolve(ret);
+                } catch (Exception e) {
+                    JSObject ret = new JSObject();
+                    ret.put("ok", false);
+                    ret.put("error", e.getMessage() == null ? "нет соединения" : e.getMessage());
+                    call.resolve(ret);
+                } finally {
+                    try {
+                        socket.close();
+                    } catch (Exception ignored) {
+                        // закрытие не критично
+                    }
+                }
+            }
+        }).start();
     }
 }

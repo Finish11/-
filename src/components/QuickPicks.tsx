@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import { tcpPing } from '../lib/nativeBridge';
 import { apiFetch } from '../lib/api';
 import { QUICK_PICKS, QUICK_PICK_TONES, type QuickPick } from '../lib/quickPicks';
 import type { ScanSiteResult, Site } from '../types';
@@ -96,6 +97,24 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   };
 
+  const [gamePing, setGamePing] = useState<Record<string, { ok: boolean; ms: number | null }>>({});
+  const gameIds = added.filter((a) => a.pick.gameHost).map((a) => a.pick.id).join(',');
+
+  useEffect(() => {
+    if (!gameIds) return;
+    let alive = true;
+    added
+      .filter((a) => a.pick.gameHost)
+      .forEach(async ({ pick }) => {
+        const res = await tcpPing(pick.gameHost as string, pick.gamePort || 9339);
+        if (!alive) return;
+        setGamePing((prev) => ({ ...prev, [pick.id]: { ok: res.ok, ms: res.latency_ms } }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [gameIds]);
+
   const chip = darkMode
     ? 'bg-slate-900/70 border-slate-800 text-slate-200'
     : 'bg-white border-slate-200 text-slate-700';
@@ -166,6 +185,15 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                     </span>
                   </div>
 
+                  {pick.gameHost && (
+                    <p className="mt-1 text-[9.5px] leading-tight font-semibold text-slate-400">
+                      {gamePing[pick.id]
+                        ? gamePing[pick.id].ok
+                          ? `игровой сервер: ${gamePing[pick.id].ms} мс (TCP ${pick.gamePort || 9339})`
+                          : 'игровой сервер недоступен — нужен VPN'
+                        : 'проверяем игровой сервер…'}
+                    </p>
+                  )}
                   {pick.caveat && (
                     <p className="mt-1 text-[9px] leading-tight text-slate-500">
                       доступность сайта, не игрового сервера

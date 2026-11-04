@@ -1,0 +1,35 @@
+# зависимости
+node_modules/
+.pnpm-store/
+
+# сборка
+dist/
+demo-dist/
+demo-standalone.html
+*.tsbuildinfo
+
+# база данных (рабочая, не снимок)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+!data/seed.db
+
+# переменные окружения
+.env
+.env.local
+.env.*.local
+
+# логи и кэш инструментов
+*.log
+npm-debug.log*
+.cache/
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# служебное
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

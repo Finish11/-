@@ -1,0 +1,4703 @@
+{
+ "user": {
+  "id": 1,
+  "email": "demo@pulsenet.ru",
+  "name": "Алексей Морозов",
+  "region": "Москва",
+  "carrier": "МТС",
+  "created_at": "2026-10-28T14:14:15.376Z"
+ },
+ "sites": [
+  {
+   "id": 102,
+   "user_id": 1,
+   "name": "Госуслуги",
+   "domain": "gosuslugi.ru",
+   "probe_url": "https://www.gosuslugi.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 28,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Портал Госуслуг — с первого дня в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 103,
+   "user_id": 1,
+   "name": "Яндекс",
+   "domain": "ya.ru",
+   "probe_url": "https://ya.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 37,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Поиск и инфраструктура Яндекса (весь блок сервисов в белом списке)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 104,
+   "user_id": 1,
+   "name": "Кинопоиск",
+   "domain": "kinopoisk.ru",
+   "probe_url": "https://www.kinopoisk.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 46,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Онлайн-кинотеатр Яндекса — в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 105,
+   "user_id": 1,
+   "name": "ВКонтакте",
+   "domain": "vk.com",
+   "probe_url": "https://vk.com/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 55,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Соцсеть VK — в белом списке с 5 сентября 2025",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 106,
+   "user_id": 1,
+   "name": "Одноклассники",
+   "domain": "ok.ru",
+   "probe_url": "https://ok.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 64,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Соцсеть OK — в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 107,
+   "user_id": 1,
+   "name": "Mail (Mail.ru)",
+   "domain": "mail.ru",
+   "probe_url": "https://mail.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 73,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Почта и сервисы VK — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 108,
+   "user_id": 1,
+   "name": "MAX (мессенджер)",
+   "domain": "max.ru",
+   "probe_url": "https://max.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 36,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Национальный мессенджер MAX — добавлен 19 сентября 2025",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 109,
+   "user_id": 1,
+   "name": "Дзен",
+   "domain": "dzen.ru",
+   "probe_url": "https://dzen.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 45,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Контент-платформа Дзен — в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 110,
+   "user_id": 1,
+   "name": "Rutube",
+   "domain": "rutube.ru",
+   "probe_url": "https://rutube.ru/",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 54,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Российский видеохостинг — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 111,
+   "user_id": 1,
+   "name": "Ozon",
+   "domain": "ozon.ru",
+   "probe_url": "https://st.ozone.ru/assets/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 63,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Маркетплейс Ozon — в перечне (CDN отдаёт глобальный сертификат)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 112,
+   "user_id": 1,
+   "name": "Wildberries",
+   "domain": "wildberries.ru",
+   "probe_url": "https://www.wildberries.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 72,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Маркетплейс Wildberries — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 113,
+   "user_id": 1,
+   "name": "Авито",
+   "domain": "avito.ru",
+   "probe_url": "https://www.avito.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 35,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Доска объявлений Avito — в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 114,
+   "user_id": 1,
+   "name": "2ГИС",
+   "domain": "2gis.ru",
+   "probe_url": "https://2gis.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 44,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Карты и навигатор 2ГИС — в белом списке (2-й этап)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 115,
+   "user_id": 1,
+   "name": "HeadHunter",
+   "domain": "hh.ru",
+   "probe_url": "https://hh.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 53,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Поиск работы hh.ru — в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 116,
+   "user_id": 1,
+   "name": "Gismeteo",
+   "domain": "gismeteo.ru",
+   "probe_url": "https://www.gismeteo.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 62,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Погодный сервис Gismeteo — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 117,
+   "user_id": 1,
+   "name": "РИА Новости",
+   "domain": "ria.ru",
+   "probe_url": "https://ria.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 71,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Гос. информагентство — СМИ в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 118,
+   "user_id": 1,
+   "name": "ТАСС",
+   "domain": "tass.ru",
+   "probe_url": "https://tass.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 34,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Информагентство ТАСС — в перечне Минцифры",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 119,
+   "user_id": 1,
+   "name": "Лента.ру",
+   "domain": "lenta.ru",
+   "probe_url": "https://lenta.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 43,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Издание Lenta.ru — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 120,
+   "user_id": 1,
+   "name": "Аэрофлот",
+   "domain": "aeroflot.ru",
+   "probe_url": "https://www.aeroflot.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 52,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Авиакомпания Аэрофлот — в перечне (транспорт)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 121,
+   "user_id": 1,
+   "name": "Туту.ру",
+   "domain": "tutu.ru",
+   "probe_url": "https://www.tutu.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 61,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Билеты Туту.ру — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 122,
+   "user_id": 1,
+   "name": "Центробанк РФ",
+   "domain": "cbr.ru",
+   "probe_url": "https://www.cbr.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 70,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Банк России — в перечне с 3-го обновления (05.12.2025)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 123,
+   "user_id": 1,
+   "name": "Сбер (СберБанк)",
+   "domain": "sber.ru",
+   "probe_url": "https://sber.ru/",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 33,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Онлайн-банк Сбер — в перечне Минцифры (глобальный TLS-сертификат, в отличие от sberbank.ru)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 124,
+   "user_id": 1,
+   "name": "Самокат",
+   "domain": "samokat.ru",
+   "probe_url": "https://samokat.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 42,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Доставка Самокат — в белом списке (ритейл и доставка)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 125,
+   "user_id": 1,
+   "name": "Иви",
+   "domain": "ivi.ru",
+   "probe_url": "https://www.ivi.ru/favicon.ico",
+   "category": "ru_whitelist",
+   "marker_role": "ru_whitelist",
+   "enabled": 1,
+   "last_status": "ok",
+   "last_latency_ms": 51,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Онлайн-кинотеатр Иви — в белом списке",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 126,
+   "user_id": 1,
+   "name": "Google Поиск",
+   "domain": "google.com",
+   "probe_url": "https://www.google.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "slow",
+   "last_latency_ms": 2190,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Поиск Google — не заблокирован, работает без VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 127,
+   "user_id": 1,
+   "name": "Google Переводчик",
+   "domain": "translate.google.com",
+   "probe_url": "https://translate.google.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Google Translate — один из немногих сервисов Google без ограничений",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 128,
+   "user_id": 1,
+   "name": "Википедия",
+   "domain": "ru.wikipedia.org",
+   "probe_url": "https://ru.wikipedia.org/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Русская Википедия — открывается без VPN (ключевой маркер шатдауна)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 129,
+   "user_id": 1,
+   "name": "GitHub",
+   "domain": "github.com",
+   "probe_url": "https://github.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Хостинг кода GitHub — нейтральный маркер",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 130,
+   "user_id": 1,
+   "name": "Stack Overflow",
+   "domain": "stackoverflow.com",
+   "probe_url": "https://stackoverflow.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "База знаний разработчиков — доступна без VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 131,
+   "user_id": 1,
+   "name": "Cloudflare",
+   "domain": "cloudflare.com",
+   "probe_url": "https://www.cloudflare.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "CDN Cloudflare — сайт открывается, часть ECH-подсетей фильтруется",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 132,
+   "user_id": 1,
+   "name": "Cloudflare DNS 1.1.1.1",
+   "domain": "one.one.one.one",
+   "probe_url": "https://one.one.one.one/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Публичный DNS 1.1.1.1 — работает, но не спасает от ТСПУ",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 133,
+   "user_id": 1,
+   "name": "jsDelivr CDN",
+   "domain": "cdn.jsdelivr.net",
+   "probe_url": "https://cdn.jsdelivr.net/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "CDN веб-библиотек на Fastly",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 134,
+   "user_id": 1,
+   "name": "NPM Registry",
+   "domain": "registry.npmjs.org",
+   "probe_url": "https://registry.npmjs.org/",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Пакетный реестр JS — доступен без VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 135,
+   "user_id": 1,
+   "name": "Docker Hub",
+   "domain": "hub.docker.com",
+   "probe_url": "https://hub.docker.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Реестр контейнеров Docker",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 136,
+   "user_id": 1,
+   "name": "Mozilla",
+   "domain": "mozilla.org",
+   "probe_url": "https://www.mozilla.org/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Сервисы Firefox и DoH",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 137,
+   "user_id": 1,
+   "name": "Internet Archive",
+   "domain": "archive.org",
+   "probe_url": "https://archive.org/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Веб-архив Wayback Machine — открывается",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 138,
+   "user_id": 1,
+   "name": "Apple",
+   "domain": "apple.com",
+   "probe_url": "https://www.apple.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Сайт Apple — работает; App Store ограничен только по оплате",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 139,
+   "user_id": 1,
+   "name": "Microsoft",
+   "domain": "microsoft.com",
+   "probe_url": "https://www.microsoft.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Сайт Microsoft и облако — без блокировки",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 140,
+   "user_id": 1,
+   "name": "Amazon AWS",
+   "domain": "aws.amazon.com",
+   "probe_url": "https://aws.amazon.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Облако AWS — сайт доступен (часть IP-пулов шейпится)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 141,
+   "user_id": 1,
+   "name": "Bing",
+   "domain": "bing.com",
+   "probe_url": "https://www.bing.com/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Поиск Microsoft Bing",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 142,
+   "user_id": 1,
+   "name": "Zoom",
+   "domain": "zoom.us",
+   "probe_url": "https://zoom.us/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Видеоконференции Zoom — технически не заблокированы",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 143,
+   "user_id": 1,
+   "name": "AliExpress",
+   "domain": "aliexpress.ru",
+   "probe_url": "https://www.aliexpress.ru/favicon.ico",
+   "category": "global_infra",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Маркетплейс AliExpress — не заблокирован",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 144,
+   "user_id": 1,
+   "name": "WhatsApp Web",
+   "domain": "web.whatsapp.com",
+   "probe_url": "https://web.whatsapp.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "WhatsApp удалён из НСДИ 12.02.2026 — звонили с авг. 2025, блокировка с 28.11.2025",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "12.02.2026"
+  },
+  {
+   "id": 145,
+   "user_id": 1,
+   "name": "Discord",
+   "domain": "discord.com",
+   "probe_url": "https://discord.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Discord заблокирован РКН полностью с 8 октября 2024",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "08.10.2024"
+  },
+  {
+   "id": 146,
+   "user_id": 1,
+   "name": "Signal",
+   "domain": "signal.org",
+   "probe_url": "https://signal.org/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Signal заблокирован с 9 августа 2024, удалён из сторов",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "09.08.2024"
+  },
+  {
+   "id": 147,
+   "user_id": 1,
+   "name": "Viber",
+   "domain": "viber.com",
+   "probe_url": "https://www.viber.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Viber заблокирован технически с 13 декабря 2024",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "13.12.2024"
+  },
+  {
+   "id": 148,
+   "user_id": 1,
+   "name": "Telegram Web",
+   "domain": "web.telegram.org",
+   "probe_url": "https://web.telegram.org/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Telegram под «последовательными ограничениями» с 10.02.2026: звонки и медиа сбоят, трафик замедлен",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "restricted",
+   "blocked_since": "10.02.2026"
+  },
+  {
+   "id": 149,
+   "user_id": 1,
+   "name": "Snapchat",
+   "domain": "snapchat.com",
+   "probe_url": "https://www.snapchat.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Snapchat ограничен предписанием РКН в декабре 2025",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "12.2025"
+  },
+  {
+   "id": 150,
+   "user_id": 1,
+   "name": "Facebook (Meta)",
+   "domain": "facebook.com",
+   "probe_url": "https://www.facebook.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Meta признана экстремистской, заблокирована с 2022",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "03.2022"
+  },
+  {
+   "id": 151,
+   "user_id": 1,
+   "name": "Instagram (Meta)",
+   "domain": "instagram.com",
+   "probe_url": "https://www.instagram.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Instagram заблокирован с марта 2022",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "03.2022"
+  },
+  {
+   "id": 152,
+   "user_id": 1,
+   "name": "X (Twitter)",
+   "domain": "x.com",
+   "probe_url": "https://x.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "X/Twitter замедлен с 2022 и заблокирован",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "04.2022"
+  },
+  {
+   "id": 153,
+   "user_id": 1,
+   "name": "LinkedIn",
+   "domain": "linkedin.com",
+   "probe_url": "https://www.linkedin.com/",
+   "category": "messengers",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "LinkedIn заблокирован с 2016 года (первый в списке)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "11.2016"
+  },
+  {
+   "id": 154,
+   "user_id": 1,
+   "name": "YouTube",
+   "domain": "youtube.com",
+   "probe_url": "https://www.youtube.com/favicon.ico",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "YouTube удалён из НСДИ 10.02.2026 — без VPN не открывается",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "10.02.2026"
+  },
+  {
+   "id": 155,
+   "user_id": 1,
+   "name": "YouTube Video (GGC)",
+   "domain": "googlevideo.com",
+   "probe_url": "https://redirector.googlevideo.com/report_mapping",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Кэш-серверы видеопотока — главная цель ТСПУ",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "2024"
+  },
+  {
+   "id": 156,
+   "user_id": 1,
+   "name": "Twitch",
+   "domain": "twitch.tv",
+   "probe_url": "https://www.twitch.tv/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Twitch не заблокирован, но ТСПУ шейпит видео и режет качество до 720p",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "restricted",
+   "blocked_since": null
+  },
+  {
+   "id": 157,
+   "user_id": 1,
+   "name": "TikTok",
+   "domain": "tiktok.com",
+   "probe_url": "https://www.tiktok.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "TikTok ограничен: нет загрузки контента и прямых эфиров",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "restricted",
+   "blocked_since": null
+  },
+  {
+   "id": 158,
+   "user_id": 1,
+   "name": "Netflix",
+   "domain": "netflix.com",
+   "probe_url": "https://www.netflix.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Netflix ушёл из РФ в марте 2022 — нужен VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "03.2022"
+  },
+  {
+   "id": 159,
+   "user_id": 1,
+   "name": "Spotify",
+   "domain": "open.spotify.com",
+   "probe_url": "https://open.spotify.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Spotify закрылся в РФ 11 апреля 2022",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "04.2022"
+  },
+  {
+   "id": 160,
+   "user_id": 1,
+   "name": "SoundCloud",
+   "domain": "soundcloud.com",
+   "probe_url": "https://soundcloud.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "SoundCloud заблокирован Генпрокуратурой 2 октября 2022",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "10.2022"
+  },
+  {
+   "id": 161,
+   "user_id": 1,
+   "name": "Patreon",
+   "domain": "patreon.com",
+   "probe_url": "https://www.patreon.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Patreon заблокирован в РФ",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "2022"
+  },
+  {
+   "id": 162,
+   "user_id": 1,
+   "name": "Reddit",
+   "domain": "reddit.com",
+   "probe_url": "https://www.reddit.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Reddit доступен, но отдельные разделы в реестре РКН и периодически шейпятся",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "restricted",
+   "blocked_since": null
+  },
+  {
+   "id": 163,
+   "user_id": 1,
+   "name": "Google News",
+   "domain": "news.google.com",
+   "probe_url": "https://news.google.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Google News заблокирован Генпрокуратурой 23 марта 2022",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "23.03.2022"
+  },
+  {
+   "id": 164,
+   "user_id": 1,
+   "name": "Roblox",
+   "domain": "roblox.com",
+   "probe_url": "https://www.roblox.com/",
+   "category": "media_social",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Roblox заблокирован 3 декабря 2025",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": "03.12.2025"
+  },
+  {
+   "id": 165,
+   "user_id": 1,
+   "name": "Steam Store",
+   "domain": "store.steampowered.com",
+   "probe_url": "https://store.steampowered.com/favicon.ico",
+   "category": "gaming_stores",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Магазин Steam — работает, ограничения только для Community Hub",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 166,
+   "user_id": 1,
+   "name": "Epic Games Store",
+   "domain": "epicgames.com",
+   "probe_url": "https://store.epicgames.com/",
+   "category": "gaming_stores",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Магазин Epic Games — доступен без VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 167,
+   "user_id": 1,
+   "name": "GOG.com",
+   "domain": "gog.com",
+   "probe_url": "https://www.gog.com/favicon.ico",
+   "category": "gaming_stores",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Магазин GOG — работает (ограничены только платежи)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 168,
+   "user_id": 1,
+   "name": "Xbox / Microsoft Store",
+   "domain": "xbox.com",
+   "probe_url": "https://www.xbox.com/favicon.ico",
+   "category": "gaming_stores",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Экосистема Xbox — сайт доступен",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 169,
+   "user_id": 1,
+   "name": "App Store",
+   "domain": "apps.apple.com",
+   "probe_url": "https://apps.apple.com/favicon.ico",
+   "category": "gaming_stores",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Магазин приложений iOS — работает (оплата только через баланс)",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 170,
+   "user_id": 1,
+   "name": "Google Play",
+   "domain": "play.google.com",
+   "probe_url": "https://play.google.com/favicon.ico",
+   "category": "gaming_stores",
+   "marker_role": "global_neutral",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Магазин приложений Android — каталог открывается",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "ok",
+   "blocked_since": null
+  },
+  {
+   "id": 171,
+   "user_id": 1,
+   "name": "ChatGPT / OpenAI",
+   "domain": "chatgpt.com",
+   "probe_url": "https://chatgpt.com/",
+   "category": "dev_ai_vpn",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "OpenAI закрыл доступ из РФ и блокирует IP — нужен VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": null
+  },
+  {
+   "id": 172,
+   "user_id": 1,
+   "name": "Proton",
+   "domain": "proton.me",
+   "probe_url": "https://proton.me/favicon.ico",
+   "category": "dev_ai_vpn",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Proton Mail/VPN блокируются ТСПУ в РФ",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": null
+  },
+  {
+   "id": 173,
+   "user_id": 1,
+   "name": "Tor Project",
+   "domain": "torproject.org",
+   "probe_url": "https://www.torproject.org/static/images/favicon/favicon.ico",
+   "category": "dev_ai_vpn",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Сеть Tor — мосты и сайт под блокировкой в РФ",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": null
+  },
+  {
+   "id": 174,
+   "user_id": 1,
+   "name": "Mullvad VPN",
+   "domain": "mullvad.net",
+   "probe_url": "https://mullvad.net/favicon.ico",
+   "category": "dev_ai_vpn",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Шведский VPN — сайт блокируется ТСПУ",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": null
+  },
+  {
+   "id": 175,
+   "user_id": 1,
+   "name": "Speedtest.net",
+   "domain": "speedtest.net",
+   "probe_url": "https://www.speedtest.net/",
+   "category": "dev_ai_vpn",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Ookla Speedtest — заблокирован, замеры идут только через VPN",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": null
+  },
+  {
+   "id": 176,
+   "user_id": 1,
+   "name": "Notion",
+   "domain": "notion.so",
+   "probe_url": "https://www.notion.so/",
+   "category": "dev_ai_vpn",
+   "marker_role": "dpi_target",
+   "enabled": 1,
+   "last_status": "blocked",
+   "last_latency_ms": null,
+   "last_checked_at": "2026-11-04T12:52:02.198Z",
+   "description": "Notion ограничен: часть подсетей AWS в реестре РКН",
+   "created_at": "2026-11-04T15:03:52.833Z",
+   "accessibility": "blocked",
+   "blocked_since": null
+  }
+ ],
+ "scans": [
+  {
+   "id": 6,
+   "user_id": 1,
+   "verdict": "WHITELIST_ACTIVE",
+   "verdict_title": "ВНИМАНИЕ: ЕСТЬ БЕЛЫЕ СПИСКИ!",
+   "verdict_summary": "Открываются сервисы из перечня Минцифры (Госуслуги, Яндекс, ВК, MAX, Ozon, банки), а нейтральный зарубежный интернет режется: Google, Википедия, GitHub, Cloudflare недоступны. Это режим белых списков на мобильной сети.",
+   "vpn_detected": false,
+   "vpn_mode": "vpn_turned_off",
+   "ip_address": "213.87.132.48",
+   "country_code": "RU",
+   "country_name": "Россия",
+   "city": "Краснодар",
+   "isp": "PJSC MTS Mobile",
+   "asn": "AS8359",
+   "total_sites": 75,
+   "ok_sites": 24,
+   "slow_sites": 1,
+   "blocked_sites": 50,
+   "ru_ok_pct": 100,
+   "global_ok_pct": 4,
+   "dpi_ok_pct": 0,
+   "avg_latency_ms": 49,
+   "carrier_label": "МТС 4G LTE • Краснодар",
+   "note": "Вечером перестали открываться все зарубежные сайты.",
+   "pinned": true,
+   "created_at": "2026-11-04T12:52:02.198Z",
+   "results": [
+    {
+     "name": "Госуслуги",
+     "domain": "gosuslugi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 28
+    },
+    {
+     "name": "Яндекс",
+     "domain": "ya.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 37
+    },
+    {
+     "name": "Кинопоиск",
+     "domain": "kinopoisk.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 46
+    },
+    {
+     "name": "ВКонтакте",
+     "domain": "vk.com",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 55
+    },
+    {
+     "name": "Одноклассники",
+     "domain": "ok.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 64
+    },
+    {
+     "name": "Mail (Mail.ru)",
+     "domain": "mail.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 73
+    },
+    {
+     "name": "MAX (мессенджер)",
+     "domain": "max.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 36
+    },
+    {
+     "name": "Дзен",
+     "domain": "dzen.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 45
+    },
+    {
+     "name": "Rutube",
+     "domain": "rutube.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 54
+    },
+    {
+     "name": "Ozon",
+     "domain": "ozon.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 63
+    },
+    {
+     "name": "Wildberries",
+     "domain": "wildberries.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 72
+    },
+    {
+     "name": "Авито",
+     "domain": "avito.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 35
+    },
+    {
+     "name": "2ГИС",
+     "domain": "2gis.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 44
+    },
+    {
+     "name": "HeadHunter",
+     "domain": "hh.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 53
+    },
+    {
+     "name": "Gismeteo",
+     "domain": "gismeteo.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 62
+    },
+    {
+     "name": "РИА Новости",
+     "domain": "ria.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 71
+    },
+    {
+     "name": "ТАСС",
+     "domain": "tass.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 34
+    },
+    {
+     "name": "Лента.ру",
+     "domain": "lenta.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 43
+    },
+    {
+     "name": "Аэрофлот",
+     "domain": "aeroflot.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 52
+    },
+    {
+     "name": "Туту.ру",
+     "domain": "tutu.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 61
+    },
+    {
+     "name": "Центробанк РФ",
+     "domain": "cbr.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 70
+    },
+    {
+     "name": "Сбер (СберБанк)",
+     "domain": "sber.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 33
+    },
+    {
+     "name": "Самокат",
+     "domain": "samokat.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 42
+    },
+    {
+     "name": "Иви",
+     "domain": "ivi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 51
+    },
+    {
+     "name": "Google Поиск",
+     "domain": "google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "slow",
+     "latency_ms": 2190
+    },
+    {
+     "name": "Google Переводчик",
+     "domain": "translate.google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Википедия",
+     "domain": "ru.wikipedia.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "GitHub",
+     "domain": "github.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Stack Overflow",
+     "domain": "stackoverflow.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Cloudflare",
+     "domain": "cloudflare.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Cloudflare DNS 1.1.1.1",
+     "domain": "one.one.one.one",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "jsDelivr CDN",
+     "domain": "cdn.jsdelivr.net",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "NPM Registry",
+     "domain": "registry.npmjs.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Docker Hub",
+     "domain": "hub.docker.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mozilla",
+     "domain": "mozilla.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Internet Archive",
+     "domain": "archive.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Apple",
+     "domain": "apple.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Microsoft",
+     "domain": "microsoft.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Amazon AWS",
+     "domain": "aws.amazon.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Bing",
+     "domain": "bing.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Zoom",
+     "domain": "zoom.us",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "AliExpress",
+     "domain": "aliexpress.ru",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "WhatsApp Web",
+     "domain": "web.whatsapp.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Discord",
+     "domain": "discord.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Signal",
+     "domain": "signal.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Viber",
+     "domain": "viber.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Telegram Web",
+     "domain": "web.telegram.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Snapchat",
+     "domain": "snapchat.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Facebook (Meta)",
+     "domain": "facebook.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Instagram (Meta)",
+     "domain": "instagram.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "X (Twitter)",
+     "domain": "x.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "LinkedIn",
+     "domain": "linkedin.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube",
+     "domain": "youtube.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube Video (GGC)",
+     "domain": "googlevideo.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Twitch",
+     "domain": "twitch.tv",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "TikTok",
+     "domain": "tiktok.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Netflix",
+     "domain": "netflix.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Spotify",
+     "domain": "open.spotify.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "SoundCloud",
+     "domain": "soundcloud.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Patreon",
+     "domain": "patreon.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Reddit",
+     "domain": "reddit.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google News",
+     "domain": "news.google.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Roblox",
+     "domain": "roblox.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Steam Store",
+     "domain": "store.steampowered.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Epic Games Store",
+     "domain": "epicgames.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "GOG.com",
+     "domain": "gog.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Xbox / Microsoft Store",
+     "domain": "xbox.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "App Store",
+     "domain": "apps.apple.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google Play",
+     "domain": "play.google.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "ChatGPT / OpenAI",
+     "domain": "chatgpt.com",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Proton",
+     "domain": "proton.me",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Tor Project",
+     "domain": "torproject.org",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mullvad VPN",
+     "domain": "mullvad.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Speedtest.net",
+     "domain": "speedtest.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Notion",
+     "domain": "notion.so",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "user_id": 1,
+   "verdict": "DPI_THROTTLING",
+   "verdict_title": "Белых списков нет • Работает ТСПУ / DPI",
+   "verdict_summary": "Нейтральный интернет открыт полностью, белые списки не активны. Недоступны только сервисы из реестра РКН (YouTube, Discord, Instagram, WhatsApp) — стандартная фильтрация ТСПУ на домашнем интернете.",
+   "vpn_detected": false,
+   "vpn_mode": "direct",
+   "ip_address": "95.165.118.203",
+   "country_code": "RU",
+   "country_name": "Россия",
+   "city": "Москва",
+   "isp": "PJSC Rostelecom",
+   "asn": "AS12389",
+   "total_sites": 75,
+   "ok_sites": 48,
+   "slow_sites": 4,
+   "blocked_sites": 23,
+   "ru_ok_pct": 100,
+   "global_ok_pct": 100,
+   "dpi_ok_pct": 15,
+   "avg_latency_ms": 62,
+   "carrier_label": "Ростелеком GPON • Дом",
+   "note": "Обычный домашний интернет без VPN.",
+   "pinned": false,
+   "created_at": "2026-11-03T20:04:02.198Z",
+   "results": [
+    {
+     "name": "Госуслуги",
+     "domain": "gosuslugi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 26
+    },
+    {
+     "name": "Яндекс",
+     "domain": "ya.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 33
+    },
+    {
+     "name": "Кинопоиск",
+     "domain": "kinopoisk.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 40
+    },
+    {
+     "name": "ВКонтакте",
+     "domain": "vk.com",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 47
+    },
+    {
+     "name": "Одноклассники",
+     "domain": "ok.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 54
+    },
+    {
+     "name": "Mail (Mail.ru)",
+     "domain": "mail.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 61
+    },
+    {
+     "name": "MAX (мессенджер)",
+     "domain": "max.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 30
+    },
+    {
+     "name": "Дзен",
+     "domain": "dzen.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 37
+    },
+    {
+     "name": "Rutube",
+     "domain": "rutube.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 44
+    },
+    {
+     "name": "Ozon",
+     "domain": "ozon.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 51
+    },
+    {
+     "name": "Wildberries",
+     "domain": "wildberries.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 58
+    },
+    {
+     "name": "Авито",
+     "domain": "avito.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 27
+    },
+    {
+     "name": "2ГИС",
+     "domain": "2gis.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 34
+    },
+    {
+     "name": "HeadHunter",
+     "domain": "hh.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 41
+    },
+    {
+     "name": "Gismeteo",
+     "domain": "gismeteo.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 48
+    },
+    {
+     "name": "РИА Новости",
+     "domain": "ria.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 55
+    },
+    {
+     "name": "ТАСС",
+     "domain": "tass.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 62
+    },
+    {
+     "name": "Лента.ру",
+     "domain": "lenta.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 31
+    },
+    {
+     "name": "Аэрофлот",
+     "domain": "aeroflot.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 38
+    },
+    {
+     "name": "Туту.ру",
+     "domain": "tutu.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 45
+    },
+    {
+     "name": "Центробанк РФ",
+     "domain": "cbr.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 52
+    },
+    {
+     "name": "Сбер (СберБанк)",
+     "domain": "sber.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 59
+    },
+    {
+     "name": "Самокат",
+     "domain": "samokat.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 28
+    },
+    {
+     "name": "Иви",
+     "domain": "ivi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 35
+    },
+    {
+     "name": "Google Поиск",
+     "domain": "google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 86
+    },
+    {
+     "name": "Google Переводчик",
+     "domain": "translate.google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 99
+    },
+    {
+     "name": "Википедия",
+     "domain": "ru.wikipedia.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 112
+    },
+    {
+     "name": "GitHub",
+     "domain": "github.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 125
+    },
+    {
+     "name": "Stack Overflow",
+     "domain": "stackoverflow.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 48
+    },
+    {
+     "name": "Cloudflare",
+     "domain": "cloudflare.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 61
+    },
+    {
+     "name": "Cloudflare DNS 1.1.1.1",
+     "domain": "one.one.one.one",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 74
+    },
+    {
+     "name": "jsDelivr CDN",
+     "domain": "cdn.jsdelivr.net",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 87
+    },
+    {
+     "name": "NPM Registry",
+     "domain": "registry.npmjs.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 100
+    },
+    {
+     "name": "Docker Hub",
+     "domain": "hub.docker.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 113
+    },
+    {
+     "name": "Mozilla",
+     "domain": "mozilla.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 126
+    },
+    {
+     "name": "Internet Archive",
+     "domain": "archive.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 49
+    },
+    {
+     "name": "Apple",
+     "domain": "apple.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 62
+    },
+    {
+     "name": "Microsoft",
+     "domain": "microsoft.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 75
+    },
+    {
+     "name": "Amazon AWS",
+     "domain": "aws.amazon.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 88
+    },
+    {
+     "name": "Bing",
+     "domain": "bing.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 101
+    },
+    {
+     "name": "Zoom",
+     "domain": "zoom.us",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 114
+    },
+    {
+     "name": "AliExpress",
+     "domain": "aliexpress.ru",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 127
+    },
+    {
+     "name": "WhatsApp Web",
+     "domain": "web.whatsapp.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Discord",
+     "domain": "discord.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Signal",
+     "domain": "signal.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Viber",
+     "domain": "viber.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Telegram Web",
+     "domain": "web.telegram.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "slow",
+     "latency_ms": 1962
+    },
+    {
+     "name": "Snapchat",
+     "domain": "snapchat.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Facebook (Meta)",
+     "domain": "facebook.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Instagram (Meta)",
+     "domain": "instagram.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "X (Twitter)",
+     "domain": "x.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "LinkedIn",
+     "domain": "linkedin.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube",
+     "domain": "youtube.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube Video (GGC)",
+     "domain": "googlevideo.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Twitch",
+     "domain": "twitch.tv",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "slow",
+     "latency_ms": 1198
+    },
+    {
+     "name": "TikTok",
+     "domain": "tiktok.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "slow",
+     "latency_ms": 1215
+    },
+    {
+     "name": "Netflix",
+     "domain": "netflix.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Spotify",
+     "domain": "open.spotify.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "SoundCloud",
+     "domain": "soundcloud.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Patreon",
+     "domain": "patreon.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Reddit",
+     "domain": "reddit.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "slow",
+     "latency_ms": 1300
+    },
+    {
+     "name": "Google News",
+     "domain": "news.google.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Roblox",
+     "domain": "roblox.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Steam Store",
+     "domain": "store.steampowered.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 53
+    },
+    {
+     "name": "Epic Games Store",
+     "domain": "epicgames.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 66
+    },
+    {
+     "name": "GOG.com",
+     "domain": "gog.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 79
+    },
+    {
+     "name": "Xbox / Microsoft Store",
+     "domain": "xbox.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 92
+    },
+    {
+     "name": "App Store",
+     "domain": "apps.apple.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 105
+    },
+    {
+     "name": "Google Play",
+     "domain": "play.google.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 118
+    },
+    {
+     "name": "ChatGPT / OpenAI",
+     "domain": "chatgpt.com",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Proton",
+     "domain": "proton.me",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Tor Project",
+     "domain": "torproject.org",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mullvad VPN",
+     "domain": "mullvad.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Speedtest.net",
+     "domain": "speedtest.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Notion",
+     "domain": "notion.so",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "user_id": 1,
+   "verdict": "OPEN_INTERNET",
+   "verdict_title": "Свободный доступ через VPN",
+   "verdict_summary": "Через туннель открываются все заблокированные РКН сервисы (YouTube, Discord, Instagram), а также нейтральные ресурсы. Блокировка успешно обходится.",
+   "vpn_detected": true,
+   "vpn_mode": "with_vpn",
+   "ip_address": "185.236.201.74",
+   "country_code": "NL",
+   "country_name": "Нидерланды",
+   "city": "Amsterdam",
+   "isp": "Aeza International Ltd",
+   "asn": "AS210644",
+   "total_sites": 75,
+   "ok_sites": 73,
+   "slow_sites": 1,
+   "blocked_sites": 1,
+   "ru_ok_pct": 96,
+   "global_ok_pct": 100,
+   "dpi_ok_pct": 100,
+   "avg_latency_ms": 84,
+   "carrier_label": "VLESS Reality • Amsterdam",
+   "note": "Проверка через каскадный туннель.",
+   "pinned": false,
+   "created_at": "2026-11-03T09:04:02.198Z",
+   "results": [
+    {
+     "name": "Госуслуги",
+     "domain": "gosuslugi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Яндекс",
+     "domain": "ya.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 59
+    },
+    {
+     "name": "Кинопоиск",
+     "domain": "kinopoisk.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 70
+    },
+    {
+     "name": "ВКонтакте",
+     "domain": "vk.com",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 81
+    },
+    {
+     "name": "Одноклассники",
+     "domain": "ok.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 92
+    },
+    {
+     "name": "Mail (Mail.ru)",
+     "domain": "mail.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 103
+    },
+    {
+     "name": "MAX (мессенджер)",
+     "domain": "max.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "slow",
+     "latency_ms": 1240
+    },
+    {
+     "name": "Дзен",
+     "domain": "dzen.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 125
+    },
+    {
+     "name": "Rutube",
+     "domain": "rutube.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 56
+    },
+    {
+     "name": "Ozon",
+     "domain": "ozon.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 67
+    },
+    {
+     "name": "Wildberries",
+     "domain": "wildberries.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 78
+    },
+    {
+     "name": "Авито",
+     "domain": "avito.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 89
+    },
+    {
+     "name": "2ГИС",
+     "domain": "2gis.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 100
+    },
+    {
+     "name": "HeadHunter",
+     "domain": "hh.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 111
+    },
+    {
+     "name": "Gismeteo",
+     "domain": "gismeteo.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 122
+    },
+    {
+     "name": "РИА Новости",
+     "domain": "ria.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 53
+    },
+    {
+     "name": "ТАСС",
+     "domain": "tass.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 64
+    },
+    {
+     "name": "Лента.ру",
+     "domain": "lenta.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 75
+    },
+    {
+     "name": "Аэрофлот",
+     "domain": "aeroflot.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 86
+    },
+    {
+     "name": "Туту.ру",
+     "domain": "tutu.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 97
+    },
+    {
+     "name": "Центробанк РФ",
+     "domain": "cbr.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 108
+    },
+    {
+     "name": "Сбер (СберБанк)",
+     "domain": "sber.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 119
+    },
+    {
+     "name": "Самокат",
+     "domain": "samokat.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 50
+    },
+    {
+     "name": "Иви",
+     "domain": "ivi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 61
+    },
+    {
+     "name": "Google Поиск",
+     "domain": "google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 72
+    },
+    {
+     "name": "Google Переводчик",
+     "domain": "translate.google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 83
+    },
+    {
+     "name": "Википедия",
+     "domain": "ru.wikipedia.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 94
+    },
+    {
+     "name": "GitHub",
+     "domain": "github.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 105
+    },
+    {
+     "name": "Stack Overflow",
+     "domain": "stackoverflow.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 116
+    },
+    {
+     "name": "Cloudflare",
+     "domain": "cloudflare.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 127
+    },
+    {
+     "name": "Cloudflare DNS 1.1.1.1",
+     "domain": "one.one.one.one",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 58
+    },
+    {
+     "name": "jsDelivr CDN",
+     "domain": "cdn.jsdelivr.net",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 69
+    },
+    {
+     "name": "NPM Registry",
+     "domain": "registry.npmjs.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 80
+    },
+    {
+     "name": "Docker Hub",
+     "domain": "hub.docker.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 91
+    },
+    {
+     "name": "Mozilla",
+     "domain": "mozilla.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 102
+    },
+    {
+     "name": "Internet Archive",
+     "domain": "archive.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 113
+    },
+    {
+     "name": "Apple",
+     "domain": "apple.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 124
+    },
+    {
+     "name": "Microsoft",
+     "domain": "microsoft.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 55
+    },
+    {
+     "name": "Amazon AWS",
+     "domain": "aws.amazon.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 66
+    },
+    {
+     "name": "Bing",
+     "domain": "bing.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 77
+    },
+    {
+     "name": "Zoom",
+     "domain": "zoom.us",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 88
+    },
+    {
+     "name": "AliExpress",
+     "domain": "aliexpress.ru",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 99
+    },
+    {
+     "name": "WhatsApp Web",
+     "domain": "web.whatsapp.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 110
+    },
+    {
+     "name": "Discord",
+     "domain": "discord.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 121
+    },
+    {
+     "name": "Signal",
+     "domain": "signal.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 52
+    },
+    {
+     "name": "Viber",
+     "domain": "viber.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 63
+    },
+    {
+     "name": "Telegram Web",
+     "domain": "web.telegram.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 74
+    },
+    {
+     "name": "Snapchat",
+     "domain": "snapchat.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 85
+    },
+    {
+     "name": "Facebook (Meta)",
+     "domain": "facebook.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 96
+    },
+    {
+     "name": "Instagram (Meta)",
+     "domain": "instagram.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 107
+    },
+    {
+     "name": "X (Twitter)",
+     "domain": "x.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 118
+    },
+    {
+     "name": "LinkedIn",
+     "domain": "linkedin.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 49
+    },
+    {
+     "name": "YouTube",
+     "domain": "youtube.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 60
+    },
+    {
+     "name": "YouTube Video (GGC)",
+     "domain": "googlevideo.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 71
+    },
+    {
+     "name": "Twitch",
+     "domain": "twitch.tv",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 82
+    },
+    {
+     "name": "TikTok",
+     "domain": "tiktok.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 93
+    },
+    {
+     "name": "Netflix",
+     "domain": "netflix.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 104
+    },
+    {
+     "name": "Spotify",
+     "domain": "open.spotify.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 115
+    },
+    {
+     "name": "SoundCloud",
+     "domain": "soundcloud.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 126
+    },
+    {
+     "name": "Patreon",
+     "domain": "patreon.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 57
+    },
+    {
+     "name": "Reddit",
+     "domain": "reddit.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 68
+    },
+    {
+     "name": "Google News",
+     "domain": "news.google.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 79
+    },
+    {
+     "name": "Roblox",
+     "domain": "roblox.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 90
+    },
+    {
+     "name": "Steam Store",
+     "domain": "store.steampowered.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 101
+    },
+    {
+     "name": "Epic Games Store",
+     "domain": "epicgames.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 112
+    },
+    {
+     "name": "GOG.com",
+     "domain": "gog.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 123
+    },
+    {
+     "name": "Xbox / Microsoft Store",
+     "domain": "xbox.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 54
+    },
+    {
+     "name": "App Store",
+     "domain": "apps.apple.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 65
+    },
+    {
+     "name": "Google Play",
+     "domain": "play.google.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 76
+    },
+    {
+     "name": "ChatGPT / OpenAI",
+     "domain": "chatgpt.com",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 87
+    },
+    {
+     "name": "Proton",
+     "domain": "proton.me",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 98
+    },
+    {
+     "name": "Tor Project",
+     "domain": "torproject.org",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 109
+    },
+    {
+     "name": "Mullvad VPN",
+     "domain": "mullvad.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 120
+    },
+    {
+     "name": "Speedtest.net",
+     "domain": "speedtest.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 51
+    },
+    {
+     "name": "Notion",
+     "domain": "notion.so",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "ok",
+     "latency_ms": 62
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "user_id": 1,
+   "verdict": "TOTAL_JAMMING",
+   "verdict_title": "Глушение сети / Шатдаун мобильного интернета",
+   "verdict_summary": "Не открываются ни российские, ни зарубежные сайты. Задержки >2400 мс указывают на ограничение LTE или перевод базовых станций в 2G.",
+   "vpn_detected": false,
+   "vpn_mode": "direct",
+   "ip_address": "85.26.234.19",
+   "country_code": "RU",
+   "country_name": "Россия",
+   "city": "Ростов-на-Дону",
+   "isp": "PJSC MegaFon",
+   "asn": "AS31133",
+   "total_sites": 75,
+   "ok_sites": 0,
+   "slow_sites": 2,
+   "blocked_sites": 73,
+   "ru_ok_pct": 8,
+   "global_ok_pct": 0,
+   "dpi_ok_pct": 0,
+   "avg_latency_ms": 2515,
+   "carrier_label": "МегаФон EDGE/LTE • Трасса М-4",
+   "note": "Полное отключение мобильной передачи данных ночью.",
+   "pinned": true,
+   "created_at": "2026-11-02T22:04:02.198Z",
+   "results": [
+    {
+     "name": "Госуслуги",
+     "domain": "gosuslugi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "slow",
+     "latency_ms": 2480
+    },
+    {
+     "name": "Яндекс",
+     "domain": "ya.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "slow",
+     "latency_ms": 2515
+    },
+    {
+     "name": "Кинопоиск",
+     "domain": "kinopoisk.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "ВКонтакте",
+     "domain": "vk.com",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Одноклассники",
+     "domain": "ok.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mail (Mail.ru)",
+     "domain": "mail.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "MAX (мессенджер)",
+     "domain": "max.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Дзен",
+     "domain": "dzen.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Rutube",
+     "domain": "rutube.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Ozon",
+     "domain": "ozon.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Wildberries",
+     "domain": "wildberries.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Авито",
+     "domain": "avito.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "2ГИС",
+     "domain": "2gis.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "HeadHunter",
+     "domain": "hh.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Gismeteo",
+     "domain": "gismeteo.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "РИА Новости",
+     "domain": "ria.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "ТАСС",
+     "domain": "tass.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Лента.ру",
+     "domain": "lenta.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Аэрофлот",
+     "domain": "aeroflot.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Туту.ру",
+     "domain": "tutu.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Центробанк РФ",
+     "domain": "cbr.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Сбер (СберБанк)",
+     "domain": "sber.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Самокат",
+     "domain": "samokat.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Иви",
+     "domain": "ivi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google Поиск",
+     "domain": "google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google Переводчик",
+     "domain": "translate.google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Википедия",
+     "domain": "ru.wikipedia.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "GitHub",
+     "domain": "github.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Stack Overflow",
+     "domain": "stackoverflow.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Cloudflare",
+     "domain": "cloudflare.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Cloudflare DNS 1.1.1.1",
+     "domain": "one.one.one.one",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "jsDelivr CDN",
+     "domain": "cdn.jsdelivr.net",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "NPM Registry",
+     "domain": "registry.npmjs.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Docker Hub",
+     "domain": "hub.docker.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mozilla",
+     "domain": "mozilla.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Internet Archive",
+     "domain": "archive.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Apple",
+     "domain": "apple.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Microsoft",
+     "domain": "microsoft.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Amazon AWS",
+     "domain": "aws.amazon.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Bing",
+     "domain": "bing.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Zoom",
+     "domain": "zoom.us",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "AliExpress",
+     "domain": "aliexpress.ru",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "WhatsApp Web",
+     "domain": "web.whatsapp.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Discord",
+     "domain": "discord.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Signal",
+     "domain": "signal.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Viber",
+     "domain": "viber.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Telegram Web",
+     "domain": "web.telegram.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Snapchat",
+     "domain": "snapchat.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Facebook (Meta)",
+     "domain": "facebook.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Instagram (Meta)",
+     "domain": "instagram.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "X (Twitter)",
+     "domain": "x.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "LinkedIn",
+     "domain": "linkedin.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube",
+     "domain": "youtube.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube Video (GGC)",
+     "domain": "googlevideo.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Twitch",
+     "domain": "twitch.tv",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "TikTok",
+     "domain": "tiktok.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Netflix",
+     "domain": "netflix.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Spotify",
+     "domain": "open.spotify.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "SoundCloud",
+     "domain": "soundcloud.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Patreon",
+     "domain": "patreon.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Reddit",
+     "domain": "reddit.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google News",
+     "domain": "news.google.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Roblox",
+     "domain": "roblox.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Steam Store",
+     "domain": "store.steampowered.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Epic Games Store",
+     "domain": "epicgames.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "GOG.com",
+     "domain": "gog.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Xbox / Microsoft Store",
+     "domain": "xbox.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "App Store",
+     "domain": "apps.apple.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google Play",
+     "domain": "play.google.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "ChatGPT / OpenAI",
+     "domain": "chatgpt.com",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Proton",
+     "domain": "proton.me",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Tor Project",
+     "domain": "torproject.org",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mullvad VPN",
+     "domain": "mullvad.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Speedtest.net",
+     "domain": "speedtest.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Notion",
+     "domain": "notion.so",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "user_id": 1,
+   "verdict": "SEVERE_RESTRICTIONS",
+   "verdict_title": "Частичные ограничения / сбой CDN",
+   "verdict_summary": "Российские сайты работают, но отвалилась часть сайтов за Cloudflare и AWS. Пограничный режим, похожий на региональные ограничения подсетей.",
+   "vpn_detected": false,
+   "vpn_mode": "direct",
+   "ip_address": "176.59.42.110",
+   "country_code": "RU",
+   "country_name": "Россия",
+   "city": "Санкт-Петербург",
+   "isp": "T2 Mobile (Tele2)",
+   "asn": "AS42610",
+   "total_sites": 75,
+   "ok_sites": 31,
+   "slow_sites": 0,
+   "blocked_sites": 44,
+   "ru_ok_pct": 100,
+   "global_ok_pct": 29,
+   "dpi_ok_pct": 0,
+   "avg_latency_ms": 71,
+   "carrier_label": "T2 4G • Санкт-Петербург",
+   "note": "Отвалились сайты за Cloudflare.",
+   "pinned": false,
+   "created_at": "2026-11-01T19:04:02.198Z",
+   "results": [
+    {
+     "name": "Госуслуги",
+     "domain": "gosuslugi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 27
+    },
+    {
+     "name": "Яндекс",
+     "domain": "ya.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 32
+    },
+    {
+     "name": "Кинопоиск",
+     "domain": "kinopoisk.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 37
+    },
+    {
+     "name": "ВКонтакте",
+     "domain": "vk.com",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 42
+    },
+    {
+     "name": "Одноклассники",
+     "domain": "ok.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 47
+    },
+    {
+     "name": "Mail (Mail.ru)",
+     "domain": "mail.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 52
+    },
+    {
+     "name": "MAX (мессенджер)",
+     "domain": "max.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 57
+    },
+    {
+     "name": "Дзен",
+     "domain": "dzen.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 29
+    },
+    {
+     "name": "Rutube",
+     "domain": "rutube.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 34
+    },
+    {
+     "name": "Ozon",
+     "domain": "ozon.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 39
+    },
+    {
+     "name": "Wildberries",
+     "domain": "wildberries.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 44
+    },
+    {
+     "name": "Авито",
+     "domain": "avito.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 49
+    },
+    {
+     "name": "2ГИС",
+     "domain": "2gis.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 54
+    },
+    {
+     "name": "HeadHunter",
+     "domain": "hh.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 59
+    },
+    {
+     "name": "Gismeteo",
+     "domain": "gismeteo.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 31
+    },
+    {
+     "name": "РИА Новости",
+     "domain": "ria.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 36
+    },
+    {
+     "name": "ТАСС",
+     "domain": "tass.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 41
+    },
+    {
+     "name": "Лента.ру",
+     "domain": "lenta.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 46
+    },
+    {
+     "name": "Аэрофлот",
+     "domain": "aeroflot.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 51
+    },
+    {
+     "name": "Туту.ру",
+     "domain": "tutu.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 56
+    },
+    {
+     "name": "Центробанк РФ",
+     "domain": "cbr.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 28
+    },
+    {
+     "name": "Сбер (СберБанк)",
+     "domain": "sber.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 33
+    },
+    {
+     "name": "Самокат",
+     "domain": "samokat.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 38
+    },
+    {
+     "name": "Иви",
+     "domain": "ivi.ru",
+     "category": "ru_whitelist",
+     "marker_role": "ru_whitelist",
+     "status": "ok",
+     "latency_ms": 43
+    },
+    {
+     "name": "Google Поиск",
+     "domain": "google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 68
+    },
+    {
+     "name": "Google Переводчик",
+     "domain": "translate.google.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Википедия",
+     "domain": "ru.wikipedia.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 86
+    },
+    {
+     "name": "GitHub",
+     "domain": "github.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 95
+    },
+    {
+     "name": "Stack Overflow",
+     "domain": "stackoverflow.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 104
+    },
+    {
+     "name": "Cloudflare",
+     "domain": "cloudflare.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Cloudflare DNS 1.1.1.1",
+     "domain": "one.one.one.one",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "jsDelivr CDN",
+     "domain": "cdn.jsdelivr.net",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "NPM Registry",
+     "domain": "registry.npmjs.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Docker Hub",
+     "domain": "hub.docker.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mozilla",
+     "domain": "mozilla.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Internet Archive",
+     "domain": "archive.org",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Apple",
+     "domain": "apple.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 106
+    },
+    {
+     "name": "Microsoft",
+     "domain": "microsoft.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 115
+    },
+    {
+     "name": "Amazon AWS",
+     "domain": "aws.amazon.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Bing",
+     "domain": "bing.com",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "ok",
+     "latency_ms": 63
+    },
+    {
+     "name": "Zoom",
+     "domain": "zoom.us",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "AliExpress",
+     "domain": "aliexpress.ru",
+     "category": "global_infra",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "WhatsApp Web",
+     "domain": "web.whatsapp.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Discord",
+     "domain": "discord.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Signal",
+     "domain": "signal.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Viber",
+     "domain": "viber.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Telegram Web",
+     "domain": "web.telegram.org",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Snapchat",
+     "domain": "snapchat.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Facebook (Meta)",
+     "domain": "facebook.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Instagram (Meta)",
+     "domain": "instagram.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "X (Twitter)",
+     "domain": "x.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "LinkedIn",
+     "domain": "linkedin.com",
+     "category": "messengers",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube",
+     "domain": "youtube.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "YouTube Video (GGC)",
+     "domain": "googlevideo.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Twitch",
+     "domain": "twitch.tv",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "TikTok",
+     "domain": "tiktok.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Netflix",
+     "domain": "netflix.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Spotify",
+     "domain": "open.spotify.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "SoundCloud",
+     "domain": "soundcloud.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Patreon",
+     "domain": "patreon.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Reddit",
+     "domain": "reddit.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google News",
+     "domain": "news.google.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Roblox",
+     "domain": "roblox.com",
+     "category": "media_social",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Steam Store",
+     "domain": "store.steampowered.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Epic Games Store",
+     "domain": "epicgames.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "GOG.com",
+     "domain": "gog.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Xbox / Microsoft Store",
+     "domain": "xbox.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "App Store",
+     "domain": "apps.apple.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Google Play",
+     "domain": "play.google.com",
+     "category": "gaming_stores",
+     "marker_role": "global_neutral",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "ChatGPT / OpenAI",
+     "domain": "chatgpt.com",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Proton",
+     "domain": "proton.me",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Tor Project",
+     "domain": "torproject.org",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Mullvad VPN",
+     "domain": "mullvad.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Speedtest.net",
+     "domain": "speedtest.net",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    },
+    {
+     "name": "Notion",
+     "domain": "notion.so",
+     "category": "dev_ai_vpn",
+     "marker_role": "dpi_target",
+     "status": "blocked",
+     "latency_ms": null
+    }
+   ]
+  }
+ ],
+ "profiles": [
+  {
+   "id": 1,
+   "user_id": 1,
+   "name": "NL-AMS Основной • Reality",
+   "protocol": "VLESS + Reality",
+   "location": "Амстердам, Нидерланды",
+   "country_code": "NL",
+   "host": "nl-edge-01.aeza-node.net",
+   "port": 443,
+   "provider": "Aeza International (AS210644)",
+   "dpi_resistance": "high",
+   "whitelist_bypass": false,
+   "status": "online",
+   "latency_ms": 63,
+   "uptime_pct": 99.8,
+   "is_primary": true,
+   "notes": "Маскировка под TLS 1.3 (SNI microsoft.com). Отлично обходит обычный ТСПУ, но недоступен при жёстких белых списках без RU-каскада.",
+   "last_checked_at": "2026-11-04T15:04:45.298Z",
+   "created_at": "2026-10-29T18:14:15.376Z",
+   "subscription_id": null,
+   "group_name": "",
+   "raw_link": "",
+   "last_latency_all": 71
+  },
+  {
+   "id": 2,
+   "user_id": 1,
+   "name": "RU→FI Каскад (Анти-Белый список)",
+   "protocol": "VLESS + Reality",
+   "location": "Москва (Яндекс.Облако) → Хельсинки",
+   "country_code": "FI",
+   "host": "ru-bridge-msk.yc-relay.ru",
+   "port": 443,
+   "provider": "Yandex Cloud → Hetzner FI",
+   "dpi_resistance": "high",
+   "whitelist_bypass": true,
+   "status": "online",
+   "latency_ms": 49,
+   "uptime_pct": 99.4,
+   "is_primary": false,
+   "notes": "Входная нода находится в российской подсети из белого списка и перенаправляет трафик в Финляндию. Спасает при региональных шатдаунах!",
+   "last_checked_at": "2026-11-04T13:56:15.376Z",
+   "created_at": "2026-10-30T14:14:15.376Z",
+   "subscription_id": null,
+   "group_name": "",
+   "raw_link": "",
+   "last_latency_all": null
+  },
+  {
+   "id": 3,
+   "user_id": 1,
+   "name": "FI-HEL Резерв • AmneziaWG",
+   "protocol": "AmneziaWG",
+   "location": "Хельсинки, Финляндия",
+   "country_code": "FI",
+   "host": "fi-awg.hetzner-gw.org",
+   "port": 51820,
+   "provider": "Hetzner Online (AS24940)",
+   "dpi_resistance": "high",
+   "whitelist_bypass": false,
+   "status": "online",
+   "latency_ms": 57,
+   "uptime_pct": 97.9,
+   "is_primary": false,
+   "notes": "Модифицированный WireGuard с мусорными пакетами (Jc/Jmin/Jmax) против сигнатурного анализа DPI.",
+   "last_checked_at": "2026-11-04T13:08:15.376Z",
+   "created_at": "2026-10-31T14:14:15.376Z",
+   "subscription_id": null,
+   "group_name": "",
+   "raw_link": "",
+   "last_latency_all": null
+  },
+  {
+   "id": 4,
+   "user_id": 1,
+   "name": "DE-FRA Медиа 4K • Hysteria2",
+   "protocol": "Hysteria2",
+   "location": "Франкфурт, Германия",
+   "country_code": "DE",
+   "host": "de-quic-04.fastnode.eu",
+   "port": 8443,
+   "provider": "M247 Europe (AS9009)",
+   "dpi_resistance": "medium",
+   "whitelist_bypass": false,
+   "status": "degraded",
+   "latency_ms": 188,
+   "uptime_pct": 87.5,
+   "is_primary": false,
+   "notes": "Высокая скорость для YouTube 4K по UDP/QUIC, однако мобильные операторы вечером шейпят UDP-поток.",
+   "last_checked_at": "2026-11-04T12:44:15.376Z",
+   "created_at": "2026-11-01T06:14:15.376Z",
+   "subscription_id": null,
+   "group_name": "",
+   "raw_link": "",
+   "last_latency_all": null
+  },
+  {
+   "id": 5,
+   "user_id": 1,
+   "name": "LV-RIX Старый туннель • WG",
+   "protocol": "WireGuard",
+   "location": "Рига, Латвия",
+   "country_code": "LV",
+   "host": "185.212.141.90",
+   "port": 51820,
+   "provider": "Serveris LV",
+   "dpi_resistance": "low",
+   "whitelist_bypass": false,
+   "status": "blocked",
+   "latency_ms": null,
+   "uptime_pct": 24,
+   "is_primary": false,
+   "notes": "Чистый протокол WireGuard без обфускации — хендшейк блокируется ТСПУ на МТС, МегаФон и Т2.",
+   "last_checked_at": "2026-11-04T12:14:15.376Z",
+   "created_at": "2026-10-28T22:14:15.376Z",
+   "subscription_id": null,
+   "group_name": "",
+   "raw_link": "",
+   "last_latency_all": null
+  }
+ ],
+ "incidents": [
+  {
+   "id": 1,
+   "user_id": 1,
+   "author_name": "Алексей Морозов",
+   "region": "Краснодарский край",
+   "carrier": "МТС",
+   "incident_type": "whitelist",
+   "severity": "critical",
+   "status": "active",
+   "title": "Включены белые списки на мобильной сети МТС и Билайн",
+   "description": "Открываются только Яндекс, ВК, Госуслуги, Ozon и Сбер. Любые зарубежные IP (Cloudflare, GitHub, Википедия, прямые зарубежные VPN) уходят в таймаут на этапе TCP/TLS.",
+   "upvotes": 84,
+   "ru_sites_ok": true,
+   "foreign_sites_ok": false,
+   "created_at": "2026-11-04T12:26:15.376Z",
+   "user_upvoted": false,
+   "is_owner": true
+  },
+  {
+   "id": 2,
+   "user_id": null,
+   "author_name": "Дмитрий К.",
+   "region": "Ростовская область",
+   "carrier": "МегаФон",
+   "incident_type": "mobile_shutdown",
+   "severity": "critical",
+   "status": "active",
+   "title": "Ночное отключение мобильного интернета 4G/LTE",
+   "description": "После 23:00 значок LTE горит, но пакеты не ходят вообще — не грузятся даже российские банки и такси. По проводному Wi-Fi всё работает штатно.",
+   "upvotes": 61,
+   "ru_sites_ok": false,
+   "foreign_sites_ok": false,
+   "created_at": "2026-11-04T10:50:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  },
+  {
+   "id": 3,
+   "user_id": null,
+   "author_name": "Магомед А.",
+   "region": "Республика Дагестан",
+   "carrier": "Билайн",
+   "incident_type": "whitelist",
+   "severity": "critical",
+   "status": "active",
+   "title": "Фильтрация по белым спискам + блок зарубежных протоколов",
+   "description": "Без каскадного VPN через российский VPS внешний интернет недоступен полностью. Мессенджеры без прокси не подключаются.",
+   "upvotes": 112,
+   "ru_sites_ok": true,
+   "foreign_sites_ok": false,
+   "created_at": "2026-11-04T09:08:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  },
+  {
+   "id": 4,
+   "user_id": null,
+   "author_name": "Екатерина В.",
+   "region": "Воронежская область",
+   "carrier": "T2 (Tele2)",
+   "incident_type": "mobile_shutdown",
+   "severity": "high",
+   "status": "active",
+   "title": "Сильное глушение мобильного интернета в городе",
+   "description": "Мобильная сеть периодически сбрасывается в EDGE (2G). Во время ограничений работают только СМС и голосовые вызовы.",
+   "upvotes": 47,
+   "ru_sites_ok": false,
+   "foreign_sites_ok": false,
+   "created_at": "2026-11-04T07:32:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  },
+  {
+   "id": 5,
+   "user_id": null,
+   "author_name": "Илья Смирнов",
+   "region": "Ставропольский край",
+   "carrier": "МТС",
+   "incident_type": "cdn_block",
+   "severity": "high",
+   "status": "active",
+   "title": "Массовый блок подсетей Cloudflare, Hetzner и AWS на ТСПУ",
+   "description": "Википедия и Google открываются, но все сайты за Cloudflare TLS ECH и зарубежные хостинги зависают на TLS Handshake.",
+   "upvotes": 39,
+   "ru_sites_ok": true,
+   "foreign_sites_ok": false,
+   "created_at": "2026-11-04T05:02:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  },
+  {
+   "id": 6,
+   "user_id": null,
+   "author_name": "Антон П.",
+   "region": "Нижегородская область",
+   "carrier": "МегаФон",
+   "incident_type": "whitelist",
+   "severity": "high",
+   "status": "active",
+   "title": "В отдельных районах работают только сервисы из белого списка РФ",
+   "description": "В верхней части города и промзоне на мобильном интернете открываются только ВК, Яндекс.Такси и Госуслуги.",
+   "upvotes": 53,
+   "ru_sites_ok": true,
+   "foreign_sites_ok": false,
+   "created_at": "2026-11-04T02:44:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  },
+  {
+   "id": 7,
+   "user_id": null,
+   "author_name": "Сергей Л.",
+   "region": "Москва и МО",
+   "carrier": "Ростелеком",
+   "incident_type": "vpn_block",
+   "severity": "moderate",
+   "status": "active",
+   "title": "Усиление блокировок WireGuard и OpenVPN на домашнем интернете",
+   "description": "Чистый WireGuard и OpenVPN перестали поднимать хендшейк с первой секунды. AmneziaWG и VLESS Reality продолжают работать стабильно.",
+   "upvotes": 28,
+   "ru_sites_ok": true,
+   "foreign_sites_ok": true,
+   "created_at": "2026-11-03T23:14:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  },
+  {
+   "id": 8,
+   "user_id": null,
+   "author_name": "Ольга Н.",
+   "region": "Ленинградская область",
+   "carrier": "Yota",
+   "incident_type": "mobile_shutdown",
+   "severity": "moderate",
+   "status": "resolved",
+   "title": "Утренние ограничения мобильного 4G сняты",
+   "description": "С 05:30 до 09:40 наблюдался режим белых списков в области, сейчас глобальный трафик и зарубежные CDN полностью восстановились.",
+   "upvotes": 19,
+   "ru_sites_ok": true,
+   "foreign_sites_ok": true,
+   "created_at": "2026-11-03T16:14:15.376Z",
+   "user_upvoted": false,
+   "is_owner": false
+  }
+ ],
+ "subscriptions": []
+}

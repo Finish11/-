@@ -1,0 +1,15 @@
+services:
+  pulsenet:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      # база и её WAL-файлы переживают перезапуск контейнера
+      - pulsenet-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  pulsenet-data:

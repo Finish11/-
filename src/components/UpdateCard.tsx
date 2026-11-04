@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { ArrowDownToLine, CheckCircle2, Download, Loader2, Sparkles, TriangleAlert, X } from 'lucide-react';
 import {
   ApkUpdater,
@@ -78,13 +79,28 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
         setPhase('permission');
         showToast('info', 'Разрешите установку из этого источника и нажмите «Установить» ещё раз');
       } else {
-        showToast('success', 'Откройте системный установщик, чтобы завершить обновление');
+        showToast('success', 'Установщик открыт — подтвердите обновление в системном окне');
       }
     } catch (err) {
       setPhase('error');
       setError(err instanceof Error ? err.message : 'Не удалось открыть установщик');
     }
   };
+
+  // Вернулись из системных настроек «Установка неизвестных приложений» —
+  // сразу пробуем открыть установщик снова, без лишних нажатий.
+  useEffect(() => {
+    if (phase !== 'permission') return;
+    let remove: (() => void) | undefined;
+    CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void startInstall();
+    })
+      .then((h) => {
+        remove = () => void h.remove();
+      })
+      .catch(() => undefined);
+    return () => remove?.();
+  }, [phase]);
 
   const handleUpdate = async () => {
     if (!info) return;
@@ -162,7 +178,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
             {phase === 'permission'
               ? 'Разрешите «Установка неизвестных приложений» для ПульсСети и вернитесь в приложение — установка начнётся сразу.'
               : phase === 'installing'
-              ? 'Открываем системный установщик…'
+              ? 'Установщик открыт. Подтвердите обновление в системном окне — приложение обновится поверх, данные сохранятся.'
               : phase === 'downloading'
               ? `Скачиваем APK: ${progress}%`
               : 'Новая версия уже собрана. Обновитесь, чтобы получить свежие проверки и исправления.'}

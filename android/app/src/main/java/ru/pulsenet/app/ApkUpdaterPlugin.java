@@ -12,9 +12,8 @@ import android.provider.Settings;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -132,19 +131,23 @@ public class ApkUpdaterPlugin extends Plugin {
             // установщик часто не может прочитать. Копируем файл в кэш приложения
             // и отдаём его через FileProvider — так установщик открывается стабильно.
             File apk = new File(getContext().getCacheDir(), "pulsenet-update.apk");
-            InputStream in = downloadManager().openDownloadedFile(id);
-            if (in == null) {
+            FileInputStream source = downloadManager().openDownloadedFile(id);
+            if (source == null) {
                 call.reject("Файл ещё не скачан");
                 return;
             }
-            try (InputStream source = in; OutputStream target = new FileOutputStream(apk)) {
-                byte[] buffer = new byte[64 * 1024];
+            FileOutputStream target = new FileOutputStream(apk);
+            try {
+                byte[] buffer = new byte[65536];
                 int read;
-                while ((read = source.read(buffer)) != -1) {
+                while ((read = source.read(buffer)) > 0) {
                     target.write(buffer, 0, read);
                 }
+            } finally {
+                target.close();
+                source.close();
             }
-            if (!apk.exists() || apk.length() < 1024 * 1024) {
+            if (apk.length() < 1048576L) {
                 call.reject("Скачанный файл повреждён или слишком мал — скачайте ещё раз");
                 return;
             }

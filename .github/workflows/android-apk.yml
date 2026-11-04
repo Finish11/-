@@ -1,5 +1,7 @@
-# Собирает Android APK (Capacitor + автономная демо-сборка) и кладёт его артефактом.
-# Готовый файл: вкладка Actions → нужный запуск → раздел Artifacts → pulsenet-debug-apk.
+# Собирает Android APK (Capacitor + автономная демо-сборка).
+# Артефакт: Actions → Artifacts → pulsenet-debug-apk.
+# Публичный файл: GitHub Releases, тег android-latest
+#   https://github.com/<owner>/<repo>/releases/download/android-latest/pulsenet-debug.apk
 name: Android APK
 
 on:
@@ -30,6 +32,9 @@ on:
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   apk:
@@ -90,7 +95,8 @@ jobs:
       - name: Переименовать APK
         run: |
           mkdir -p apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk "apk/pulsenet-${GITHUB_SHA::7}-debug.apk"
+          # Имя стабильное, чтобы ссылка на релиз не менялась между сборками
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk/pulsenet-debug.apk
           ls -lh apk
 
       - name: Загрузить APK
@@ -100,3 +106,37 @@ jobs:
           path: apk/*.apk
           retention-days: 30
           if-no-files-found: error
+
+      # Публикуем в Releases — оттуда файл скачивается без входа в GitHub.
+      # На pull_request не публикуем, чтобы ревью не меняло релиз.
+      - name: Опубликовать в Releases
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA_SHORT="${GITHUB_SHA::7}"
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/pulsenet-debug.apk"
+          NOTES="$(cat <<EOF
+          Debug-сборка приложения «ПульсСети» для Android: Capacitor 8 + автономная демо-сборка.
+          Внутри работает без сети и без сервера (демо-данные, мок-API).
+
+          Коммит: \`${SHA_SHORT}\`
+          Собрано: $(date -u '+%Y-%m-%d %H:%M UTC')
+
+          **Установка:** скачайте \`pulsenet-debug.apk\` на телефон, откройте файл,
+          разрешите установку из этого источника. Android 7.0 и новее.
+
+          **Прямая ссылка:** ${RELEASE_URL}
+
+          Подпись отладочная (debug keystore) — для тестирования и личной установки.
+          Это диагностический инструмент, а не официальный источник данных о блокировках.
+          EOF
+          )"
+          # Пересоздаём релиз, чтобы тег указывал на текущий коммит, а файл был свежим
+          gh release delete android-latest --yes --cleanup-tag > /dev/null 2>&1 || true
+          gh release create android-latest apk/pulsenet-debug.apk \
+            --target "${GITHUB_SHA}" \
+            --title "ПульсСети для Android — debug-сборка (${SHA_SHORT})" \
+            --notes "${NOTES}" \
+            --prerelease

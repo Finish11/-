@@ -51,8 +51,20 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # Android SDK уже установлен на ubuntu-latest (ANDROID_HOME задан).
+      # Платформу 36 при необходимости достанавливаем через sdkmanager.
       - name: Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ -n "$SDKMANAGER" ] && [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" > /dev/null || true
+          fi
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
 
       - name: Кэш Gradle
         uses: actions/cache@v4

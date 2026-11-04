@@ -9,12 +9,6 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 
-import androidx.core.content.FileProvider;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -127,36 +121,11 @@ public class ApkUpdaterPlugin extends Plugin {
                 return;
             }
 
-            // DownloadManager отдаёт свой content://-Uri, который системный
-            // установщик часто не может прочитать. Копируем файл в кэш приложения
-            // и отдаём его через FileProvider — так установщик открывается стабильно.
-            File apk = new File(getContext().getCacheDir(), "pulsenet-update.apk");
-            FileInputStream source = downloadManager().openDownloadedFile(id);
-            if (source == null) {
+            Uri apkUri = downloadManager().getUriForDownloadedFile(id);
+            if (apkUri == null) {
                 call.reject("Файл ещё не скачан");
                 return;
             }
-            FileOutputStream target = new FileOutputStream(apk);
-            try {
-                byte[] buffer = new byte[65536];
-                int read;
-                while ((read = source.read(buffer)) > 0) {
-                    target.write(buffer, 0, read);
-                }
-            } finally {
-                target.close();
-                source.close();
-            }
-            if (apk.length() < 1048576L) {
-                call.reject("Скачанный файл повреждён или слишком мал — скачайте ещё раз");
-                return;
-            }
-
-            Uri apkUri = FileProvider.getUriForFile(
-                getContext(),
-                getContext().getPackageName() + ".fileprovider",
-                apk
-            );
 
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(apkUri, "application/vnd.android.package-archive");

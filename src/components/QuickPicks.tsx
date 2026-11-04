@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, Plus, Sparkles, TriangleAlert } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Check, ChevronDown, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { QUICK_PICKS, QUICK_PICK_TONES, type QuickPick } from '../lib/quickPicks';
 import type { Site } from '../types';
@@ -9,36 +9,43 @@ interface QuickPicksProps {
   darkMode: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
   onSitesChanged: () => void;
-  /** Компактный режим — сетка в две колонки без описаний. */
-  compact?: boolean;
+  onOpenCatalog: () => void;
 }
 
 /**
- * «Быстрый выбор»: популярные сервисы (AI-чаты, мессенджеры, YouTube, игры),
- * которые добавляются в каталог одним тапом и сразу участвуют в замерах.
+ * Быстрый выбор сервисов: то, что уже добавлено, висит компактными чипами прямо
+ * под главной кнопкой, остальное раскрывается по «Добавить сервис».
+ * Любой чип можно убрать — сервис удаляется из каталога.
  */
 export const QuickPicks: React.FC<QuickPicksProps> = ({
   sites,
   darkMode,
   showToast,
   onSitesChanged,
-  compact = false,
+  onOpenCatalog,
 }) => {
-  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const knownDomains = useMemo(
-    () => new Set(sites.map((s) => s.domain.replace(/^www\./, '').toLowerCase())),
-    [sites]
+  const byDomain = useMemo(() => {
+    const map = new Map<string, Site>();
+    sites.forEach((s) => map.set(s.domain.replace(/^www\./, '').toLowerCase(), s));
+    return map;
+  }, [sites]);
+
+  const added = useMemo(
+    () =>
+      QUICK_PICKS.map((pick) => ({
+        pick,
+        site: byDomain.get(pick.domain.replace(/^www\./, '').toLowerCase()),
+      })).filter((x): x is { pick: QuickPick; site: Site } => Boolean(x.site)),
+    [byDomain]
   );
 
-  useEffect(() => {
-    const next = new Set<string>();
-    for (const pick of QUICK_PICKS) {
-      if (knownDomains.has(pick.domain.replace(/^www\./, '').toLowerCase())) next.add(pick.id);
-    }
-    setAdded(next);
-  }, [knownDomains]);
+  const notAdded = useMemo(
+    () => QUICK_PICKS.filter((pick) => !byDomain.has(pick.domain.replace(/^www\./, '').toLowerCase())),
+    [byDomain]
+  );
 
   const handleAdd = async (pick: QuickPick) => {
     if (busy) return;
@@ -57,8 +64,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           }`,
         }),
       });
-      setAdded((prev) => new Set(prev).add(pick.id));
-      showToast('success', `${pick.name} добавлен в каталог — попадёт в следующий замер`);
+      showToast('success', `${pick.name} добавлен — попадёт в следующий замер`);
       onSitesChanged();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Не удалось добавить сервис');
@@ -67,74 +73,120 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   };
 
-  const card = darkMode ? 'bg-slate-900/60 border-slate-800/80' : 'bg-white border-slate-200';
+  const handleRemove = async (pick: QuickPick, site: Site) => {
+    if (busy) return;
+    setBusy(pick.id);
+    try {
+      await apiFetch(`/api/sites/${site.id}`, { method: 'DELETE' });
+      showToast('info', `${pick.name} убран из каталога`);
+      onSitesChanged();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Не удалось убрать сервис');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const chip = darkMode
+    ? 'bg-slate-900/70 border-slate-800 text-slate-200'
+    : 'bg-white border-slate-200 text-slate-700';
 
   return (
-    <div className={`rounded-3xl border p-4 sm:p-5 ${card}`}>
-      <div className="flex items-start gap-2.5">
-        <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center shrink-0">
-          <Sparkles className="w-4 h-4 text-sky-400" />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-bold">Быстрый выбор сервисов</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-            Добавьте то, чем пользуетесь: сервисы попадут в каталог и будут проверяться при
-            каждом замере — удобно сверять, что открывается с VPN, а что без.
-          </p>
-        </div>
-      </div>
+    <div className="mt-3">
+      {/* Мои сервисы — компактные чипы под кнопкой */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+          Мои сервисы
+        </span>
 
-      <div className={`grid gap-2 mt-3 ${compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
-        {QUICK_PICKS.map((pick) => {
-          const isAdded = added.has(pick.id);
-          const isBusy = busy === pick.id;
-          const tone = QUICK_PICK_TONES[pick.tone] || QUICK_PICK_TONES.sky;
-          return (
+        {added.map(({ pick, site }) => (
+          <span
+            key={pick.id}
+            className={`inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-full border text-[11px] font-semibold ${chip}`}
+            title={pick.caveat || `${pick.domain} · пинг последнего замера: ${site.last_latency_ms ?? '—'} мс`}
+          >
+            <span>{pick.emoji}</span>
+            {pick.name}
             <button
-              key={pick.id}
               type="button"
-              disabled={isAdded || isBusy}
-              onClick={() => handleAdd(pick)}
-              title={pick.caveat || pick.hint}
-              className={`relative text-left rounded-2xl border p-3 transition-all active:scale-[0.98] ${
-                isAdded
-                  ? darkMode
-                    ? 'border-emerald-500/30 bg-emerald-500/10'
-                    : 'border-emerald-300 bg-emerald-50'
-                  : `bg-gradient-to-br ${tone} hover:brightness-110`
-              }`}
+              onClick={() => handleRemove(pick, site)}
+              disabled={busy === pick.id}
+              className="p-1 rounded-full text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 active:scale-90"
+              aria-label={`Убрать ${pick.name}`}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-lg leading-none">{pick.emoji}</span>
-                <span
-                  className={`text-xs font-bold truncate ${
-                    isAdded ? 'text-emerald-400' : darkMode ? 'text-white' : 'text-slate-900'
-                  }`}
-                >
-                  {pick.name}
-                </span>
-                <span className="ml-auto shrink-0">
-                  {isAdded ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
-                  ) : isBusy ? (
-                    <Loader2 className="w-4 h-4 animate-spin opacity-70" />
-                  ) : (
-                    <Plus className="w-4 h-4 opacity-70" />
-                  )}
-                </span>
-              </div>
-              {!compact && (
-                <div className="text-[10px] mt-1 opacity-80 leading-snug line-clamp-2">
-                  {isAdded ? 'Уже в каталоге' : pick.hint}
-                </div>
-              )}
-              {pick.caveat && !isAdded && !compact && (
-                <TriangleAlert className="absolute bottom-1.5 right-1.5 w-3 h-3 opacity-50" />
+              {busy === pick.id ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <X className="w-3 h-3" />
               )}
             </button>
-          );
-        })}
+          </span>
+        ))}
+
+        {added.length === 0 && (
+          <span className="text-[11px] text-slate-500">пока пусто — добавьте свои ниже</span>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="inline-flex items-center gap-1 pl-2 pr-2.5 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-400 text-[11px] font-bold active:scale-95"
+        >
+          {expanded ? <ChevronDown className="w-3 h-3 rotate-180" /> : <Plus className="w-3 h-3" />}
+          {expanded ? 'Свернуть' : 'Добавить сервис'}
+        </button>
       </div>
+
+      {/* Раскрывающаяся сетка */}
+      {expanded && (
+        <div className="mt-3 rounded-2xl border p-3" style={{ borderColor: 'transparent' }}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+            <span className="text-[11px] font-bold">Популярное</span>
+            <button
+              type="button"
+              onClick={onOpenCatalog}
+              className="ml-auto text-[11px] text-sky-400 hover:underline"
+            >
+              свой сайт →
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {notAdded.map((pick) => {
+              const tone = QUICK_PICK_TONES[pick.tone] || QUICK_PICK_TONES.sky;
+              const isBusy = busy === pick.id;
+              return (
+                <button
+                  key={pick.id}
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => handleAdd(pick)}
+                  title={pick.caveat || pick.hint}
+                  className={`text-left rounded-xl border p-2.5 bg-gradient-to-br ${tone} active:scale-[0.98] transition-transform`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base leading-none">{pick.emoji}</span>
+                    <span className={`text-[11px] font-bold truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {pick.name}
+                    </span>
+                    <span className="ml-auto shrink-0">
+                      {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    </span>
+                  </div>
+                  <div className="text-[10px] mt-0.5 opacity-75 line-clamp-1">{pick.hint}</div>
+                </button>
+              );
+            })}
+
+            {notAdded.length === 0 && (
+              <div className="col-span-2 sm:col-span-3 flex items-center gap-1.5 text-[11px] text-emerald-400 py-1">
+                <Check className="w-3.5 h-3.5" /> Все сервисы из списка уже в каталоге
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

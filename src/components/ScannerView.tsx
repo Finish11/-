@@ -42,6 +42,10 @@ import {
 } from '../lib/scanner';
 import { apiFetch } from '../lib/api';
 import { QuickPicks } from './QuickPicks';
+import { isNativeApp } from '../lib/nativeBridge';
+import { runRealSiteScan } from '../lib/realScan';
+import { useSettings } from '../lib/appSettings';
+import { connectionLabel, detectNetworkContext, type NetworkContext } from '../lib/networkInfo';
 
 interface ScannerViewProps {
   user: User;
@@ -72,6 +76,19 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   showToast,
 }) => {
   const [simMode, setSimMode] = useState<SimulationMode>(IS_DEMO_BUILD ? 'sim_whitelist' : 'live');
+  const [appSettings] = useSettings();
+  const [netCtx, setNetCtx] = useState<NetworkContext | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    detectNetworkContext()
+      .then((c) => alive && setNetCtx(c))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const [phase, setPhase] = useState<
     'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done'
   >('idle');
@@ -203,15 +220,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setSiteFilter('all');
     setProgress({ done: 0, total: enabledSitesCount, currentDomain: '' });
 
-    const results = await runMultiSiteScan(
-      sites,
-      effectiveSimMode,
-      (done, total, latest, partial) => {
-        setProgress({ done, total, currentDomain: latest.domain });
-        setLiveResults([...partial]);
-      },
-      ctrl.signal
-    );
+    const progressCb = (done: number, total: number, latest: ScanSiteResult, partial: ScanSiteResult[]) => {
+      setProgress({ done, total, currentDomain: latest.domain });
+      setLiveResults([...partial]);
+    };
+
+    // В приложении для Android замеры настоящие: запросы идут нативным HTTP
+    // и не упираются в CORS. В браузере остаются симуляции.
+    const useRealProbes = isNativeApp() && appSettings.probeMode !== 'demo';
+
+    const results = useRealProbes
+      ? await runRealSiteScan(sites, progressCb, ctrl.signal)
+      : await runMultiSiteScan(sites, effectiveSimMode, progressCb, ctrl.signal);
 
     if (ctrl.signal.aborted) return;
 
@@ -628,14 +648,45 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         </div>
       </div>
 
-      {/* ==================== БЫСТРЫЙ ВЫБОР СЕРВИСОВ ==================== */}
+      {/* ==================== МОИ СЕРВИСЫ ПОД ГЛАВНОЙ КНОПКОЙ ==================== */}
       {phase !== 'scanning' && (
-        <div className="mt-4">
+        <div className="mt-3">
+          <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
+            <span className={`px-2 py-0.5 rounded-full border ${
+              netCtx?.kind === 'cellular'
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border-slate-700/60 bg-slate-800/40 text-slate-300'
+            }`}>
+              {connectionLabel(netCtx?.kind || 'unknown')}
+            </span>
+            {(netCtx?.operator || user.carrier) && (
+              <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
+                {netCtx?.operator || user.carrier}
+              </span>
+            )}
+            {(netCtx?.city || user.region) && (
+              <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
+                {netCtx?.city || user.region}
+              </span>
+            )}
+            {netCtx?.source !== 'settings' && !netCtx?.operator && (
+              <button
+                type="button"
+                onClick={onNavigateSites}
+                className="text-sky-400 hover:underline"
+                title="Оператор и город можно указать в настройках"
+              >
+                уточнить
+              </button>
+            )}
+          </div>
+
           <QuickPicks
             sites={sites}
             darkMode={darkMode}
             showToast={showToast}
             onSitesChanged={onSitesChanged}
+            onOpenCatalog={onNavigateSites}
           />
         </div>
       )}

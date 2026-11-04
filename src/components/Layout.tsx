@@ -22,6 +22,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { UpdateCard } from './UpdateCard';
+import { SettingsSheet } from './SettingsSheet';
 
 export type NavTab = 'scanner' | 'sites' | 'vpn' | 'incidents' | 'history';
 
@@ -64,6 +65,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [demoBanner, setDemoBanner] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editName, setEditName] = useState(user.name);
   const [editRegion, setEditRegion] = useState(user.region);
   const [editCarrier, setEditCarrier] = useState(user.carrier);
@@ -354,6 +356,16 @@ export const Layout: React.FC<LayoutProps> = ({
           </button>
 
           <button
+            onClick={() => setSettingsOpen(true)}
+            className={`p-2.5 rounded-xl border active:scale-95 transition-transform ${
+              darkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
+            }`}
+            aria-label="Настройки"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={onToggleTheme}
             className={`p-2.5 rounded-xl border active:scale-95 transition-transform ${
               darkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
@@ -402,6 +414,14 @@ export const Layout: React.FC<LayoutProps> = ({
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7">{children}</div>
       </main>
+
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        darkMode={darkMode}
+        onToggleTheme={onToggleTheme}
+        showToast={showToast}
+      />
 
       {/* ==================== MOBILE BOTTOM TAB BAR ==================== */}
       <nav

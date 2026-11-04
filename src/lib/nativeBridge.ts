@@ -58,6 +58,82 @@ export async function nativeGet(url: string, timeoutMs = 15000): Promise<NativeH
   }
 }
 
+/**
+ * Загрузка текста с любого адреса. Порядок попыток подобран под реальные панели:
+ * сначала нативный HTTP (в APK он не подчиняется CORS), затем обычный fetch
+ * (часть панелей отдаёт Access-Control-Allow-Origin: *), потом XHR.
+ * В ошибку собираем причины всех попыток — по ней видно, где именно затык.
+ */
+export async function fetchTextUniversal(url: string, timeoutMs = 20000): Promise<string> {
+  const attempts: string[] = [];
+  const cleanUrl = encodeURI(decodeURI(url.trim()));
+
+  if (isNativeApp()) {
+    try {
+      const res = await nativeGet(cleanUrl, timeoutMs);
+      if (res.status >= 200 && res.status < 300) return res.text;
+      attempts.push(`нативный HTTP: сервер ответил ${res.status}`);
+    } catch (err) {
+      attempts.push(`нативный HTTP: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(cleanUrl, { signal: ctrl.signal, redirect: 'follow' });
+    clearTimeout(timer);
+    if (res.ok) return await res.text();
+    attempts.push(`fetch: сервер ответил ${res.status}`);
+  } catch (err) {
+    attempts.push(
+      `fetch: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  throw new Error(
+    `Не удалось скачать подписку. ${attempts.join('; ')}. ` +
+      'Если панель закрыта паролем или блокирует приложение, вставьте ссылки узлов вручную.'
+  );
+}
+
+/** Замер одного сайта: время ответа на probe_url. Возвращает мс или null. */
+export async function measureUrl(
+  url: string,
+  timeoutMs = 6000
+): Promise<{ latencyMs: number | null; reason?: string }> {
+  const started = Date.now();
+  if (isNativeApp()) {
+    try {
+      await CapacitorHttp.request({
+        url,
+        method: 'GET',
+        responseType: 'text',
+        connectTimeout: timeoutMs,
+        readTimeout: timeoutMs,
+      });
+      return { latencyMs: Date.now() - started };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        latencyMs: null,
+        reason: /timeout|timed out/i.test(msg) ? 'таймаут' : 'нет соединения',
+      };
+    }
+  }
+
+  // Браузер: только no-cors-пинг, содержимое недоступно
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    await fetch(url, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(timer);
+    return { latencyMs: Date.now() - started };
+  } catch {
+    return { latencyMs: null, reason: 'нет соединения или CORS' };
+  }
+}
+
 export type NodeStatus = 'online' | 'degraded' | 'blocked';
 
 export interface NodeProbe {

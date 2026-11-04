@@ -36,6 +36,16 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+/* Верхняя шапка: отступ под статус-бар и «шторку» на телефоне, чтобы кнопки были
+   доступны для нажатия (в APK WebView рисуется под системными панелями). */
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.pb-safe-page {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
 @keyframes scanSweep {
   0% {
     transform: rotate(0deg);

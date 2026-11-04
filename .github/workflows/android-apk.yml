@@ -83,6 +83,13 @@ jobs:
       - name: Зависимости
         run: npm ci --no-audit --no-fund
 
+      - name: Версия из package.json
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          sed -i -E "s/versionName \"[^\"]*\"/versionName \"$VERSION\"/" android/app/build.gradle
+          grep -n 'versionName' android/app/build.gradle
+
       - name: Демо-сборка и синхронизация с Android
         run: npm run android:sync
 
@@ -116,10 +123,18 @@ jobs:
         run: |
           set -euo pipefail
           SHA_SHORT="${GITHUB_SHA::7}"
+          VERSION="${APP_VERSION:-0.0.0}"
           RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/pulsenet-debug.apk"
           NOTES="$(cat <<EOF
+          Версия: ${VERSION}
+
+          Что нового в 1.1.0:
+          - верхняя панель больше не заезжает под статус-бар, кнопки крупнее
+          - быстрый выбор сервисов: ChatGPT, Claude, Gemini, Telegram, WhatsApp, YouTube, Brawl Stars
+          - настоящий импорт подписки и проверка узлов из приложения (нативный HTTP)
+          - обновление прямо из приложения: проверка версии, загрузка и установка APK
+
           Debug-сборка приложения «ПульсСети» для Android: Capacitor 8 + автономная демо-сборка.
-          Внутри работает без сети и без сервера (демо-данные, мок-API).
 
           Коммит: \`${SHA_SHORT}\`
           Собрано: $(date -u '+%Y-%m-%d %H:%M UTC')
@@ -137,6 +152,6 @@ jobs:
           gh release delete android-latest --yes --cleanup-tag > /dev/null 2>&1 || true
           gh release create android-latest apk/pulsenet-debug.apk \
             --target "${GITHUB_SHA}" \
-            --title "ПульсСети для Android — debug-сборка (${SHA_SHORT})" \
+            --title "ПульсСети ${VERSION} для Android (${SHA_SHORT})" \
             --notes "${NOTES}" \
             --prerelease

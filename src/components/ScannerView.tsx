@@ -41,6 +41,7 @@ import {
   runMultiSiteScan,
 } from '../lib/scanner';
 import { apiFetch } from '../lib/api';
+import { QuickPicks } from './QuickPicks';
 
 interface ScannerViewProps {
   user: User;
@@ -51,6 +52,8 @@ interface ScannerViewProps {
   onScanSaved: (scan: ScanRecord) => void;
   onQuickReportIncident: (scan: ScanRecord) => void;
   onNavigateSites: () => void;
+  /** Перечитать каталог после «быстрого выбора» сервисов. */
+  onSitesChanged: () => void;
   darkMode: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
@@ -64,6 +67,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   onScanSaved,
   onQuickReportIncident,
   onNavigateSites,
+  onSitesChanged,
   darkMode,
   showToast,
 }) => {
@@ -623,6 +627,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* ==================== БЫСТРЫЙ ВЫБОР СЕРВИСОВ ==================== */}
+      {phase !== 'scanning' && (
+        <div className="mt-4">
+          <QuickPicks
+            sites={sites}
+            darkMode={darkMode}
+            showToast={showToast}
+            onSitesChanged={onSitesChanged}
+          />
+        </div>
+      )}
 
       {/* ==================== VPN DETECTED ACTION MODAL / SHEET ==================== */}
       {(phase === 'vpn_prompt' || phase === 'waiting_vpn_off') && detectedConn && (

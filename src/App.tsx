@@ -273,6 +273,7 @@ export function App() {
                 onScanSaved={handleScanSaved}
                 onQuickReportIncident={handleQuickReportIncident}
                 onNavigateSites={() => setActiveTab('sites')}
+                onSitesChanged={loadWorkspaceData}
                 darkMode={darkMode}
                 showToast={showToast}
               />

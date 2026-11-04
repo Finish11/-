@@ -20,6 +20,13 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
     webContentsDebuggingEnabled: false,
   },
+  plugins: {
+    // Нативный HTTP вместо WebView: снимает CORS-ограничения — можно скачать
+    // подписку с любого домена и постучать по порту узла (проверка доступности).
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
   server: {
     androidScheme: 'https',
     // url: 'https://pulsenet.example.com',

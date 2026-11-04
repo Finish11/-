@@ -4,6 +4,10 @@
 включены ли **белые списки** мобильного интернета в РФ, работает ли **ТСПУ/DPI** и не
 идёт ли **глушение сети**, а также ведёт **мониторинг VPN-подписок и узлов**.
 
+**Скачать для Android:** [pulsenet-debug.apk](https://github.com/Finish11/-/releases/download/android-latest/pulsenet-debug.apk)
+— debug-сборка 4.4 МБ, Android 7.0+, работает офлайн, подробности в разделе
+[Android (APK)](#android-apk).
+
 > Это учебно-демонстрационный проект: диагноз строится по доступности набора сайтов,
 > он не является официальным источником и не заменяет измерения оператора.
 
@@ -137,9 +141,18 @@ CI `.github/workflows/ci.yml` на каждый push проверяет типы
 демо-сборка (`demo-standalone.html`), поэтому APK работает без сети и без бэкенда.
 Размер ~5 МБ, `minSdk 24` (Android 7.0+), `targetSdk 36`.
 
-**Взять готовый APK:** вкладка *Actions* → workflow **Android APK** → нужный запуск →
-раздел *Artifacts* → `pulsenet-debug-apk`. Внутри — `pulsenet-<sha>-debug.apk`.
-Сборка на раннере использует предустановленный Android SDK, локально ничего ставить не нужно.
+**Скачать APK:** [github.com/Finish11/-/releases/tag/android-latest](https://github.com/Finish11/-/releases/tag/android-latest) —
+файл `pulsenet-debug.apk`, входит в публичный релиз и качается без авторизации.
+Релиз пересоздаётся на каждую сборку, ссылка на файл не меняется:
+
+```
+https://github.com/Finish11/-/releases/download/android-latest/pulsenet-debug.apk
+```
+
+Сборку ставит workflow **Android APK** (`.github/workflows/android-apk.yml`): на раннере
+GitHub, с предустановленным Android SDK. Тот же APK остаётся артефактом запуска
+(*Actions → нужный запуск → Artifacts*), но артефакты скачиваются только с авторизацией —
+поэтому основная раздача идёт через Releases.
 
 **Установка на телефон:** скачайте и откройте `.apk` на устройстве, разрешите установку
 из этого источника (*Настройки → Приложения → Установка неизвестных приложений*).

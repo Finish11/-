@@ -51,7 +51,7 @@
 |---|---|
 | `.github/workflows/ci.yml` | typecheck + build + build:demo на каждый push |
 | `.github/workflows/deploy-demo-pages.yml` | публикация демо на GitHub Pages |
-| `.github/workflows/android-apk.yml` | сборка debug APK на раннере, артефакт `pulsenet-debug-apk` |
+| `.github/workflows/android-apk.yml` | сборка debug APK на раннере: артефакт + публикация в Releases (тег `android-latest`) |
 | `capacitor.config.ts` | Capacitor: `appId`, `appName`, `webDir: demo-dist`, `server.url` для боевого режима |
 | `android/` | нативный Android-проект (Capacitor): тема, иконки, сплэш, gradle |
 | `scripts/android-assets.mjs` | `demo-dist/demo.html` → `index.html` для Capacitor |

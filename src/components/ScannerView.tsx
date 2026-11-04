@@ -89,7 +89,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       alive = false;
     };
     // пересчитываем при смене оператора/города/типа сети в настройках
-  }, [appSettings.operator, appSettings.city, appSettings.networkType]);
+  }, [appSettings.operator, appSettings.city, appSettings.networkType, appSettings.probeMode]);
 
   const [phase, setPhase] = useState<
     'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done'
@@ -244,14 +244,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const okCount = results.filter((r) => r.status === 'ok' || r.status === 'slow').length;
     void notifyScanResult(
       `Проверка готова: ${evaluated.verdict_title}`,
-      `${okCount} из ${results.length} доступны · ${netCtx?.operator || user.carrier}${
+      `${okCount} из ${results.length} доступны · ${appSettings.operator || netCtx?.operator || user.carrier}${
         netCtx?.city ? ', ' + netCtx.city : ''
       }`
     );
     const carrierLabel =
       vpnMode === 'with_vpn'
         ? `VPN • ${conn.country_name}${conn.city ? `, ${conn.city}` : ''}`
-        : `${conn.isp || user.carrier} • ${conn.city || user.region}`;
+        : `${appSettings.operator || conn.isp || user.carrier} • ${
+            appSettings.city || conn.city || user.region
+          }`;
 
     try {
       const saved = await apiFetch<{ scan: ScanRecord }>('/api/scans', {
@@ -672,12 +674,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </span>
             {(netCtx?.operator || user.carrier) && (
               <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
-                {netCtx?.operator || user.carrier}
+                {appSettings.operator || netCtx?.operator || user.carrier}
               </span>
             )}
             {(netCtx?.city || user.region) && (
               <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
-                {netCtx?.city || user.region}
+                {appSettings.city || netCtx?.city || user.region}
               </span>
             )}
             {netCtx?.source !== 'settings' && !netCtx?.operator && (

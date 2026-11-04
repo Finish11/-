@@ -96,6 +96,8 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   showToast,
 }) => {
   const [settings, update] = useSettings();
+  const [draft, setDraft] = useState(settings);
+  useEffect(() => setDraft(settings), [settings]);
   const [ctx, setCtx] = useState<NetworkContext | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -210,8 +212,8 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
               </span>
               <select
                 className={field}
-                value={settings.operator}
-                onChange={(e) => update({ operator: e.target.value })}
+                value={draft.operator}
+                onChange={(e) => setDraft({ ...draft, operator: e.target.value })}
               >
                 <option value="">
                   {ctx ? `Определён автоматически: ${ctx.operator || 'не распознан'}` : 'Определять автоматически'}
@@ -230,8 +232,8 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
               </span>
               <select
                 className={field}
-                value={settings.city}
-                onChange={(e) => update({ city: e.target.value })}
+                value={draft.city}
+                onChange={(e) => setDraft({ ...draft, city: e.target.value })}
               >
                 <option value="">
                   {ctx?.city ? `Определён автоматически: ${ctx.city}` : 'Определять автоматически'}
@@ -247,8 +249,8 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
             <div>
               <span className="text-[11px] text-slate-500 mb-1 block">Тип подключения</span>
               <Segmented<NetworkType>
-                value={settings.networkType}
-                onChange={(v) => update({ networkType: v })}
+                value={draft.networkType}
+                onChange={(v) => setDraft({ ...draft, networkType: v })}
                 dark={darkMode}
                 options={[
                   { value: 'auto', label: 'Авто' },
@@ -266,8 +268,8 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
             dark={darkMode}
           >
             <Segmented<ProbeMode>
-              value={settings.probeMode}
-              onChange={(v) => update({ probeMode: v })}
+              value={draft.probeMode}
+              onChange={(v) => setDraft({ ...draft, probeMode: v })}
               dark={darkMode}
               options={[
                 { value: 'auto', label: 'Авто' },
@@ -323,6 +325,29 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
               </div>
             </div>
           </Section>
+        </div>
+
+        <div className="sticky bottom-0 -mx-5 -mb-5 mt-5 px-5 py-3 border-t border-slate-800/60 backdrop-blur-xl flex items-center gap-2 bg-inherit">
+          <button
+            type="button"
+            onClick={() => setDraft(settings)}
+            className={`flex-1 py-2.5 rounded-xl border text-xs font-bold ${
+              darkMode ? 'border-slate-800 text-slate-300' : 'border-slate-200 text-slate-600'
+            }`}
+          >
+            Сбросить
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              update(draft);
+              showToast('success', `Сохранено: ${draft.operator || 'оператор авто'} · ${draft.city || 'город авто'}`);
+              onClose();
+            }}
+            className="flex-[2] py-2.5 rounded-xl bg-sky-500 text-slate-950 text-xs font-extrabold active:scale-95"
+          >
+            Сохранить
+          </button>
         </div>
       </div>
     </div>

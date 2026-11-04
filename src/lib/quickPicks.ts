@@ -97,15 +97,15 @@ export const QUICK_PICKS: QuickPick[] = [
   {
     id: 'brawlstars',
     name: 'Brawl Stars',
-    domain: 'brawlstars.com',
-    probeUrl: 'https://brawlstars.com/favicon.ico',
+    domain: 'store.supercell.com',
+    probeUrl: 'https://store.supercell.com/favicon.ico',
     emoji: '🎮',
-    hint: 'Игра Supercell — сайт игры, а не издателя',
+    hint: 'Игра Supercell (проверяется магазин Supercell)',
     category: 'gaming_stores',
     role: 'dpi_target',
     tone: 'violet',
     caveat:
-      'Сайт игры может открываться, а игра — нет: трафик Brawl Stars идёт по UDP. Здесь показана доступность сайта, а не игрового сервера.',
+      'Brawl Stars ограничена для РФ на стороне Supercell, игра ходит на серверы по TCP 9339 — HTTP-проверка видит только магазин Supercell, а не игровой сервер.',
   },
 ];
 

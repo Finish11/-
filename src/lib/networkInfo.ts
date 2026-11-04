@@ -18,6 +18,9 @@ export interface NetworkContext {
   /** Откуда взялись оператор и город. */
   source: 'settings' | 'auto' | 'partial';
   note: string;
+  /** Похоже, что трафик идёт через VPN/прокси. */
+  vpnLikely: boolean;
+  vpnReason: string;
 }
 
 
@@ -115,7 +118,21 @@ export async function detectNetworkContext(): Promise<NetworkContext> {
     ? 'Оператор не распознан по IP — выберите его в настройках'
     : `${kindLabel}${operator ? ` · ${operator}` : ''}${city ? ` · ${city}` : ''}`;
 
+  const ispLower = isp.toLowerCase();
+  const hosting = /hetzner|digitalocean|ovh|vultr|linode|akamai|cloudflare|aeza|selectel|timeweb|amazon|google|microsoft|leaseweb|contabo/.test(
+    ispLower
+  );
+  const foreign = Boolean(geo?.country_code) && geo!.country_code !== 'RU';
+  const vpnLikely = foreign || hosting;
+  const vpnReason = foreign
+    ? `IP-адрес не в России (${geo?.country_code}${geo?.city ? ', ' + geo.city : ''})`
+    : hosting
+    ? `Провайдер похож на дата-центр (${isp})`
+    : '';
+
   return {
+    vpnLikely,
+    vpnReason,
     kind,
     ip: geo?.ip || '',
     city,

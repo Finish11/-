@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Check, ChevronDown, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { QUICK_PICKS, QUICK_PICK_TONES, type QuickPick } from '../lib/quickPicks';
-import type { Site } from '../types';
+import type { ScanSiteResult, Site } from '../types';
 
 interface QuickPicksProps {
   sites: Site[];
@@ -10,6 +10,8 @@ interface QuickPicksProps {
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
   onSitesChanged: () => void;
   onOpenCatalog: () => void;
+  /** Результаты последнего замера — показываем доступность и пинг в чипах. */
+  results?: ScanSiteResult[];
 }
 
 /**
@@ -23,6 +25,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   showToast,
   onSitesChanged,
   onOpenCatalog,
+  results = [],
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -32,6 +35,12 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     sites.forEach((s) => map.set(s.domain.replace(/^www\./, '').toLowerCase(), s));
     return map;
   }, [sites]);
+
+  const resultByDomain = useMemo(() => {
+    const map = new Map<string, ScanSiteResult>();
+    results.forEach((r) => map.set(r.domain.replace(/^www\./, '').toLowerCase(), r));
+    return map;
+  }, [results]);
 
   const added = useMemo(
     () =>
@@ -107,6 +116,24 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           >
             <span>{pick.emoji}</span>
             {pick.name}
+            {(() => {
+              const r = resultByDomain.get(pick.domain.replace(/^www\./, '').toLowerCase());
+              if (!r) return null;
+              return (
+                <span
+                  className={`ml-0.5 font-mono text-[10px] ${
+                    r.status === 'ok'
+                      ? 'text-emerald-400'
+                      : r.status === 'slow'
+                      ? 'text-amber-400'
+                      : 'text-rose-400'
+                  }`}
+                  title={r.status === 'blocked' ? 'Недоступен в последнем замере' : 'Доступен'}
+                >
+                  {r.latency_ms != null ? `${r.latency_ms}мс` : '×'}
+                </span>
+              );
+            })()}
             <button
               type="button"
               onClick={() => handleRemove(pick, site)}

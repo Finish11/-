@@ -54,8 +54,15 @@ export async function importRealSubscription(url: string): Promise<RealSubscript
 
   const parsed = parseSubscriptionText(text);
   if (parsed.nodes.length === 0) {
+    const preview = text.slice(0, 120).replace(/\s+/g, ' ').trim();
+    const hint = /^\s*</.test(text)
+      ? 'Сервер отдал HTML-страницу вместо подписки (обычно так панель требует вход или блокирует клиента).'
+      : /^\s*\{/.test(text)
+      ? 'Похоже на JSON неизвестной структуры.'
+      : 'В ответе не нашлось ни одной ссылки на узлы.';
     throw new Error(
-      'В ответе нет узлов. Возможно, сервер отдал HTML-страницу вместо подписки — проверьте ссылку.'
+      `${hint} Получено ${text.length} символов. Начало ответа: «${preview}». ` +
+        'Уточните ссылку в личном кабинете или вставьте ссылки узлов вручную.'
     );
   }
 

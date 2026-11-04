@@ -145,7 +145,8 @@ function detectCountry(label: string): { code: string; name: string } {
   return { code: 'XX', name: 'Не определена' };
 }
 
-export function safeDecodeBase64(input: string): string {
+export function safeDecodeBase64(rawInput: string): string {
+  const input = normalizeBase64(rawInput);
   const cleaned = input.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
   const padded = cleaned + '='.repeat((4 - (cleaned.length % 4)) % 4);
   try {
@@ -153,6 +154,12 @@ export function safeDecodeBase64(input: string): string {
   } catch {
     return '';
   }
+}
+
+function normalizeBase64(input: string): string {
+  const cleaned = input.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = cleaned.length % 4;
+  return pad === 0 ? cleaned : cleaned + '='.repeat(4 - pad);
 }
 
 function looksLikeBase64(text: string): boolean {

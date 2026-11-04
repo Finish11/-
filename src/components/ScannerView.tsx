@@ -46,6 +46,7 @@ import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
 import { useSettings } from '../lib/appSettings';
 import { connectionLabel, detectNetworkContext, type NetworkContext } from '../lib/networkInfo';
+import { notifyScanResult } from '../lib/notify';
 
 interface ScannerViewProps {
   user: User;
@@ -87,7 +88,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     return () => {
       alive = false;
     };
-  }, []);
+    // пересчитываем при смене оператора/города/типа сети в настройках
+  }, [appSettings.operator, appSettings.city, appSettings.networkType]);
 
   const [phase, setPhase] = useState<
     'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done'
@@ -237,6 +239,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
+
+    // Итог уходит в уведомление — удобно, если приложение свернули
+    const okCount = results.filter((r) => r.status === 'ok' || r.status === 'slow').length;
+    void notifyScanResult(
+      `Проверка готова: ${evaluated.verdict_title}`,
+      `${okCount} из ${results.length} доступны · ${netCtx?.operator || user.carrier}${
+        netCtx?.city ? ', ' + netCtx.city : ''
+      }`
+    );
     const carrierLabel =
       vpnMode === 'with_vpn'
         ? `VPN • ${conn.country_name}${conn.city ? `, ${conn.city}` : ''}`
@@ -687,6 +698,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             showToast={showToast}
             onSitesChanged={onSitesChanged}
             onOpenCatalog={onNavigateSites}
+            results={displayedResults}
           />
         </div>
       )}

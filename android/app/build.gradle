@@ -16,7 +16,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Постоянный debug-ключ из репозитория: APK, собранные в разное время,
+    // имеют одинаковую подпись, поэтому обновление ставится ПОВЕРХ приложения,
+    // без удаления. Это отладочный ключ (пароль pulsenet), не для публикации.
+    signingConfigs {
+        debug {
+            storeFile file('pulsenet-debug.p12')
+            storeType 'PKCS12'
+            storePassword 'pulsenet'
+            keyAlias 'pulsenet'
+            keyPassword 'pulsenet'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

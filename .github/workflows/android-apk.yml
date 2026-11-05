@@ -106,7 +106,25 @@ jobs:
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace > gradle.log 2>&1 || {
+            code=$?
+            tail -120 gradle.log
+            exit $code
+          }
+
+      # В песочнице Arena архив логов Actions недоступен. На ошибке сохраняем
+      # только текст Gradle во временный диагностический релиз, APK сюда не попадает.
+      - name: Диагностика ошибки Gradle
+        if: failure() && github.event_name != 'pull_request' && hashFiles('android/gradle.log') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete apk-build-log --yes --cleanup-tag > /dev/null 2>&1 || true
+          gh release create apk-build-log android/gradle.log \
+            --target "${GITHUB_SHA}" \
+            --title "Диагностика Gradle ${GITHUB_SHA::7}" \
+            --notes "Временный лог неуспешной сборки ${GITHUB_SHA}. После разбора удаляется." \
+            --prerelease
 
       - name: Переименовать APK
         run: |

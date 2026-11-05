@@ -45,7 +45,12 @@ import { QuickPicks } from './QuickPicks';
 import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
 import { useSettings } from '../lib/appSettings';
-import { connectionLabel, detectNetworkContext, type NetworkContext } from '../lib/networkInfo';
+import {
+  connectionLabel,
+  detectNetworkContext,
+  toClientConnection,
+  type NetworkContext,
+} from '../lib/networkInfo';
 import { notifyScanResult } from '../lib/notify';
 
 interface ScannerViewProps {
@@ -144,7 +149,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
 
     setPhase('precheck');
-    const conn = await detectCurrentConnection(simMode);
+    // В APK определяем сеть по-настоящему: иначе кнопка брала мок-данные
+    // и принудительно ставила «без VPN» с чужим оператором.
+    const conn: ClientConnectionInfo = isNativeApp()
+      ? (toClientConnection(await detectNetworkContext()) as ClientConnectionInfo)
+      : await detectCurrentConnection(simMode);
     setDetectedConn(conn);
     onConnectionDetected(conn);
 

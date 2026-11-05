@@ -97,6 +97,48 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   };
 
+  // Запоминаем выбранные сервисы: каталог в APK локальный и при перезапуске
+  // мог не содержать добавленные ранее карточки — восстанавливаем их сами.
+  useEffect(() => {
+    const raw = localStorage.getItem('pulsenet_quick_ids');
+    if (!raw) return;
+    let ids: string[] = [];
+    try {
+      ids = JSON.parse(raw) as string[];
+    } catch {
+      return;
+    }
+    const present = new Set(added.map((a) => a.pick.id));
+    const missing = QUICK_PICKS.filter((pick) => ids.includes(pick.id) && !present.has(pick.id));
+    if (missing.length === 0) return;
+    missing.reduce(
+      (chain, pick) =>
+        chain.then(async () => {
+          try {
+            await apiFetch('/api/sites', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: pick.name,
+                domain: pick.domain,
+                probe_url: pick.probeUrl,
+                category: pick.category,
+                marker_role: pick.role,
+                description: `${pick.hint}. Восстановлено из быстрого выбора 5 ноября 2026.`,
+              }),
+            });
+          } catch {
+            // одну не удалось — остальные всё равно пробуем
+          }
+        }),
+      Promise.resolve() as Promise<unknown>
+    ).then(() => onSitesChanged());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('pulsenet_quick_ids', JSON.stringify(added.map((a) => a.pick.id)));
+  }, [added.map((a) => a.pick.id).join(',')]);
+
   const [gamePing, setGamePing] = useState<Record<string, { ok: boolean; ms: number | null }>>({});
   const gameIds = added.filter((a) => a.pick.gameHost).map((a) => a.pick.id).join(',');
 

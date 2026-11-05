@@ -429,6 +429,28 @@ function parseSingBoxOutbounds(
   return nodes;
 }
 
+/**
+ * Панели отдают конфиг произвольной структуры (sing-box, mihomo, свой формат).
+ * Поэтому ищем узлы рекурсивно: любой массив объектов с типом прокси и адресом.
+ */
+function deepCollectNodes(value: unknown, groupName: string, out: ParsedNode[]): void {
+  if (Array.isArray(value)) {
+    const looksLikeNodes = value.some(
+      (item) =>
+        item && typeof item === 'object' && ('type' in (item as object) || 'protocol' in (item as object))
+    );
+    if (looksLikeNodes) {
+      out.push(...parseSingBoxOutbounds(value as Array<Record<string, unknown>>, groupName));
+      return;
+    }
+    value.forEach((item) => deepCollectNodes(item, groupName, out));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    Object.values(value as Record<string, unknown>).forEach((v) => deepCollectNodes(v, groupName, out));
+  }
+}
+
 export function parseSubscriptionText(
   text: string,
   groupName = '',
@@ -450,15 +472,11 @@ export function parseSubscriptionText(
       const json = JSON.parse(body) as unknown;
 
       // sing-box / готовый JSON-конфиг панели
-      const conf = json as Record<string, unknown>;
-      if (conf && Array.isArray(conf.outbounds)) {
-        const singbox = parseSingBoxOutbounds(
-          conf.outbounds as Array<Record<string, unknown>>,
-          groupName
-        );
-        if (singbox.length > 0) {
-          return { nodes: singbox, format: 'json' };
-        }
+      const deep: ParsedNode[] = [];
+      deepCollectNodes(json, groupName, deep);
+      const uniqueDeep = Array.from(new Map(deep.map((n) => [n.host + ':' + n.port, n])).values());
+      if (uniqueDeep.length > 0) {
+        return { nodes: uniqueDeep, format: 'json' };
       }
 
       const list = Array.isArray(json)

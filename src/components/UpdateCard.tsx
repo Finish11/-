@@ -55,7 +55,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
           setPhase('ready');
         })
         .catch(() => undefined);
-    }, 2500);
+    }, 800);
     return () => {
       alive = false;
       clearTimeout(timer);
@@ -133,12 +133,17 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
           stopPolling();
           // DownloadManager на части прошивок не отдаёт статус — не оставляем
           // пользователя в тупике, а открываем прямую ссылку на APK.
-          setPhase('error');
-          setError('Система не отдала статус загрузки — открываем прямую ссылку на APK в браузере.');
+          // Загрузка обычно идёт нормально, просто система не делится статусом.
+          // Поэтому сразу пробуем открыть установщик, а если файл ещё не готов —
+          // подсказываем про уведомление и даём ссылку на APK.
+          setPhase('installing');
           try {
-            window.open(info.downloadUrl, '_system');
+            await startInstall();
           } catch {
-            // ссылка есть в карточке ниже
+            setPhase('error');
+            setError(
+              'Загрузка идёт в фоне. Когда закончится, придёт уведомление — нажмите на него, либо скачайте APK по ссылке ниже.'
+            );
           }
         }
       }, 800);

@@ -251,7 +251,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
                     ? darkMode
-                      ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30 shadow-sm'
+                      ? 'accent-soft accent-text shadow-sm'
                       : 'bg-sky-50 text-sky-700 border border-sky-200 shadow-sm'
                     : darkMode
                     ? 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
@@ -450,7 +450,7 @@ export const Layout: React.FC<LayoutProps> = ({
               >
                 <div
                   className={`p-1 rounded-xl ${
-                    item.id === 'scanner' && isActive ? 'bg-sky-500/15' : ''
+                    isActive ? 'accent-soft' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5" />

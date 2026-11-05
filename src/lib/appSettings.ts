@@ -16,6 +16,24 @@ export interface AppSettings {
   networkType: NetworkType;
   /** real — настоящие пробы (в APK), demo — симуляция, auto — как получится */
   probeMode: ProbeMode;
+  /** Акцентный цвет интерфейса */
+  accent: AccentTheme;
+}
+
+export type AccentTheme = 'sky' | 'violet' | 'emerald' | 'amber' | 'rose';
+
+export const ACCENTS: Array<{ id: AccentTheme; name: string; swatch: string }> = [
+  { id: 'sky', name: 'Небо', swatch: '#38bdf8' },
+  { id: 'violet', name: 'Индиго', swatch: '#a78bfa' },
+  { id: 'emerald', name: 'Изумруд', swatch: '#34d399' },
+  { id: 'amber', name: 'Янтарь', swatch: '#fbbf24' },
+  { id: 'rose', name: 'Роза', swatch: '#fb7185' },
+];
+
+/** Красит интерфейс в выбранный акцент (см. переменные в index.css). */
+export function applyAccent(accent: AccentTheme): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.dataset.accent = accent;
 }
 
 const KEY = 'pulsenet_settings_v1';
@@ -56,14 +74,20 @@ export const DEFAULT_SETTINGS: AppSettings = {
   city: '',
   networkType: 'auto',
   probeMode: 'auto',
+  accent: 'sky',
 };
 
 export function readSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return DEFAULT_SETTINGS;
+    if (!raw) {
+      applyAccent(DEFAULT_SETTINGS.accent);
+      return DEFAULT_SETTINGS;
+    }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const merged = { ...DEFAULT_SETTINGS, ...parsed };
+    applyAccent(merged.accent);
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -76,6 +100,7 @@ export function writeSettings(patch: Partial<AppSettings>): AppSettings {
   } catch {
     // приватный режим — просто не сохраняем
   }
+  applyAccent(next.accent);
   window.dispatchEvent(new CustomEvent(EVENT, { detail: next }));
   return next;
 }

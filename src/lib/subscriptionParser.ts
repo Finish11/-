@@ -4,6 +4,24 @@
  * в APK (`src/demo/localApi.ts`), где запрос к серверу подписки делает нативный HTTP.
  */
 
+
+/** base64 без зависимости от окружения (btoa есть не везде). */
+function toBase64(input: string): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const bytes = new TextEncoder().encode(input);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b1 = bytes[i];
+    const b2 = bytes[i + 1];
+    const b3 = bytes[i + 2];
+    out += chars[b1 >> 2];
+    out += chars[((b1 & 3) << 4) | ((b2 ?? 0) >> 4)];
+    out += b2 === undefined ? '=' : chars[((b2 & 15) << 2) | ((b3 ?? 0) >> 6)];
+    out += b3 === undefined ? '=' : chars[b3 & 63];
+  }
+  return out;
+}
+
 export interface ParsedNode {
   name: string;
   protocol: string;
@@ -379,6 +397,7 @@ function parseSingBoxOutbounds(
     const port = Number(ob.server_port || ob.port || 0);
     if (!server || !port) continue;
 
+    try {
     const tag = String(ob.tag || `${type} ${server}`);
     const country = Object.entries(FLAG_TO_COUNTRY).find(([flag]) => tag.includes(flag));
     const protocol = type === 'hysteria2' ? 'hysteria2' : type;
@@ -402,11 +421,11 @@ function parseSingBoxOutbounds(
       const qs = query.toString();
       raw = `${protocol}://${auth}@${server}:${port}${qs ? '?' + qs : ''}#${encodeURIComponent(tag)}`;
     } else if (protocol === 'vmess') {
-      raw = `vmess://${btoa(
+      raw = `vmess://${toBase64(
         JSON.stringify({ v: '2', ps: tag, add: server, port: String(port), id: String(ob.uuid || ''), net: 'tcp' })
       )}`;
     } else if (protocol === 'shadowsocks') {
-      raw = `ss://${btoa(`${String(ob.method || 'aes-256-gcm')}:${String(ob.password || '')}`)}@${server}:${port}#${encodeURIComponent(tag)}`;
+      raw = `ss://${toBase64(`${String(ob.method || 'aes-256-gcm')}:${String(ob.password || '')}`)}@${server}:${port}#${encodeURIComponent(tag)}`;
     } else {
       raw = `${protocol}://${String(ob.password || ob.uuid || '')}@${server}:${port}#${encodeURIComponent(tag)}`;
     }
@@ -424,6 +443,9 @@ function parseSingBoxOutbounds(
       raw_link: raw,
       group_name: groupName || 'Подписка',
     });
+    } catch {
+      // один кривой узел не должен обнулять всю подписку
+    }
   }
 
   return nodes;

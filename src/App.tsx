@@ -287,7 +287,7 @@ export function App() {
           </div>
         ) : (
           <>
-            <div className={activeTab === 'scanner' ? '' : 'hidden'}>
+            <div className={`anim-fade-up ${activeTab === 'scanner' ? '' : 'hidden'}`}>
               <ScannerView
                 user={user}
                 sites={sites}

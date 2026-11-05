@@ -58,3 +58,150 @@
 .animate-scan-sweep {
   animation: scanSweep 2.2s linear infinite;
 }
+
+
+/* ==================== ТЕМЫ ==================== */
+/* Акцент задаётся переменными: --accent (RGB через пробел), чтобы можно было
+   использовать rgb(var(--accent) / opacity) в любом компоненте. */
+:root {
+  --accent: 56 189 248;
+  --accent-soft: rgba(56, 189, 248, 0.14);
+}
+[data-accent='violet'] {
+  --accent: 167 139 250;
+  --accent-soft: rgba(167, 139, 250, 0.14);
+}
+[data-accent='emerald'] {
+  --accent: 52 211 153;
+  --accent-soft: rgba(52, 211, 153, 0.14);
+}
+[data-accent='amber'] {
+  --accent: 251 191 36;
+  --accent-soft: rgba(251, 191, 36, 0.14);
+}
+[data-accent='rose'] {
+  --accent: 251 113 133;
+  --accent-soft: rgba(251, 113, 133, 0.14);
+}
+
+.accent-solid {
+  background-color: rgb(var(--accent));
+  color: #0b1220;
+}
+.accent-solid:hover {
+  background-color: rgb(var(--accent) / 0.9);
+}
+.accent-text {
+  color: rgb(var(--accent));
+}
+.accent-soft {
+  background-color: var(--accent-soft);
+  border: 1px solid rgb(var(--accent) / 0.32);
+}
+.accent-glow {
+  box-shadow: 0 14px 44px -12px rgb(var(--accent) / 0.55);
+}
+
+/* ==================== АНИМАЦИИ ==================== */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes softPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.anim-fade-up {
+  animation: fadeUp 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-pop {
+  animation: popIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-pulse-soft {
+  animation: softPulse 3.6s ease-in-out infinite;
+}
+
+/* Каскад: каждая карточка появляется чуть позже предыдущей */
+.stagger > * {
+  animation: fadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+
+/* Полоска загрузки во время замера */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(var(--accent) / 0.22),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+/* Кнопки: короткое нажатие приятнее длинного transition */
+.tap {
+  transition: transform 0.12s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+.tap:active {
+  transform: scale(0.97);
+}
+
+/* Уважаем настройку «уменьшить движение» */
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up,
+  .anim-pop,
+  .anim-pulse-soft,
+  .stagger > *,
+  .shimmer::after,
+  .animate-scan-sweep {
+    animation: none !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}

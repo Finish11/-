@@ -13,12 +13,14 @@ import {
 } from 'lucide-react';
 import {
   CITIES,
+  ACCENTS,
   OPERATORS,
   useSettings,
   type NetworkType,
   type ProbeMode,
 } from '../lib/appSettings';
 import {
+  type UpdateInfo,
   checkForUpdate,
   getCurrentVersion,
   isUpdateSupported,
@@ -101,6 +103,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   const [ctx, setCtx] = useState<NetworkContext | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [version, setVersion] = useState('');
 
   useEffect(() => {
@@ -139,6 +142,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
         return;
       }
       const found = await checkForUpdate();
+      setAvailable(found);
       showToast(
         found ? 'success' : 'info',
         found ? `Доступна версия ${found.version}` : 'Установлена последняя версия'
@@ -294,6 +298,25 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
               </span>
               <span className="text-[11px] text-slate-500">переключить</span>
             </button>
+
+            <div className="mt-2">
+              <p className="text-[11px] text-slate-500 mb-1.5">Акцентный цвет</p>
+              <div className="flex items-center gap-2">
+                {ACCENTS.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    title={a.name}
+                    onClick={() => setDraft({ ...draft, accent: a.id })}
+                    className={`w-8 h-8 rounded-full border-2 tap ${
+                      draft.accent === a.id ? 'border-white scale-110' : 'border-transparent opacity-80'
+                    }`}
+                    style={{ backgroundColor: a.swatch }}
+                    aria-label={a.name}
+                  />
+                ))}
+              </div>
+            </div>
           </Section>
 
           {/* О приложении */}
@@ -326,6 +349,18 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
             </div>
           </Section>
         </div>
+
+        {available && (
+          <a
+            href={available.downloadUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl accent-soft accent-text text-xs font-bold tap"
+          >
+            <span>Скачать {available.version} для Android</span>
+            <span className="text-[10px] opacity-80">APK</span>
+          </a>
+        )}
 
         <div className="sticky bottom-0 -mx-5 -mb-5 mt-5 px-5 py-3 border-t border-slate-800/60 backdrop-blur-xl flex items-center gap-2 bg-inherit">
           <button

@@ -52,7 +52,34 @@ export async function importRealSubscription(url: string): Promise<RealSubscript
     text = await fetchTextUniversal(url, 20000);
   }
 
-  const parsed = parseSubscriptionText(text);
+  let parsed = parseSubscriptionText(text);
+
+  // Панели отдают разный формат в зависимости от клиента: v2rayNG часто
+  // получает base64-список, Clash — YAML, sing-box — JSON. Если с первого
+  // раза узлов нет, пробуем «поговорить» как другие клиенты.
+  if (parsed.nodes.length === 0 && isNativeApp()) {
+    const agents = [
+      'v2rayNG/1.9.16 (Linux; Android 14)',
+      'ClashMetaForAndroid/2.10.1 Mihomo/1.18.5',
+      'Streisand/1.6 CFNetwork/1494 Darwin/23.4.0',
+    ];
+    for (const ua of agents) {
+      try {
+        const retry = await nativeGet(url, 20000, ua);
+        if (retry.status >= 200 && retry.status < 300 && retry.text) {
+          const again = parseSubscriptionText(retry.text);
+          if (again.nodes.length > 0) {
+            parsed = again;
+            text = retry.text;
+            break;
+          }
+        }
+      } catch {
+        // пробуем следующий клиент
+      }
+    }
+  }
+
   if (parsed.nodes.length === 0) {
     const preview = text.slice(0, 120).replace(/\s+/g, ' ').trim();
     const hint = /^\s*</.test(text)

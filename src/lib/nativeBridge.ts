@@ -24,7 +24,11 @@ export interface NativeHttpResult {
 }
 
 /** GET через нативный HTTP (без CORS). Бросает понятную ошибку при таймауте/сети. */
-export async function nativeGet(url: string, timeoutMs = 15000): Promise<NativeHttpResult> {
+export async function nativeGet(
+  url: string,
+  timeoutMs = 15000,
+  userAgent = 'Happ/3.6.0 (PulseNet; Android 14)'
+): Promise<NativeHttpResult> {
   const started = Date.now();
   try {
     const res = await CapacitorHttp.request({
@@ -35,7 +39,7 @@ export async function nativeGet(url: string, timeoutMs = 15000): Promise<NativeH
       readTimeout: timeoutMs,
       headers: {
         // Панели часто отдают ссылки только «клиентским» User-Agent
-        'User-Agent': 'Happ/3.6.0 (PulseNet; Android 14)',
+        'User-Agent': userAgent,
         Accept: '*/*',
       },
     });

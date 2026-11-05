@@ -485,7 +485,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const VerdictIcon = vStyle.Icon;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 anim-fade-up">
       {/* ==================== HERO MOBILE-FIRST RADAR BUTTON CARD ==================== */}
       <div
         className={`relative overflow-hidden rounded-3xl border p-6 sm:p-8 text-center transition-all ${
@@ -1429,7 +1429,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               onClick={() => setSiteFilter('all')}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
                 siteFilter === 'all'
-                  ? 'bg-sky-500 text-slate-950 border-sky-400'
+                  ? 'accent-solid border-transparent'
                   : darkMode
                   ? 'bg-slate-950 border-slate-800 text-slate-400'
                   : 'bg-slate-100 border-slate-200 text-slate-600'

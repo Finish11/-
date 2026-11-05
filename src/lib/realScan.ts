@@ -109,7 +109,7 @@ export async function runRealSiteScan(
       if (probe.verdict === 'blocked' && /таймаут/i.test(probe.reason || '')) {
         retried = true;
         const second = await probeSite(probeUrl, { timeoutMs: Math.min(timeoutMs, 2500) });
-        // Оставляем лучший результат: если со второго раза открылось — значит работает.
+        // Оставляем лучший результат: со второго раза адрес мог ответить.
         if (second.verdict !== 'blocked') probe = second;
       }
 
@@ -121,6 +121,7 @@ export async function runRealSiteScan(
         marker_role: site.marker_role,
         status: statusFromVerdict(probe.verdict),
         latency_ms: probe.verdict === 'ok' || probe.verdict === 'slow' ? probe.latencyMs : null,
+        proof: probe.proof,
         block_reason:
           probe.verdict === 'ok' || probe.verdict === 'slow'
             ? undefined
@@ -130,7 +131,7 @@ export async function runRealSiteScan(
       };
 
       // Причина отказа видна в детальном списке — так понятно, что именно случилось.
-      if (probe.verdict !== 'ok' && probe.verdict !== 'slow' && probe.reason) {
+      if (probe.reason && (probe.verdict !== 'ok' && probe.verdict !== 'slow' || probe.proof === 'endpoint' || probe.proof === 'opaque')) {
         (result as ScanSiteResult & { note?: string }).note = retried
           ? `${probe.reason} · проверено дважды`
           : probe.reason;

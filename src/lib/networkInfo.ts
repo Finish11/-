@@ -1,191 +1,8 @@
-import { Network } from '@capacitor/network';
-import { registerPlugin } from '@capacitor/core';
-import { isNativeApp } from './nativeBridge';
-import { readSettings } from './appSettings';
+import { getNativeNetworkState, isNativeApp, nativeGet } from './nativeBridge';
+import type { NativeNetworkState } from './nativeBridge';
+import type { ClientConnectionInfo } from '../types';
 
-export type ConnectionKind = 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
-
-export interface NetworkContext {
-  /** Тип подключения: Wi-Fi или мобильная сеть (это влияет на белые списки). */
-  kind: ConnectionKind;
-  ip: string;
-  city: string;
-  region: string;
-  countryCode: string;
-  /** Провайдер по данным гео-сервиса. */
-  isp: string;
-  /** Итоговый оператор: из настроек, иначе распознанный по ISP. */
-  operator: string;
-  /** Откуда взялись оператор и город. */
-  source: 'settings' | 'auto' | 'partial';
-  note: string;
-  /** Похоже, что трафик идёт через VPN/прокси. */
-  vpnLikely: boolean;
-  vpnReason: string;
-}
-
-
-/** Распознаём оператора по строке провайдера из гео-сервиса. */
-export function guessOperator(isp: string): string {
-  const s = (isp || '').toLowerCase();
-  if (/beeline|vympel|вымпелком/.test(s)) return 'Билайн';
-  if (/\bmts\b|mts|мтс/.test(s)) return 'МТС';
-  if (/megafon|мегафон/.test(s)) return 'МегаФон';
-  if (/tele2|\bt2\b/.test(s)) return 'Tele2';
-  if (/yota/.test(s)) return 'Yota';
-  if (/tinkoff|тбанк|tbank/.test(s)) return 'Тинькофф Мобайл';
-  if (/sber|сбер/.test(s)) return 'СберМобайл';
-  if (/motiv|мотив/.test(s)) return 'Мотив';
-  if (/rostelecom|ertelecom|dom\.ru|mgts|мгтс/.test(s)) return 'Домашний провайдер';
-  return '';
-}
-
-async function detectKind(): Promise<ConnectionKind> {
-  const settings = readSettings();
-  if (settings.networkType !== 'auto') return settings.networkType;
-
-  if (isNativeApp()) {
-    try {
-      // Наш нативный мост смотрит транспорт и underlying networks VPN.
-      // Стандартный Network.getStatus() на части прошивок под VPN возвращает wifi
-      // даже тогда, когда фактически работает LTE.
-      const plugin = registerPlugin<{
-        networkKind(): Promise<{ connected: boolean; kind: ConnectionKind; vpn: boolean }>;
-      }>('ApkUpdater');
-      const native = await plugin.networkKind();
-      if (!native.connected) return 'none';
-      if (['wifi', 'cellular', 'ethernet'].includes(native.kind)) return native.kind;
-    } catch {
-      // Старая APK без networkKind — ниже есть штатный Capacitor Network.
-    }
-    try {
-      const status = await Network.getStatus();
-      const type = String(status.connectionType || 'unknown');
-      if (!status.connected) return 'none';
-      if (type === 'wifi') return 'wifi';
-      if (type === 'cellular') return 'cellular';
-      if (type === 'ethernet') return 'ethernet';
-    } catch {
-      // плагин недоступен — падаем в браузерную эвристику
-    }
-  }
-
-  const nav = navigator as Navigator & { connection?: { type?: string; effectiveType?: string } };
-  const t = nav.connection?.type;
-  if (t === 'wifi') return 'wifi';
-  if (t === 'cellular') return 'cellular';
-  if (nav.connection?.effectiveType) return 'cellular';
-  return 'unknown';
-}
-
-interface IpGeo {
-  ip?: string;
-  city?: string;
-  region?: string;
-  country_code?: string;
-  connection?: { isp?: string; org?: string };
-  success?: boolean;
-}
-
-/**
- * Гео-данные по IP. Основной сервис отдаёт и провайдера, и город; если он
- * недоступен (бывает при фильтрации), берём хотя бы IP — тогда в интерфейсе
- * не висит вечное «определяем сеть».
- */
-async function detectGeo(): Promise<IpGeo | null> {
-  const withTimeout = async <T,>(url: string): Promise<T | null> => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 6000);
-    try {
-      const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
-      if (!res.ok) return null;
-      return (await res.json()) as T;
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const primary = await withTimeout<IpGeo>('https://ipwho.is/');
-  if (primary && primary.success !== false && primary.ip) return primary;
-
-  const fallback = await withTimeout<{ ip?: string }>('https://api.ipify.org?format=json');
-  if (fallback?.ip) return { ip: fallback.ip };
-  return null;
-}
-
-/**
- * Контекст сети: тип подключения, оператор и город.
- * Приоритет у настроек пользователя: если оператор или город указаны вручную,
- * они важнее автоматики (гео-сервисы часто показывают хостера, а не оператора).
- */
-export async function detectNetworkContext(): Promise<NetworkContext> {
-  const settings = readSettings();
-  const [kind, geo] = await Promise.all([detectKind(), detectGeo()]);
-
-  const isp = geo?.connection?.isp || geo?.connection?.org || '';
-  const autoOperator = guessOperator(isp);
-  const autoCity = geo?.city || '';
-
-  const operator = settings.operator || autoOperator;
-  const city = settings.city || autoCity;
-
-  let source: NetworkContext['source'] = 'auto';
-  if (settings.operator && settings.city) source = 'settings';
-  else if (settings.operator || settings.city) source = 'partial';
-
-  const kindLabel =
-    kind === 'wifi' ? 'Wi-Fi' : kind === 'cellular' ? 'Мобильная сеть' : kind === 'ethernet' ? 'Ethernet' : 'Сеть';
-
-  const note = !geo
-    ? 'Гео-сервис недоступен — оператора и город можно указать в настройках'
-    : !autoOperator && !settings.operator
-    ? 'Оператор не распознан по IP — выберите его в настройках'
-    : `${kindLabel}${operator ? ` · ${operator}` : ''}${city ? ` · ${city}` : ''}`;
-
-  const ispLower = isp.toLowerCase();
-  const hosting = /hetzner|digitalocean|ovh|vultr|linode|akamai|cloudflare|aeza|selectel|timeweb|amazon|google|microsoft|leaseweb|contabo/.test(
-    ispLower
-  );
-  const foreign = Boolean(geo?.country_code) && geo!.country_code !== 'RU';
-  const vpnLikely = foreign || hosting;
-  const vpnReason = foreign
-    ? `IP-адрес не в России (${geo?.country_code}${geo?.city ? ', ' + geo.city : ''})`
-    : hosting
-    ? `Провайдер похож на дата-центр (${isp})`
-    : '';
-
-  return {
-    vpnLikely,
-    vpnReason,
-    kind,
-    ip: geo?.ip || '',
-    city,
-    region: geo?.region || '',
-    countryCode: geo?.country_code || '',
-    isp,
-    operator,
-    source,
-    note,
-  };
-}
-
-export const connectionLabel = (kind: ConnectionKind): string =>
-  kind === 'wifi'
-    ? 'Wi-Fi'
-    : kind === 'cellular'
-    ? 'Моб. сеть'
-    : kind === 'ethernet'
-    ? 'Ethernet'
-    : kind === 'none'
-    ? 'Нет сети'
-    : 'Сеть';
-
-
-
-/** Контекст сети -> структура соединения, которую показывает приложение. */
-export function toClientConnection(ctx: NetworkContext): {
+export interface GeoInfo {
   ip: string;
   country_code: string;
   country_name: string;
@@ -194,29 +11,271 @@ export function toClientConnection(ctx: NetworkContext): {
   isp: string;
   org: string;
   asn: string;
-  connection_kind?: ConnectionKind;
   is_hosting: boolean;
   is_proxy: boolean;
   is_mobile: boolean;
-  vpn_detected: boolean;
-  vpn_confidence: 'high' | 'medium' | 'none';
-  vpn_reasons: string[];
-} {
+}
+
+export interface NetworkContext {
+  geo: GeoInfo | null;
+  /** Физический транспорт Android или ручной режим демо. */
+  networkKind: 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
+  /** В APK это исключительно системный TRANSPORT_VPN. */
+  vpnLikely: boolean;
+  vpnSource: 'system' | 'ip' | 'none';
+  vpnReasons: string[];
+  splitTunnel: boolean;
+  nativeSequence?: number;
+  nativeCarrier?: string;
+  /** Сеть изменилась во время GeoIP: такой ответ нельзя применять как свежий. */
+  changedDuringCheck: boolean;
+  geoError?: string;
+}
+
+export function connectionLabel(kind: NetworkContext['networkKind']): string {
+  switch (kind) {
+    case 'wifi': return 'Wi-Fi';
+    case 'cellular': return 'Мобильная сеть';
+    case 'ethernet': return 'Проводная сеть';
+    case 'none': return 'Нет сети';
+    default: return 'Сеть не определена';
+  }
+}
+
+export interface NetworkContextOptions {
+  networkTypeOverride?: string;
+  nativeStatus?: NativeNetworkState;
+  skipGeo?: boolean;
+}
+
+export function emptyGeo(): GeoInfo {
   return {
-    ip: ctx.ip,
-    country_code: ctx.countryCode || 'RU',
-    country_name: ctx.countryCode === 'RU' ? 'Россия' : ctx.countryCode || 'Россия',
-    region: ctx.region,
-    city: ctx.city,
-    isp: ctx.isp || ctx.operator,
-    org: ctx.isp,
-    asn: '',
-    connection_kind: ctx.kind,
-    is_hosting: /hetzner|digitalocean|ovh|vultr|aeza|selectel|timeweb|cloudflare/i.test(ctx.isp),
-    is_proxy: ctx.vpnLikely,
-    is_mobile: ctx.kind === 'cellular',
+    ip: '', country_code: '', country_name: '', region: '', city: '',
+    isp: '', org: '', asn: '',
+    is_hosting: false, is_proxy: false, is_mobile: false,
+  };
+}
+
+export function networkSnapshotKey(state: NativeNetworkState): string {
+  return `${state.connected ? 1 : 0}|${state.kind}|${state.vpn ? 1 : 0}`;
+}
+
+/** Позднее системное событие не должно запускать устаревший снимок. */
+export function isNewerNetworkSequence(incoming: number | undefined, current: number): boolean {
+  return incoming == null || incoming >= current;
+}
+
+export async function detectNativeNetworkStatus(): Promise<NativeNetworkState> {
+  if (!isNativeApp()) {
+    return { connected: false, kind: 'unknown', vpn: false, carrier: '', systemKnown: false };
+  }
+  try {
+    return await getNativeNetworkState();
+  } catch {
+    // Старый APK или недоступный плагин: не выдумываем системный VPN по GeoIP.
+    return { connected: false, kind: 'unknown', vpn: false, carrier: '', systemKnown: false };
+  }
+}
+
+async function detectGeo(): Promise<{ geo: GeoInfo; error?: string }> {
+  const providers = [
+    'https://ipwho.is/',
+    'https://ipapi.co/json/',
+    'https://freeipapi.com/api/json',
+  ];
+  let lastError = '';
+  for (const url of providers) {
+    try {
+      let raw: Record<string, unknown>;
+      if (isNativeApp()) {
+        // Тот же CapacitorHttp, что и у siteProbe: один сетевой маршрут в APK.
+        const response = await nativeGet(url, 6000, 'PulseNet/1.5 (Android)');
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        raw = JSON.parse(response.text) as Record<string, unknown>;
+      } else {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6000);
+        try {
+          const r = await fetch(url, { signal: ctrl.signal });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          raw = await r.json() as Record<string, unknown>;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      if (raw.success === false || raw.error === true) {
+        throw new Error(String(raw.message || raw.reason || 'GeoIP вернул ошибку'));
+      }
+      const conns = (raw.connection || {}) as Record<string, unknown>;
+      const security = (raw.security || {}) as Record<string, unknown>;
+      const geo: GeoInfo = {
+        ip: String(raw.ip || raw.ipAddress || raw.query || ''),
+        country_code: String(raw.country_code || raw.countryCode || raw.country || ''),
+        country_name: String(raw.country_name || raw.countryName || ''),
+        region: String(raw.region || raw.region_name || raw.regionName || ''),
+        city: String(raw.city || ''),
+        isp: String(raw.isp || conns.isp || raw.org || ''),
+        org: String(raw.org || conns.org || conns.asn_org || ''),
+        asn: String(conns.asn || raw.asn || ''),
+        is_hosting: Boolean(raw.is_hosting || security.hosting || raw.hosting),
+        is_proxy: Boolean(raw.is_proxy || security.proxy || raw.proxy),
+        is_mobile: Boolean(raw.is_mobile || security.mobile || raw.mobile),
+      };
+      if (geo.ip) return { geo };
+      lastError = 'сервис не вернул IP';
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  return { geo: emptyGeo(), error: lastError || 'GeoIP недоступен' };
+}
+
+/**
+ * Единственное место, где формируется VPN-вердикт.
+ * На Android IP, страна и hosting вообще не участвуют в системном факте VPN.
+ */
+export function resolveVpnStatus(
+  native: NativeNetworkState,
+  geo: GeoInfo,
+  nativePlatform: boolean
+): Pick<NetworkContext, 'vpnLikely' | 'vpnSource' | 'vpnReasons'> {
+  if (nativePlatform) {
+    const reasons = native.connected && native.vpn
+      ? ['Android сообщает TRANSPORT_VPN для активной сети']
+      : [];
+    return {
+      vpnLikely: native.connected && native.vpn,
+      vpnSource: native.connected ? 'system' : 'none',
+      vpnReasons: reasons,
+    };
+  }
+
+  // В браузере системного TRANSPORT_VPN нет: это лишь подсказка, не факт туннеля.
+  const foreign = geo.country_code.length === 2 && geo.country_code.toUpperCase() !== 'RU';
+  const hosting = geo.is_hosting || geo.is_proxy;
+  const reasons: string[] = [];
+  if (foreign) reasons.push(`IP вне РФ (${geo.country_code})`);
+  if (hosting) reasons.push('IP похож на дата-центр или прокси');
+  return {
+    vpnLikely: foreign || hosting,
+    vpnSource: reasons.length ? 'ip' : 'none',
+    vpnReasons: reasons,
+  };
+}
+
+export function buildNetworkContext(
+  native: NativeNetworkState,
+  geo: GeoInfo | null,
+  options: NetworkContextOptions = {}
+): NetworkContext {
+  const nativePlatform = isNativeApp();
+  const vpn = resolveVpnStatus(native, geo || emptyGeo(), nativePlatform);
+  let browserKind: NetworkContext['networkKind'] = 'unknown';
+  if (!nativePlatform && typeof navigator !== 'undefined') {
+    const nav = navigator as Navigator & { connection?: { type?: string; effectiveType?: string } };
+    if (nav.connection?.type === 'wifi' || nav.connection?.type === 'cellular' || nav.connection?.type === 'ethernet') {
+      browserKind = nav.connection.type;
+    } else if (nav.connection?.effectiveType) {
+      browserKind = 'cellular';
+    }
+  }
+  const networkKind = options.networkTypeOverride && options.networkTypeOverride !== 'auto'
+    ? options.networkTypeOverride as NetworkContext['networkKind']
+    : native.connected
+    ? native.kind
+    : nativePlatform
+    ? !native.systemKnown ? 'unknown' : 'none'
+    : browserKind;
+  const operator = native.kind === 'cellular' && native.carrier
+    ? native.carrier
+    : geo?.isp || '';
+  return {
+    geo,
+    networkKind,
+    ...vpn,
+    splitTunnel: false,
+    nativeSequence: native.sequence,
+    nativeCarrier: operator,
+    changedDuringCheck: false,
+  };
+}
+
+/**
+ * Свежий атомарный снимок. Если сеть переключилась во время GeoIP, повторяем
+ * GeoIP один раз; changedDuringCheck позволяет вызывающему отбросить результат,
+ * если переключения продолжаются и даже вторая попытка устарела.
+ */
+export async function detectNetworkContext(
+  options: NetworkContextOptions = {}
+): Promise<NetworkContext> {
+  const start = options.nativeStatus || await detectNativeNetworkStatus();
+  let geo: GeoInfo | null = null;
+  let geoError: string | undefined;
+  if (!options.skipGeo && start.connected) {
+    const result = await detectGeo();
+    geo = result.geo.ip ? result.geo : null;
+    geoError = result.error;
+  } else if (!options.skipGeo && !isNativeApp()) {
+    const result = await detectGeo();
+    geo = result.geo.ip ? result.geo : null;
+    geoError = result.error;
+  }
+
+  let current = await detectNativeNetworkStatus();
+  if (networkSnapshotKey(current) !== networkSnapshotKey(start)) {
+    if (current.connected && !options.skipGeo) {
+      const retry = await detectGeo();
+      geo = retry.geo.ip ? retry.geo : null;
+      geoError = retry.error;
+    } else if (!current.connected) {
+      geo = null;
+    }
+    const finalState = await detectNativeNetworkStatus();
+    const changedAgain = networkSnapshotKey(finalState) !== networkSnapshotKey(current);
+    current = finalState;
+    const context = buildNetworkContext(current, current.connected || !isNativeApp() ? geo : null, options);
+    context.changedDuringCheck = changedAgain;
+    context.geoError = geoError;
+    return context;
+  }
+
+  const context = buildNetworkContext(current, current.connected || !isNativeApp() ? geo : null, options);
+  context.geoError = geoError;
+  return context;
+}
+
+export function hasSameNetworkAttribution(
+  before: ClientConnectionInfo,
+  after: ClientConnectionInfo
+): boolean {
+  const systemVpn = (value: ClientConnectionInfo) =>
+    value.vpn_source === 'system' && value.vpn_detected;
+  return before.connection_kind === after.connection_kind && systemVpn(before) === systemVpn(after);
+}
+
+export function toClientConnection(ctx: NetworkContext): ClientConnectionInfo {
+  const g = ctx.geo || emptyGeo();
+  return {
+    ip: g.ip,
+    country_code: g.country_code,
+    country_name: g.country_name,
+    region: g.region,
+    city: g.city,
+    isp: g.isp,
+    org: g.org,
+    asn: g.asn,
+    is_hosting: g.is_hosting,
+    is_proxy: g.is_proxy,
+    is_mobile: g.is_mobile,
+    connection_kind: ctx.networkKind,
+    operator: ctx.nativeCarrier || g.isp,
     vpn_detected: ctx.vpnLikely,
-    vpn_confidence: ctx.vpnLikely ? 'medium' : 'none',
-    vpn_reasons: ctx.vpnReason ? [ctx.vpnReason] : [],
+    vpn_confidence: ctx.vpnSource === 'system' ? 'high' : ctx.vpnSource === 'ip' ? 'medium' : 'none',
+    vpn_source: ctx.vpnSource,
+    vpn_reasons: ctx.vpnReasons,
+    split_tunnel: ctx.splitTunnel,
+    webrtc_ips: [],
   };
 }

@@ -86,11 +86,11 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
     if (!open) return;
     getCurrentVersion().then(setVersion).catch(() => undefined);
     setDetecting(true);
-    detectNetworkContext()
+    detectNetworkContext({ networkTypeOverride: settings.networkType })
       .then(setCtx)
       .catch(() => undefined)
       .finally(() => setDetecting(false));
-  }, [open]);
+  }, [open, settings.networkType]);
 
   const inputStyle: React.CSSProperties = {
     background: 'var(--bg-elevated)',
@@ -104,7 +104,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   const redetect = async () => {
     setDetecting(true);
     try {
-      setCtx(await detectNetworkContext());
+      setCtx(await detectNetworkContext({ networkTypeOverride: settings.networkType }));
       showToast('info', 'Профиль сети обновлён');
     } finally {
       setDetecting(false);
@@ -215,7 +215,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                   {detecting
                     ? 'Определяем сеть…'
                     : ctx
-                    ? `${connectionLabel(ctx.kind)}${ctx.isp ? ` · ${ctx.isp}` : ''}`
+                    ? `${connectionLabel(ctx.networkKind)}${ctx.nativeCarrier || ctx.geo?.isp ? ` · ${ctx.nativeCarrier || ctx.geo?.isp}` : ''}`
                     : 'Сеть не определена'}
                 </span>
               </div>
@@ -229,11 +229,11 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                 Обновить
               </button>
             </div>
-            {ctx?.ip && (
+            {ctx?.geo?.ip && (
               <div className="text-[10.5px] font-mono text-muted mt-1.5 truncate">
-                IP {ctx.ip}
-                {ctx.countryCode ? ` · ${ctx.countryCode}` : ''}
-                {ctx.city ? ` · ${ctx.city}` : ''}
+                IP {ctx.geo.ip}
+                {ctx.geo.country_code ? ` · ${ctx.geo.country_code}` : ''}
+                {ctx.geo.city ? ` · ${ctx.geo.city}` : ''}
               </div>
             )}
           </Row>
@@ -247,7 +247,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                 onChange={(e) => update({ operator: e.target.value })}
               >
                 <option value="">
-                  {ctx ? `Авто: ${ctx.operator || 'не распознан'}` : 'Определять автоматически'}
+                  {ctx ? `Авто: ${ctx.nativeCarrier || ctx.geo?.isp || 'не распознан'}` : 'Определять автоматически'}
                 </option>
                 {OPERATORS.map((o) => (
                   <option key={o} value={o}>
@@ -264,7 +264,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                 value={settings.city}
                 onChange={(e) => update({ city: e.target.value })}
               >
-                <option value="">{ctx?.city ? `Авто: ${ctx.city}` : 'Определять автоматически'}</option>
+                <option value="">{ctx?.geo?.city ? `Авто: ${ctx.geo.city}` : 'Определять автоматически'}</option>
                 {CITIES.map((c) => (
                   <option key={c} value={c}>
                     {c}

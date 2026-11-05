@@ -1,7 +1,7 @@
-# ПульсСети — состояние после прохода 1.5.2
+# ПульсСети — состояние после прохода 1.5.3
 
-Дата прохода: 5 ноября 2026. Рабочая ветка Arena: `arena/e6ffad86-repo`.
-База прохода: `7a69a61` (1.4.1). Актуальный коммит смотреть через `git log -1 --oneline`.
+Дата прохода: 6 ноября 2026. Рабочая ветка Arena: `arena/e6ffad86-repo`.
+База прохода: `a65bd7b` (1.5.2). Актуальный коммит смотреть через `git log -1 --oneline`.
 
 ## Главные правила
 
@@ -16,6 +16,46 @@
   `git -c http.version=HTTP/1.1 push origin arena/e6ffad86-repo`.
 - APK: `gh workflow run android-apk.yml --ref arena/e6ffad86-repo`,
   проверка: `gh release view android-latest`.
+
+## Дополнительный проход 1.5.3
+
+- **VPN только по системе.** `networkInfo.resolveVpnStatus` в native-режиме использует
+  исключительно `networkKind().vpn`, полученный из `TRANSPORT_VPN`. Страна IP, hosting
+  и proxy-флаги GeoIP не влияют на native VPN-вердикт. Browser-оценка имеет `vpn_source=ip`
+  и не записывается как доказанный системный туннель.
+- **Актуальный default network.** `ApkUpdaterPlugin` регистрирует собственный
+  `registerDefaultNetworkCallback` при `load()`. `onCapabilitiesChanged` использует
+  переданные capabilities, Network ID и монотонный sequence; `onLost` старой сети не
+  стирает новую. Вызов Capacitor вынесен из synchronized-блока. Стандартный Network
+  listener и polling — только запасные триггеры, не источник подписи.
+- **Никакого guessed underlying.** Android сам добавляет известные Wi-Fi/LTE transports
+  в capabilities VPN. Старый перебор `getAllNetworks()` удалён: рядом могла остаться
+  неиспользуемая сеть. Если дан только TRANSPORT_VPN, возвращается честный unknown.
+  При внутреннем сбое Java передаёт `systemKnown=false`, а не выдуманное «нет сети».
+- **Один снимок и порядок ответов.** `App.tsx` имеет generation для каждого async refresh;
+  поздний GeoIP не применяется. При смене транспорта старые IP/город/оператор очищаются
+  сразу. `detectNetworkContext` повторяет GeoIP при переходе и сообщает, если сеть
+  продолжает меняться. Scanner использует `connection || detectedConn` целиком, без
+  смешивания полей разных снимков. В APK GeoIP и сайты используют `CapacitorHttp`.
+- **Смешанный замер не сохраняется.** После проб `hasSameNetworkAttribution` сверяет
+  системный VPN и LTE/Wi-Fi с precheck. Переход во время сканирования отменяет сохранение
+  с просьбой повторить; простая смена IP внутри той же сети не отменяет замер.
+- **Доказательство содержимого.** `SiteProof`: app/page/endpoint/opaque сохраняется в
+  результате. Старые favicon-пробы ключевых сервисов автоматически переводятся на root HTML.
+  ChatGPT/YouTube/Claude/Gemini/Telegram/WhatsApp имеют строгие matchers. Generic HTML
+  обязан содержать brand/domain; текст/JSON — лишь endpoint. Cloudflare/captcha/4xx
+  остаются неоткрытыми. HTTP/TCP/page не доказывают аккаунт, сообщения или туннель.
+- **UI.** QuickPicks различает открытую страницу, ответ адреса, opaque и отказ; статусы
+  переносятся без обрезания. У legacy-замера без proof статус «ответ без проверки»,
+  а не зелёная страница. Детальный список окрашивает endpoint/opaque/unknown жёлтым.
+  Домены Telegram/WhatsApp имеют aliases против дубликатов. В VPN-экране системный
+  транспорт важнее hosting GeoIP, а неизвестный VPN не называется прямым подключением.
+- **Удалён мёртвый обходной путь.** Старый `scanner.detectCurrentConnection` с
+  GeoIP/WebRTC-эвристикой не использовался и удалён. Единый detector — `networkInfo.ts`.
+- **Проверки:** 23 core tests, TypeScript, production/demo builds. Puppeteer: прежние
+  persistence/import/reorder/filter/long-name/VPN-sort плюс proof после reload на
+  320/390/768 px. Android callback и реальные LTE ↔ Wi-Fi переходы обязательно проверить
+  на телефоне; Java-компиляция проверяется Android CI, локального JDK в sandbox нет.
 
 ## Дополнительный проход 1.5.2
 
@@ -109,19 +149,21 @@
 
 ## Проверка и следующий проход
 
-- Пройдены typecheck, обе web-сборки и 5/5 core-тестов. Puppeteer на 390 px подтвердил
-  отсутствие переполнения, четыре ряда для семи карточек, drag-reorder с сохранением,
-  фильтр «Подмена» и сортировку VPN по задержке. Ошибки внешних запросов в песочнице
-  связаны с сетевыми ограничениями preview, исключений приложения не найдено.
-- Android CI run `42090924756` успешно собрал коммит `0a6d172`; release `android-latest`
-  содержит APK 1.5.0 размером 4 741 479 байт. Это подтверждает компиляцию нативного
-  кода и плагинов Preferences/Share, но не заменяет проверку на телефоне.
-- Core: `npm run test:core` (подмена, открытый сценарий, ChatGPT, дедупликация, sing-box flow).
-- Для браузера: `npm run build:demo`, затем `npx serve demo-dist -l 4173`.
-- Проверять 390 px: карточки не обрезаны, две колонки, ручка перетаскивания, фильтр
-  «Подмена», сортировка узлов, пустая история без демо в нативном режиме.
-- После установки APK на телефоне проверить: LTE без Wi-Fi и под VPN, скорость полного
-  замера, число узлов конкретной подписки (ожидаемые 79), перезапуск и обновление поверх
-  без потери подписки, системное меню «Поделиться».
-- Если панель снова отдаёт меньше узлов, нужен её JSON/текст без секретов либо статистика
-  до/после дедупликации. Нельзя «добивать» число выдуманными конфигами.
+- Обязательный локальный набор: `npm run typecheck`, `npm run test:core` (23/23),
+  `npm run build`, `npm run build:demo`, `git diff --check`.
+- Browser preview: `npm run build:demo`, затем раздать `demo-dist` на :4173. Пройдены
+  320/390/768 px, proof-статусы после reload, reorder, blocked filter, persistence,
+  импорт Clash, сортировка VPN и полное раскрытие длинного имени без overflow.
+- Android CI запускать на актуальный commit и проверять до `success`:
+  `gh run list --workflow android-apk.yml --limit 5`. Release должен указывать на тот
+  же commit и содержать свежий `pulsenet-debug.apk`. CI подтверждает Java/Android
+  компиляцию, но не поведение конкретной прошивки.
+- На телефоне повторить оба перехода LTE → Wi-Fi → LTE и Wi-Fi → LTE → Wi-Fi,
+  с VPN включённым и выключенным. Сверить системный VPN, транспорт, IP, Билайн/оператора,
+  город и обратное восстановление статуса. Переключиться прямо во время замера:
+  смешанный результат должен быть отброшен.
+- Проверить ChatGPT Cloudflare/403, YouTube/мессенджеры с заглушкой и обычный favicon:
+  зелёная страница допустима только при ожидаемом содержимом; endpoint не означает
+  работу приложения. Для полной работы аккаунта/сообщений/видео нужны отдельные тесты.
+- После обновления APK поверх 1.5.2 проверить подписку и старые favicon-пробы: они
+  должны перейти на HTML без удаления карточек и дубликатов Telegram/WhatsApp.

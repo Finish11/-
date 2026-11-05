@@ -1,6 +1,7 @@
 import { CapacitorHttp } from '@capacitor/core';
 import { isNativeApp } from './nativeBridge';
 import { assessSiteContent } from './siteContent';
+import type { SiteProof } from '../types';
 
 /**
  * Проверка доступности сайта «по-настоящему».
@@ -32,10 +33,32 @@ export interface SiteProbeResult {
   reason?: string;
   /** Что именно пришло — для подсказки в карточке сайта */
   detail?: string;
+  /** Сила доказательства: веб-приложение, страница или лишь ответ адреса. */
+  proof?: SiteProof;
 }
 
 const OK_MS = 1500;
 const SLOW_MS = 4000;
+
+const HTML_SERVICE_HOSTS = new Set([
+  'chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com',
+  'telegram.org', 'web.telegram.org', 'whatsapp.com', 'web.whatsapp.com',
+  'youtube.com', 'store.supercell.com',
+]);
+
+/** Старые сохранённые favicon-пробы ключевых сервисов переводим на веб-страницу. */
+export function canonicalServiceProbeUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (HTML_SERVICE_HOSTS.has(host) && /\/favicon\.(ico|png|svg)$/i.test(parsed.pathname)) {
+      return `${parsed.origin}/`;
+    }
+    return value;
+  } catch {
+    return value;
+  }
+}
 
 /** Разбираем текст ошибки в понятную причину. */
 const classifyError = (message: string): { verdict: ProbeVerdict; reason: string } => {
@@ -76,6 +99,7 @@ export async function probeSite(
 ): Promise<SiteProbeResult> {
   const timeoutMs = options.timeoutMs ?? 6000;
   const verifyContent = options.verifyContent ?? true;
+  url = canonicalServiceProbeUrl(url);
   const started = Date.now();
 
   if (!isNativeApp()) {
@@ -87,7 +111,12 @@ export async function probeSite(
       await fetch(url, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' });
       clearTimeout(timer);
       const ms = Date.now() - started;
-      return { verdict: ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked', latencyMs: ms };
+      return {
+        verdict: ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked',
+        latencyMs: ms,
+        proof: 'opaque',
+        reason: 'браузер получил ответ, но не позволяет проверить содержимое',
+      };
     } catch {
       return { verdict: 'blocked', latencyMs: null, reason: 'нет ответа (браузер)' };
     }
@@ -117,12 +146,15 @@ export async function probeSite(
       };
     }
 
-    // Для остальных ресурсов 4xx/5xx от своего сервера — всё-таки его ответ
-    // (например, favicon отдаёт 404). У ChatGPT правило строже, см. siteContent.
+    // HTTP-ответ без доказанной страницы не выдаём за работу приложения.
     return {
       verdict: ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked',
       latencyMs: ms,
       httpStatus: res.status,
+      proof: verifyContent ? content?.proof || 'endpoint' : 'endpoint',
+      reason: (verifyContent ? content?.proof : 'endpoint') === 'endpoint'
+        ? 'получен ответ адреса, но работа приложения этим не доказана'
+        : undefined,
       detail: finalUrl !== url ? `редирект на ${finalUrl.slice(0, 80)}` : undefined,
     };
   } catch (err) {

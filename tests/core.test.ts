@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { diagnoseScan, evaluateScanVerdict } from '../src/lib/scanner.ts';
 import { parseSubscriptionText } from '../src/lib/subscriptionParser.ts';
 import { assessSiteContent } from '../src/lib/siteContent.ts';
+import { canonicalServiceProbeUrl } from '../src/lib/siteProbe.ts';
+import { emptyGeo, hasSameNetworkAttribution, isNewerNetworkSequence, networkSnapshotKey, resolveVpnStatus } from '../src/lib/networkInfo.ts';
+import type { NativeNetworkState } from '../src/lib/nativeBridge.ts';
 import { decodeStatePacket, encodeStatePacket, selectNewestState } from '../src/demo/stateStorage.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
@@ -206,6 +209,106 @@ test('заглушка оператора помечается как чужой
   );
   assert.equal(assessment.own, false);
   assert.equal(assessment.intercepted, true);
+});
+
+test('зарубежный hosting IP при LTE/Wi-Fi не считается системным VPN', () => {
+  const geo = { ...emptyGeo(), country_code: 'DE', is_hosting: true, is_proxy: true };
+  const native: NativeNetworkState = { connected: true, kind: 'wifi', vpn: false, carrier: 'Beeline' };
+  const verdict = resolveVpnStatus(native, geo, true);
+  assert.equal(verdict.vpnLikely, false);
+  assert.equal(verdict.vpnSource, 'system');
+  assert.deepEqual(verdict.vpnReasons, []);
+});
+
+test('TRANSPORT_VPN не зависит от страны IP и корректно выключается', () => {
+  const geo = { ...emptyGeo(), country_code: 'RU' };
+  const on: NativeNetworkState = { connected: true, kind: 'cellular', vpn: true };
+  const off: NativeNetworkState = { ...on, vpn: false };
+  assert.equal(resolveVpnStatus(on, geo, true).vpnLikely, true);
+  assert.equal(resolveVpnStatus(off, geo, true).vpnLikely, false);
+  assert.notEqual(networkSnapshotKey(on), networkSnapshotKey(off));
+});
+
+test('ключ сети меняется при LTE → Wi-Fi → LTE, старые события отбрасываются', () => {
+  const lte: NativeNetworkState = { connected: true, kind: 'cellular', vpn: false };
+  const wifi: NativeNetworkState = { connected: true, kind: 'wifi', vpn: false };
+  const lteKey = networkSnapshotKey(lte);
+  assert.notEqual(lteKey, networkSnapshotKey(wifi));
+  assert.equal(networkSnapshotKey(lte), lteKey);
+  assert.equal(isNewerNetworkSequence(11, 12), false);
+  assert.equal(isNewerNetworkSequence(12, 12), true);
+  assert.equal(isNewerNetworkSequence(13, 12), true);
+});
+
+test('смена IP не отменяет замер, а смена LTE/Wi-Fi или системного VPN отменяет', () => {
+  const base = {
+    ip: '1.1.1.1', country_code: 'RU', country_name: '', region: '', city: '',
+    isp: '', org: '', asn: '', is_hosting: false, is_proxy: false, is_mobile: true,
+    connection_kind: 'cellular' as const, vpn_detected: false,
+    vpn_confidence: 'high' as const, vpn_source: 'system' as const, vpn_reasons: [],
+  };
+  assert.equal(hasSameNetworkAttribution(base, { ...base, ip: '2.2.2.2' }), true);
+  assert.equal(hasSameNetworkAttribution(base, { ...base, connection_kind: 'wifi' }), false);
+  assert.equal(hasSameNetworkAttribution(base, { ...base, vpn_detected: true }), false);
+});
+
+test('YouTube без характерного приложения не считается открытым по одному названию', () => {
+  const foreign = assessSiteContent(
+    'https://www.youtube.com/',
+    '<html><title>YouTube</title><body>Добро пожаловать на портал провайдера</body></html>',
+    200
+  );
+  assert.equal(foreign.own, false);
+  assert.equal(foreign.intercepted, true);
+  const actual = assessSiteContent(
+    'https://www.youtube.com/',
+    '<html><title>YouTube</title><script>ytcfg.set({"INNERTUBE_API_KEY":"test"});</script></html>',
+    200
+  );
+  assert.equal(actual.own, true);
+  assert.equal(actual.proof, 'app');
+});
+
+test('Telegram, WhatsApp и Claude требуют содержимого собственного веб-приложения', () => {
+  for (const [url, actualHtml] of [
+    ['https://web.telegram.org/', '<title>Telegram Web</title><meta content="https://web.telegram.org/">'],
+    ['https://web.whatsapp.com/', '<title>WhatsApp</title><script src="https://static.whatsapp.net/app.js"></script>'],
+    ['https://claude.ai/', '<title>Claude</title><script src="https://claude.ai/assets/app.js"></script>'],
+  ] as const) {
+    assert.equal(assessSiteContent(url, '<html><title>Сервис недоступен</title></html>', 200).own, false);
+    const actual = assessSiteContent(url, actualHtml, 200);
+    assert.equal(actual.own, true);
+    assert.equal(actual.proof, 'app');
+  }
+});
+
+test('favicon доказывает только ответ адреса, старые ключевые пробы становятся HTML', () => {
+  const image = assessSiteContent('https://example.com/favicon.ico', 'binary-icon', 200);
+  assert.equal(image.own, true);
+  assert.equal(image.proof, 'endpoint');
+  assert.equal(canonicalServiceProbeUrl('https://chatgpt.com/favicon.ico'), 'https://chatgpt.com/');
+  assert.equal(canonicalServiceProbeUrl('https://www.youtube.com/favicon.ico'), 'https://www.youtube.com/');
+  assert.equal(canonicalServiceProbeUrl('https://example.com/favicon.ico'), 'https://example.com/favicon.ico');
+});
+
+test('generic HTML без признаков домена не открыт, а текстовый ответ остаётся endpoint', () => {
+  const foreign = assessSiteContent(
+    'https://discord.com/',
+    '<html><title>Добро пожаловать</title><body>Проверка соединения</body></html>',
+    200
+  );
+  assert.equal(foreign.own, false);
+  assert.equal(foreign.intercepted, true);
+  const actual = assessSiteContent(
+    'https://discord.com/',
+    '<html><title>Discord</title><script src="/assets/app.js"></script></html>',
+    200
+  );
+  assert.equal(actual.own, true);
+  assert.equal(actual.proof, 'page');
+  const data = assessSiteContent('https://example.com/api', '{"status":"ok"}', 200);
+  assert.equal(data.own, true);
+  assert.equal(data.proof, 'endpoint');
 });
 
 test('при восстановлении выбирается самая свежая копия подписки', () => {

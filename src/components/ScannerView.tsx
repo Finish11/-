@@ -44,8 +44,8 @@ import { useSettings } from '../lib/appSettings';
 import {
   connectionLabel,
   detectNetworkContext,
+  hasSameNetworkAttribution,
   toClientConnection,
-  type NetworkContext,
 } from '../lib/networkInfo';
 import { notifyScanResult } from '../lib/notify';
 import { shareText } from '../lib/shareText';
@@ -149,7 +149,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 }) => {
   const [simMode, setSimMode] = useState<SimulationMode>(IS_DEMO_BUILD ? 'sim_whitelist' : 'live');
   const [appSettings] = useSettings();
-  const [netCtx, setNetCtx] = useState<NetworkContext | null>(null);
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [detectedConn, setDetectedConn] = useState<ClientConnectionInfo | null>(connection);
@@ -174,16 +173,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const abortRef = useRef<AbortController | null>(null);
   const vpnWatchTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    detectNetworkContext()
-      .then((c) => alive && setNetCtx(c))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [appSettings.operator, appSettings.city, appSettings.networkType, appSettings.probeMode]);
 
   useEffect(() => {
     if (connection && phase === 'idle') setDetectedConn(connection);
@@ -230,7 +219,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     try {
       // Сеть определяем настоящую и в браузере, и в APK: подставной профиль
       // оператора раньше давал ложные подписи в отчёте.
-      conn = toClientConnection(await detectNetworkContext()) as ClientConnectionInfo;
+      conn = toClientConnection(await detectNetworkContext({
+        networkTypeOverride: appSettings.networkType,
+      })) as ClientConnectionInfo;
     } catch {
       conn = {
         ip: '—',
@@ -255,7 +246,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setDetectedConn(conn);
     onConnectionDetected(conn);
 
-    if (conn.vpn_detected) {
+    if (conn.vpn_detected && conn.vpn_source === 'system') {
       if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
       setPhase('vpn_prompt');
       return;
@@ -269,10 +260,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     stopVpnWatch();
 
     vpnWatchTimerRef.current = window.setInterval(async () => {
-      const fresh = toClientConnection(await detectNetworkContext()) as ClientConnectionInfo;
+      const fresh = toClientConnection(await detectNetworkContext({
+        networkTypeOverride: appSettings.networkType,
+      })) as ClientConnectionInfo;
       setDetectedConn(fresh);
       onConnectionDetected(fresh);
-      if (!fresh.vpn_detected) {
+      if (!fresh.vpn_detected || fresh.vpn_source !== 'system') {
         stopVpnWatch();
         showToast('success', `VPN отключён (${fresh.isp || 'ваш оператор'}). Запускаем проверку.`);
         executeSiteScan(fresh, 'vpn_turned_off', 'live');
@@ -283,7 +276,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const handleConfirmTurnedOffNow = async () => {
     stopVpnWatch();
     setPhase('precheck');
-    const fresh = toClientConnection(await detectNetworkContext()) as ClientConnectionInfo;
+    const fresh = toClientConnection(await detectNetworkContext({
+      networkTypeOverride: appSettings.networkType,
+    })) as ClientConnectionInfo;
     setDetectedConn(fresh);
     onConnectionDetected(fresh);
     await executeSiteScan(fresh, 'vpn_turned_off', simMode);
@@ -341,6 +336,29 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
     setNetworkDead(false);
 
+    if (isNativeApp()) {
+      try {
+        const finalContext = await detectNetworkContext({
+          networkTypeOverride: appSettings.networkType,
+          skipGeo: true,
+        });
+        const finalConnection = toClientConnection(finalContext);
+        if (finalContext.changedDuringCheck || !hasSameNetworkAttribution(conn, finalConnection)) {
+          setDetectedConn(finalConnection);
+          onConnectionDetected(finalConnection);
+          setPhase('idle');
+          setProgress({ done: 0, total: 0, currentDomain: '' });
+          showToast(
+            'warning',
+            'Во время проверки изменилась сеть или VPN. Смешанный замер не сохранён — повторите на стабильном подключении.'
+          );
+          return;
+        }
+      } catch {
+        // Не выдумываем переход: при недоступном bridge сохраняем исходный precheck.
+      }
+    }
+
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
 
@@ -348,17 +366,17 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Уведомление нужно только тем, кто ушёл с экрана во время замера.
     if (document.visibilityState === 'hidden') {
       void notifyScanResult(
-        `${evaluated.verdict_title} · ${okCount} из ${results.length} доступны`,
+        `${evaluated.verdict_title} · ${okCount} из ${results.length} отвечают`,
         `Ответы уже в приложении: ${
-          appSettings.operator || netCtx?.operator || user.carrier
-        }${netCtx?.city ? `, ${netCtx.city}` : ''}`
+          appSettings.operator || conn.operator || conn.isp || user.carrier
+        }${conn.city ? `, ${conn.city}` : ''}`
       );
     }
 
     const carrierLabel =
       vpnMode === 'with_vpn'
         ? `VPN • ${conn.country_name}${conn.city ? `, ${conn.city}` : ''}`
-        : `${appSettings.operator || conn.isp || user.carrier} • ${appSettings.city || conn.city || user.region}`;
+        : `${appSettings.operator || conn.operator || conn.isp || user.carrier} • ${appSettings.city || conn.city || user.region}`;
 
     const accuracyNote = !controlOk
       ? 'Сеть не ответила на контрольный запрос — вероятно, интернета нет совсем. Результаты по сайтам в этом замере недостоверны.'
@@ -480,7 +498,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       `Вердикт: ${activeScan.verdict_title}`,
       `Сеть: ${activeScan.carrier_label} (${activeScan.country_code})`,
       `VPN при проверке: ${activeScan.vpn_detected ? 'включён' : 'выключен'}`,
-      `Доступно: ${activeScan.ok_sites + activeScan.slow_sites} из ${activeScan.total_sites}`,
+      `Ответили: ${activeScan.ok_sites + activeScan.slow_sites} из ${activeScan.total_sites}`,
       `• Белый список РФ: ${activeScan.ru_ok_pct}%`,
       `• Нейтральные сайты: ${activeScan.global_ok_pct}%`,
       `• Ограничиваемые сервисы: ${activeScan.dpi_ok_pct}%`,
@@ -566,13 +584,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const showResult = Boolean(activeScan) && phase !== 'scanning';
 
   // Ничего не выдумываем: если оператор и город не определены, так и пишем.
-  const connOperator = appSettings.operator || netCtx?.operator || detectedConn?.isp || '';
-  const connCity = appSettings.city || netCtx?.city || detectedConn?.city || user.region || '';
+  const displayedConnection = connection || detectedConn;
+  const connOperator = appSettings.operator || displayedConnection?.operator || displayedConnection?.isp || '';
+  const connCity = appSettings.city || displayedConnection?.city || (!displayedConnection ? user.region : '') || '';
   const connectionLine =
     connOperator || connCity
       ? [connOperator, connCity].filter(Boolean).join(' · ')
       : `готов проверить ${enabledSitesCount} сайтов`;
-  const netKnown = Boolean(detectedConn?.ip && detectedConn.ip !== '—');
+  const netKnown = Boolean(
+    displayedConnection?.vpn_source === 'system' || (displayedConnection?.ip && displayedConnection.ip !== '—')
+  );
 
   return (
     <div className="space-y-4">
@@ -616,7 +637,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               </StatusDot>
               <span className="text-muted">·</span>
               <span className="font-mono text-[11px]">
-                {okCount}/{displayedResults.length} доступно
+                {okCount}/{displayedResults.length} отвечают
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-muted" />
             </button>
@@ -626,7 +647,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
             >
               <SignalBadge
-                vpn={Boolean(detectedConn?.vpn_detected)}
+                vpn={Boolean(displayedConnection?.vpn_detected && displayedConnection.vpn_source === 'system')}
                 known={netKnown}
                 loading={phase === 'precheck'}
               />
@@ -727,11 +748,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <div className="flex justify-between text-[11px] text-dim font-medium">
                 <span className="inline-flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
-                  доступно {okCount}
+                  отвечают {okCount}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
-                  недоступно {blockedCount}
+                  не открыты {blockedCount}
                 </span>
               </div>
             </div>
@@ -797,16 +818,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 px-1">
             <Chip active className="h-7 px-2.5 text-[11px] shrink-0 gap-1">
               <Radio className="w-3 h-3 shrink-0" />
-              {connectionLabel(detectedConn?.connection_kind || netCtx?.kind || 'unknown')}
-              {(appSettings.operator || netCtx?.operator) && (
+              {connectionLabel(displayedConnection?.connection_kind || 'unknown')}
+              {connOperator && (
                 <span className="text-dim font-medium">
-                  · {appSettings.operator || netCtx?.operator}
+                  · {connOperator}
                 </span>
               )}
             </Chip>
-            {(appSettings.city || netCtx?.city || user.region) && (
+            {connCity && (
               <Chip className="h-7 px-2.5 text-[11px] shrink-0">
-                {appSettings.city || netCtx?.city || user.region}
+                {connCity}
               </Chip>
             )}
             {detectedConn?.ip && detectedConn.ip !== '—' && detectedConn.ip.length <= 15 && (
@@ -835,7 +856,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           {/* Три группы ресурсов */}
           <div className="rounded-[1.5rem] border p-4 sm:p-5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
             <SectionTitle
-              hint="Диагноз ставится по первым двум группам: доступность третьей зависит от оператора"
+              hint="Диагноз ставится по ответам первых двух групп: реакция третьей зависит от оператора"
               right={
                 <Button
                   size="sm"
@@ -966,7 +987,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   : 'нет данных'
               }
               hint={
-                detectedConn?.is_hosting ? 'Похоже на дата-центр (VPN)' : 'Потребительская сеть оператора'
+                detectedConn?.is_hosting ? 'Дата-центр; сам по себе не доказывает VPN' : 'Потребительская сеть оператора'
               }
               color="var(--accent)"
             />
@@ -1091,7 +1112,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       <Sheet
         open={showAllSites}
         onClose={() => setShowAllSites(false)}
-        title="Доступность сайтов"
+        title="Ответы сайтов"
         subtitle={`${filteredResults.length} из ${displayedResults.length} · ${activeScan?.carrier_label || ''}`}
         size="md"
         icon={
@@ -1107,7 +1128,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </Chip>
             <Chip active={siteFilter === 'ok'} onClick={() => setSiteFilter('ok')}>
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
-              Доступны {displayedResults.filter((r) => !r.intercepted && (r.status === 'ok' || r.status === 'slow')).length}
+              Отвечают {displayedResults.filter((r) => !r.intercepted && (r.status === 'ok' || r.status === 'slow')).length}
             </Chip>
             <Chip active={siteFilter === 'blocked'} onClick={() => setSiteFilter('blocked')}>
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
@@ -1125,7 +1146,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <div className="space-y-1.5">
             {filteredResults.map((item, idx) => {
               const tone: 'ok' | 'warn' | 'bad' =
-                item.status === 'ok' ? 'ok' : item.status === 'slow' ? 'warn' : 'bad';
+                item.intercepted || item.status === 'blocked'
+                  ? 'bad'
+                  : item.status === 'slow' || !item.proof || item.proof === 'endpoint' || item.proof === 'opaque'
+                  ? 'warn'
+                  : 'ok';
               return (
                 <div
                   key={`${item.domain}-${idx}`}
@@ -1194,7 +1219,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         title={phase === 'waiting_vpn_off' ? 'Ждём отключения VPN' : 'У вас включён VPN'}
         subtitle={
           phase === 'waiting_vpn_off'
-            ? 'Приложение заметит смену IP автоматически'
+            ? 'Приложение заметит смену сети и отключение VPN автоматически'
             : 'От этого зависит смысл проверки'
         }
         size="sm"

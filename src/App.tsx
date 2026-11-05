@@ -1,15 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Radar, Loader2 } from 'lucide-react';
 import { Network } from '@capacitor/network';
 import type { PluginListenerHandle } from '@capacitor/core';
+import { isNativeApp, onNativeNetworkChanged } from './lib/nativeBridge';
+import { useSettings } from './lib/appSettings';
 import {
   apiFetch,
   hasExplicitLogout,
   markExplicitLogout,
   setStoredToken,
 } from './lib/api';
-import { isNativeApp } from './lib/nativeBridge';
-import { detectNetworkContext, toClientConnection } from './lib/networkInfo';
+import {
+  buildNetworkContext,
+  detectNativeNetworkStatus,
+  detectNetworkContext,
+  isNewerNetworkSequence,
+  networkSnapshotKey,
+  toClientConnection,
+} from './lib/networkInfo';
 import type {
   ClientConnectionInfo,
   Incident,
@@ -44,6 +52,10 @@ export function App() {
 
   const [connection, setConnection] = useState<ClientConnectionInfo | null>(null);
   const [connLoading, setConnLoading] = useState(false);
+  const [appSettings] = useSettings();
+  const connectionRequest = useRef(0);
+  const nativeSequence = useRef(0);
+  const transportKey = useRef('');
 
   const [prefillIncidentScan, setPrefillIncidentScan] = useState<ScanRecord | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -64,31 +76,78 @@ export function App() {
   }, []);
 
   const refreshConnection = useCallback(async () => {
+    const request = ++connectionRequest.current;
     setConnLoading(true);
     try {
-      // Один путь для APK и браузера: никакого подставного профиля сети.
-      const ctx = await detectNetworkContext();
-      setConnection(toClientConnection(ctx));
-    } finally {
-      setConnLoading(false);
-    }
-  }, []);
+      const native = await detectNativeNetworkStatus();
+      if (request !== connectionRequest.current) return;
 
-  // При переключении Wi-Fi ↔ LTE обновляем подпись сразу, а не только перед
-  // следующим замером. Это особенно заметно при включённом VPN.
+      // Старый IP/город/оператор исчезает сразу при смене транспорта.
+      const nextKey = networkSnapshotKey(native);
+      if (isNativeApp() && nextKey !== transportKey.current) {
+        transportKey.current = nextKey;
+        setConnection(toClientConnection(buildNetworkContext(native, null, {
+          networkTypeOverride: appSettings.networkType,
+        })));
+      }
+
+      const ctx = await detectNetworkContext({
+        networkTypeOverride: appSettings.networkType,
+        nativeStatus: native,
+      });
+      if (request !== connectionRequest.current) return;
+      if (ctx.changedDuringCheck) {
+        // Быстрые LTE ↔ Wi-Fi переключения: не применяем GeoIP старого маршрута.
+        window.setTimeout(() => { void refreshConnection(); }, 0);
+        return;
+      }
+      const client = toClientConnection(ctx);
+      transportKey.current = `${client.connection_kind === 'none' ? 0 : 1}|${client.connection_kind}|${client.vpn_source === 'system' && client.vpn_detected ? 1 : 0}`;
+      setConnection(client);
+    } catch {
+      // Системный callback или периодическая проверка повторит запрос.
+    } finally {
+      if (request === connectionRequest.current) setConnLoading(false);
+    }
+  }, [appSettings.networkType]);
+
   useEffect(() => {
-    if (!isNativeApp()) return;
-    let listener: PluginListenerHandle | undefined;
     let disposed = false;
-    void Network.addListener('networkStatusChange', () => {
-      void refreshConnection();
-    }).then((handle) => {
-      if (disposed) void handle.remove();
-      else listener = handle;
-    });
+    let listener: PluginListenerHandle | undefined;
+    void refreshConnection();
+    const removeNative = isNativeApp()
+      ? onNativeNetworkChanged((state) => {
+          if (disposed || !isNewerNetworkSequence(state.sequence, nativeSequence.current)) return;
+          nativeSequence.current = state.sequence ?? nativeSequence.current;
+          void refreshConnection();
+        })
+      : () => {};
+
+    // Запасной триггер. Его connectionType не используем: он может быть старым.
+    if (isNativeApp()) {
+      void Network.addListener('networkStatusChange', () => {
+        if (!disposed) void refreshConnection();
+      }).then((handle) => {
+        if (disposed) void handle.remove();
+        else listener = handle;
+      }).catch(() => {});
+    }
+    const poll = window.setInterval(() => { void refreshConnection(); }, 30000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshConnection();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', refreshConnection);
+    window.addEventListener('offline', refreshConnection);
     return () => {
       disposed = true;
+      connectionRequest.current += 1;
+      removeNative();
       if (listener) void listener.remove();
+      window.clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', refreshConnection);
+      window.removeEventListener('offline', refreshConnection);
     };
   }, [refreshConnection]);
 
@@ -291,7 +350,7 @@ export function App() {
                 sites={sites}
                 latestScan={scans[0] || null}
                 connection={connection}
-                onConnectionDetected={setConnection}
+                onConnectionDetected={() => { void refreshConnection(); }}
                 onScanSaved={handleScanSaved}
                 onQuickReportIncident={handleQuickReportIncident}
                 onNavigateSites={() => setActiveTab('sites')}

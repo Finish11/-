@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.telephony.TelephonyManager;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
@@ -37,6 +38,121 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  */
 @CapacitorPlugin(name = "ApkUpdater")
 public class ApkUpdaterPlugin extends Plugin {
+
+    private final Object networkLock = new Object();
+    private ConnectivityManager.NetworkCallback defaultNetworkCallback;
+    private Network defaultNetwork;
+    private boolean networkCallbackRegistered;
+    private String lastNetworkSignature = "";
+    private long networkSequence;
+
+    /**
+     * Свой слушатель вместо перезапроса активной сети из Capacitor Network.
+     * Android отдаёт актуальные capabilities прямо в onCapabilitiesChanged.
+     */
+    @Override
+    public void load() {
+        super.load();
+        registerNetworkCallback();
+    }
+
+    @Override
+    protected void handleOnStart() {
+        super.handleOnStart();
+        registerNetworkCallback();
+    }
+
+    private void registerNetworkCallback() {
+        synchronized (networkLock) {
+            if (networkCallbackRegistered) return;
+            ConnectivityManager manager = (ConnectivityManager) getContext()
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) return;
+            defaultNetworkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                    // Не вызываем здесь getActiveNetwork/getNetworkCapabilities:
+                    // синхронный перезапрос может вернуть более старое состояние.
+                    boolean vpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
+                    String kind = transportKind(caps);
+                    String carrier = carrierName(kind);
+                    JSObject event = new JSObject();
+                    synchronized (networkLock) {
+                        defaultNetwork = network;
+                        // Network ID отличает и смену двух сетей с одинаковым транспортом.
+                        String signature = network.toString() + "|1|" + kind + "|" + vpn;
+                        if (signature.equals(lastNetworkSignature)) return;
+                        lastNetworkSignature = signature;
+                        networkSequence += 1;
+                        event.put("connected", true);
+                        event.put("kind", kind);
+                        event.put("vpn", vpn);
+                        event.put("carrier", carrier);
+                        event.put("sequence", networkSequence);
+                    }
+                    // Не держим networkLock во время вызова моста Capacitor.
+                    notifyListeners("networkChanged", event, true);
+                }
+
+                @Override
+                public void onLost(Network network) {
+                    JSObject event = new JSObject();
+                    synchronized (networkLock) {
+                        // Старый Wi-Fi может завершиться уже после появления LTE.
+                        // Такой onLost не должен стирать новый default network.
+                        if (defaultNetwork == null || !network.equals(defaultNetwork)) return;
+                        defaultNetwork = null;
+                        lastNetworkSignature = network.toString() + "|0|none|false";
+                        networkSequence += 1;
+                        event.put("connected", false);
+                        event.put("kind", "none");
+                        event.put("vpn", false);
+                        event.put("carrier", "");
+                        event.put("sequence", networkSequence);
+                    }
+                    notifyListeners("networkChanged", event, true);
+                }
+            };
+            try {
+                manager.registerDefaultNetworkCallback(defaultNetworkCallback);
+                networkCallbackRegistered = true;
+            } catch (Exception ignored) {
+                defaultNetworkCallback = null;
+            }
+        }
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        synchronized (networkLock) {
+            if (networkCallbackRegistered && defaultNetworkCallback != null) {
+                try {
+                    ConnectivityManager manager = (ConnectivityManager) getContext()
+                        .getSystemService(Context.CONNECTIVITY_SERVICE);
+                    if (manager != null) manager.unregisterNetworkCallback(defaultNetworkCallback);
+                } catch (Exception ignored) {
+                }
+            }
+            networkCallbackRegistered = false;
+            defaultNetworkCallback = null;
+            defaultNetwork = null;
+        }
+        super.handleOnDestroy();
+    }
+
+    private String carrierName(String kind) {
+        if (!"cellular".equals(kind)) return "";
+        try {
+            TelephonyManager telephony = (TelephonyManager) getContext()
+                .getSystemService(Context.TELEPHONY_SERVICE);
+            if (telephony == null) return "";
+            String name = telephony.getNetworkOperatorName();
+            if (name == null || name.trim().isEmpty()) name = telephony.getSimOperatorName();
+            return name == null ? "" : name.trim();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
 
     private DownloadManager downloadManager() {
         return (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
@@ -175,28 +291,26 @@ public class ApkUpdaterPlugin extends Plugin {
             NetworkCapabilities caps = active == null ? null : manager.getNetworkCapabilities(active);
             String kind = transportKind(caps);
 
-            if (kind.equals("unknown") && caps != null
-                && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                // Публичного getUnderlyingNetworks() у приложения нет: это системный
-                // API. Среди доступных подключённых сетей выбираем не-VPN транспорт.
-                // Если Android скрывает его, возвращаем unknown, а не выдумываем Wi-Fi.
-                for (Network network : manager.getAllNetworks()) {
-                    if (network.equals(active)) continue;
-                    NetworkCapabilities underlying = manager.getNetworkCapabilities(network);
-                    if (underlying == null || underlying.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
-                    kind = transportKind(underlying);
-                    if (!kind.equals("unknown")) break;
-                }
+            // Android сам добавляет underlying Wi-Fi/LTE transports в capabilities
+            // VPN, когда они известны. Перебирать getAllNetworks() и выбирать первую
+            // не-VPN сеть нельзя: рядом может остаться неиспользуемый Wi-Fi.
+            // Если система дала только TRANSPORT_VPN, честно остаётся unknown.
+            boolean connected = caps != null;
+            ret.put("systemKnown", true);
+            ret.put("connected", connected);
+            ret.put("kind", connected ? kind : "none");
+            ret.put("vpn", connected && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
+            ret.put("carrier", connected ? carrierName(kind) : "");
+            synchronized (networkLock) {
+                ret.put("sequence", networkSequence);
             }
-
-            ret.put("connected", caps != null);
-            ret.put("kind", kind);
-            ret.put("vpn", caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
             call.resolve(ret);
         } catch (Exception e) {
+            ret.put("systemKnown", false);
             ret.put("connected", false);
             ret.put("kind", "unknown");
             ret.put("vpn", false);
+            ret.put("carrier", "");
             call.resolve(ret);
         }
     }

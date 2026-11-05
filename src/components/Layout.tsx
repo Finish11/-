@@ -124,22 +124,32 @@ export const Layout: React.FC<LayoutProps> = ({
     }
   };
 
-  const vpnOn = Boolean(connection?.vpn_detected);
-  // Пока сеть не определена, «БЕЗ VPN» — это утверждение без основания.
-  const netKnown = Boolean(connection?.ip && connection.ip !== '—');
+  const vpnOn = Boolean(connection?.vpn_detected && connection.vpn_source === 'system');
+  const ipLooksLikeVpn = Boolean(connection?.vpn_detected && connection.vpn_source === 'ip');
+  // Системный TRANSPORT_VPN достоверен даже при временно недоступном GeoIP.
+  const netKnown = Boolean(
+    connection?.vpn_source === 'system' || (connection?.ip && connection.ip !== '—')
+  );
   const vpnLabel = connLoading
     ? 'Проверяем…'
     : !netKnown
     ? 'Сеть?'
     : vpnOn
     ? 'VPN'
-    : 'БЕЗ VPN';
-  // VPN определяется эвристикой (дата-центр + гео), поэтому не «выключен», а «похоже, выключен».
+    : ipLooksLikeVpn
+    ? 'VPN?'
+    : connection?.vpn_source === 'system'
+    ? 'БЕЗ VPN'
+    : 'VPN не виден';
   const vpnHint = !netKnown
     ? 'Не удалось определить сеть. Нажмите, чтобы попробовать снова'
     : vpnOn
-    ? 'Похоже, включён VPN: внешний адрес в дата-центре'
-    : 'Похоже, VPN выключен. Нажмите, чтобы проверить снова';
+    ? 'Android подтвердил VPN для активной сети (TRANSPORT_VPN)'
+    : ipLooksLikeVpn
+    ? 'Только предположение по внешнему IP, не системное подтверждение VPN'
+    : connection?.vpn_source === 'system'
+    ? 'Android не сообщает VPN для активной сети. Смена IP сама по себе не является VPN'
+    : 'Браузер не даёт системного статуса VPN';
 
   const fieldStyle: React.CSSProperties = {
     background: 'var(--surface-2)',
@@ -304,7 +314,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 'определяем сеть…'
               ) : (
                 <span className="truncate">
-                  {[connection?.isp, connection?.city].filter(Boolean).join(' · ') ||
+                  {[connection?.operator || connection?.isp, connection?.city].filter(Boolean).join(' · ') ||
                     'сеть не определена'}
                 </span>
               )}
@@ -319,17 +329,17 @@ export const Layout: React.FC<LayoutProps> = ({
             style={{
               background: !netKnown
                 ? 'var(--surface-2)'
-                : vpnOn
+                : (vpnOn || ipLooksLikeVpn)
                 ? 'rgb(var(--warning) / 0.12)'
                 : 'rgb(var(--success) / 0.1)',
               borderColor: !netKnown
                 ? 'var(--line)'
-                : vpnOn
+                : (vpnOn || ipLooksLikeVpn)
                 ? 'rgb(var(--warning) / 0.32)'
                 : 'rgb(var(--success) / 0.28)',
               color: !netKnown
                 ? 'var(--text-dim)'
-                : vpnOn
+                : (vpnOn || ipLooksLikeVpn)
                 ? 'rgb(var(--warning))'
                 : 'rgb(var(--success))',
             }}
@@ -339,7 +349,7 @@ export const Layout: React.FC<LayoutProps> = ({
               style={{
                 background: !netKnown
                   ? 'var(--text-muted)'
-                  : vpnOn
+                  : (vpnOn || ipLooksLikeVpn)
                   ? 'rgb(var(--warning))'
                   : 'rgb(var(--success))',
               }}

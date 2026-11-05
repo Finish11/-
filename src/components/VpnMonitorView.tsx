@@ -669,7 +669,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     };
   }, [profiles]);
 
-  const vpnOn = Boolean(connection?.vpn_detected);
+  const vpnOn = Boolean(connection?.vpn_detected && connection.vpn_source === 'system');
+  const vpnKnown = connection?.vpn_source === 'system';
 
   return (
     <div className="space-y-4">
@@ -709,11 +710,11 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           <div
             className="w-10 h-10 rounded-2xl grid place-items-center shrink-0"
             style={{
-              background: vpnOn ? 'rgb(var(--warning) / 0.14)' : 'rgb(var(--success) / 0.12)',
-              color: vpnOn ? 'rgb(var(--warning))' : 'rgb(var(--success))',
+              background: vpnOn ? 'rgb(var(--warning) / 0.14)' : vpnKnown ? 'rgb(var(--success) / 0.12)' : 'var(--surface-2)',
+              color: vpnOn ? 'rgb(var(--warning))' : vpnKnown ? 'rgb(var(--success))' : 'var(--text-dim)',
             }}
           >
-            {vpnOn ? <ShieldAlert className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
+            {vpnOn || !vpnKnown ? <ShieldAlert className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -723,17 +724,17 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               <span
                 className="text-[10.5px] font-bold px-2 py-0.5 rounded-full"
                 style={{
-                  background: vpnOn ? 'rgb(var(--warning) / 0.16)' : 'rgb(var(--success) / 0.14)',
-                  color: vpnOn ? 'rgb(var(--warning))' : 'rgb(var(--success))',
+                  background: vpnOn ? 'rgb(var(--warning) / 0.16)' : vpnKnown ? 'rgb(var(--success) / 0.14)' : 'var(--surface-2)',
+                  color: vpnOn ? 'rgb(var(--warning))' : vpnKnown ? 'rgb(var(--success))' : 'var(--text-dim)',
                 }}
               >
-                {vpnOn ? 'VPN включён' : 'прямое подключение'}
+                {vpnOn ? 'VPN включён' : vpnKnown ? 'прямое подключение' : 'системный статус неизвестен'}
               </span>
             </div>
             <div className="text-[14px] font-bold mt-1 leading-snug break-words">
               {connection
-                ? `${connection.country_name}${connection.city ? `, ${connection.city}` : ''} — ${
-                    connection.isp || 'провайдер неизвестен'
+                ? `${[connection.country_name, connection.city].filter(Boolean).join(', ') || 'Маршрут определяется'} — ${
+                    connection.operator || connection.isp || 'провайдер неизвестен'
                   }`
                 : 'определяем маршрут…'}
             </div>
@@ -741,14 +742,18 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               <span>IP {connection?.ip || '…'}</span>
               {connection?.asn && <span>{connection.asn}</span>}
               <span>
-                {connection?.is_hosting
-                  ? 'дата-центр'
-                  : connection?.connection_kind === 'wifi'
+                {connection?.connection_kind === 'wifi'
                   ? 'Wi-Fi'
-                  : connection?.is_mobile
+                  : connection?.connection_kind === 'cellular'
                   ? 'мобильная сеть'
                   : connection?.connection_kind === 'ethernet'
                   ? 'Ethernet'
+                  : connection?.connection_kind === 'none'
+                  ? 'нет сети'
+                  : connection?.is_hosting
+                  ? 'дата-центр'
+                  : connection?.is_mobile
+                  ? 'мобильная сеть'
                   : 'тип сети не определён'}
               </span>
             </div>

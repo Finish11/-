@@ -1,5 +1,6 @@
 import { registerPlugin } from '@capacitor/core';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import type { PluginListenerHandle } from '@capacitor/core';
 
 /**
  * Мост к «нативной» сети. В APK (Capacitor) запросы идут через нативный HTTP-стек:
@@ -15,6 +16,61 @@ export const isNativeApp = (): boolean => {
     return false;
   }
 };
+
+export type NativeConnectionKind = 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
+
+export interface NativeNetworkState {
+  connected: boolean;
+  /** false означает сбой bridge, а не доказанное отсутствие сети. */
+  systemKnown?: boolean;
+  kind: NativeConnectionKind;
+  /** Только системный TRANSPORT_VPN — никакой эвристики по IP. */
+  vpn: boolean;
+  /** Имя мобильного оператора из Android, если выбрана сотовая сеть. */
+  carrier?: string;
+  /** Монотонный номер системного события для отбрасывания старых колбэков. */
+  sequence?: number;
+}
+
+interface NetworkBridgePlugin {
+  networkKind(): Promise<NativeNetworkState>;
+  addListener(
+    eventName: 'networkChanged',
+    listenerFunc: (state: NativeNetworkState) => void
+  ): Promise<PluginListenerHandle>;
+}
+
+const NetworkBridge = registerPlugin<NetworkBridgePlugin>('ApkUpdater');
+
+export async function getNativeNetworkState(): Promise<NativeNetworkState> {
+  const state = await NetworkBridge.networkKind();
+  return {
+    connected: Boolean(state.connected),
+    systemKnown: state.systemKnown !== false,
+    kind: state.connected ? state.kind || 'unknown' : 'none',
+    vpn: Boolean(state.connected && state.vpn),
+    carrier: typeof state.carrier === 'string' ? state.carrier : '',
+    sequence: typeof state.sequence === 'number' ? state.sequence : undefined,
+  };
+}
+
+/** Системные события default network. На обычном Network-плагин не полагаемся. */
+export function onNativeNetworkChanged(
+  listener: (state: NativeNetworkState) => void
+): () => void {
+  let disposed = false;
+  let handle: PluginListenerHandle | undefined;
+  void NetworkBridge.addListener('networkChanged', listener).then((value) => {
+    if (disposed) void value.remove();
+    else handle = value;
+  }).catch(() => {
+    // На старых APK события могут отсутствовать: polling остаётся запасным путём.
+  });
+  return () => {
+    disposed = true;
+    if (handle) void handle.remove();
+  };
+}
 
 export interface NativeHttpResult {
   status: number;

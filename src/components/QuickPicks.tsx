@@ -20,6 +20,18 @@ interface QuickPicksProps {
 }
 
 const norm = (domain: string) => domain.replace(/^www\./, '').toLowerCase();
+const DOMAIN_ALIASES: Record<string, string[]> = {
+  telegram: ['web.telegram.org', 'telegram.org'],
+  whatsapp: ['web.whatsapp.com', 'whatsapp.com'],
+};
+const quickDomains = (pick: QuickPick) => DOMAIN_ALIASES[pick.id] || [pick.domain];
+const findQuickValue = <T,>(map: Map<string, T>, pick: QuickPick): T | undefined => {
+  for (const domain of quickDomains(pick)) {
+    const value = map.get(norm(domain));
+    if (value) return value;
+  }
+  return undefined;
+};
 const ORDER_KEY = 'pulsenet_quick_order';
 
 function loadQuickOrder(): string[] {
@@ -97,18 +109,28 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean): Visual {
       emojiBg: 'transparent',
     };
   }
+  if (!r.proof || r.proof === 'endpoint' || r.proof === 'opaque') {
+    return {
+      bg: 'rgb(var(--warning) / 0.08)',
+      fg: 'rgb(var(--warning))',
+      label: !r.proof || r.proof === 'opaque'
+        ? 'ответ без проверки'
+        : r.status === 'slow' ? 'адрес отвечает медленно' : 'только адрес отвечает',
+      emojiBg: 'transparent',
+    };
+  }
   if (r.status === 'slow') {
     return {
       bg: 'rgb(var(--warning) / 0.1)',
       fg: 'rgb(var(--warning))',
-      label: 'медленно',
+      label: 'страница открыта медленно',
       emojiBg: 'transparent',
     };
   }
   return {
     bg: 'rgb(var(--success) / 0.09)',
     fg: 'rgb(var(--success))',
-    label: 'сайт отвечает',
+    label: 'страница открыта',
     emojiBg: 'transparent',
   };
 }
@@ -140,7 +162,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 
   const added = useMemo(() => {
     const rank = new Map(order.map((id, index) => [id, index]));
-    return QUICK_PICKS.map((pick) => ({ pick, site: byDomain.get(norm(pick.domain)) }))
+    return QUICK_PICKS.map((pick) => ({ pick, site: findQuickValue(byDomain, pick) }))
       .filter((x): x is { pick: QuickPick; site: Site } => Boolean(x.site))
       .sort((a, b) => {
         const ar = rank.get(a.pick.id) ?? Number.MAX_SAFE_INTEGER;
@@ -150,7 +172,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   }, [byDomain, order]);
 
   const notAdded = useMemo(
-    () => QUICK_PICKS.filter((pick) => !byDomain.has(norm(pick.domain))),
+    () => QUICK_PICKS.filter((pick) => !findQuickValue(byDomain, pick)),
     [byDomain]
   );
 
@@ -329,7 +351,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {added.map(({ pick, site }) => {
-            const r = resultByDomain.get(norm(pick.domain));
+            const r = findQuickValue(resultByDomain, pick);
             const v = statusVisual(r, scanning);
             const game = gamePing[pick.id];
             return (
@@ -399,21 +421,21 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 
                 <div className="mt-2 text-[12px] font-bold truncate pr-1">{pick.name}</div>
 
-                <div className="mt-1 flex items-center gap-1.5">
+                <div className="mt-1 flex items-start gap-1.5">
                   <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    className="mt-1 w-1.5 h-1.5 rounded-full shrink-0"
                     style={{ background: v.fg, opacity: scanning ? 0.5 : 1 }}
                   />
-                  <span className="text-[10.5px] font-semibold truncate" style={{ color: v.fg }}>
-                    {v.label}
-                  </span>
-                  {r?.latency_ms != null ? (
-                    <span className="ml-auto text-[10px] font-mono text-muted tabular-nums shrink-0">
-                      {r.latency_ms} мс
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10.5px] leading-tight font-semibold break-words" style={{ color: v.fg }}>
+                      {v.label}
                     </span>
-                  ) : (
-                    <span className="ml-auto shrink-0" aria-hidden="true" />
-                  )}
+                    {r?.latency_ms != null && (
+                      <span className="block mt-0.5 text-[10px] font-mono text-muted tabular-nums">
+                        {r.latency_ms} мс
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {pick.gameHost && !scanning && (
@@ -429,6 +451,13 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
             );
           })}
         </div>
+      )}
+
+      {added.length > 0 && (
+        <p className="mt-2 text-[10px] leading-snug text-muted">
+          «Страница открыта» — получен ожидаемый сайт. «Только адрес отвечает» — содержимое не доказано.
+          Вход в аккаунт, сообщения, звонки и видео отдельно не проверяются.
+        </p>
       )}
 
       {/* ---------- Выбор сервисов ---------- */}

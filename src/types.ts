@@ -58,6 +58,8 @@ export interface Site {
   created_at: string;
 }
 
+export type SiteProof = 'app' | 'page' | 'endpoint' | 'opaque';
+
 export interface ScanSiteResult {
   site_id?: number;
   name: string;
@@ -70,6 +72,8 @@ export interface ScanSiteResult {
   block_reason?: SiteBlockReason;
   /** Ответила заглушка/подмена TLS, а не сам сайт */
   intercepted?: boolean;
+  /** app/page — ожидаемое содержимое; endpoint/opaque — только сетевой ответ. */
+  proof?: SiteProof;
   /** Короткое пояснение для интерфейса */
   note?: string;
 }
@@ -192,8 +196,12 @@ export interface ClientConnectionInfo {
   is_mobile: boolean;
   /** Физический транспорт Android: не путаем LTE и Wi-Fi под VPN. */
   connection_kind?: 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
+  /** Мобильный оператор из Android либо ISP из GeoIP. */
+  operator?: string;
   vpn_detected: boolean;
   vpn_confidence: 'high' | 'medium' | 'none';
+  /** system — факт Android; ip — только приблизительная браузерная оценка. */
+  vpn_source?: 'system' | 'ip' | 'none';
   vpn_reasons: string[];
   split_tunnel?: boolean;
   webrtc_ips?: string[];

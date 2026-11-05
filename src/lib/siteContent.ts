@@ -1,3 +1,5 @@
+import type { SiteProof } from '../types';
+
 /**
  * Проверка содержимого HTTP-ответа отдельно от сетевого кода.
  * Это чистые функции: их можно регрессионно тестировать без Android.
@@ -8,6 +10,7 @@ export interface SiteContentAssessment {
   /** Ответ пришёл, но принадлежит заглушке/посреднику, а не запрошенному сайту. */
   intercepted: boolean;
   reason?: string;
+  proof?: SiteProof;
 }
 
 const STUB_MARKERS = [
@@ -56,6 +59,18 @@ function hostname(url: string): string {
   }
 }
 
+function expectedBrand(url: string): string {
+  const host = hostname(url);
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length < 2) return host;
+  const suffix = parts.slice(-2).join('.');
+  const secondLevelSuffixes = new Set(['co.uk', 'org.uk', 'com.au', 'net.au', 'co.jp', 'com.br']);
+  const brand = secondLevelSuffixes.has(suffix)
+    ? parts[parts.length - 3] || host
+    : parts[parts.length - 2] || host;
+  return brand.length >= 3 ? brand : host;
+}
+
 function isChatGpt(url: string): boolean {
   const host = hostname(url);
   return host === 'chatgpt.com' || host.endsWith('.chatgpt.com') || host === 'chat.openai.com';
@@ -70,6 +85,54 @@ function looksLikeChatGptApp(lower: string): boolean {
   ) return true;
   return lower.includes('<title>chatgpt') &&
     (lower.includes('__next_f') || lower.includes('openai'));
+}
+
+function strictService(url: string, lower: string): { name: string; matches: boolean } | null {
+  const host = hostname(url);
+  if (isChatGpt(url)) return { name: 'ChatGPT', matches: looksLikeChatGptApp(lower) };
+  if (host === 'youtube.com' || host.endsWith('.youtube.com')) {
+    return {
+      name: 'YouTube',
+      matches: lower.includes('youtube') && (
+        lower.includes('ytcfg') || lower.includes('youtubei') ||
+        lower.includes('googlevideo') || lower.includes('youtube.com/s/')
+      ),
+    };
+  }
+  if (host === 'claude.ai' || host.endsWith('.claude.ai')) {
+    return {
+      name: 'Claude',
+      matches: lower.includes('claude') && (
+        lower.includes('anthropic') || lower.includes('claude.ai/') || lower.includes('/assets/')
+      ),
+    };
+  }
+  if (host === 'gemini.google.com') {
+    return {
+      name: 'Gemini',
+      matches: lower.includes('gemini') && lower.includes('google') &&
+        (lower.includes('<script') || lower.includes('accounts.google.com')),
+    };
+  }
+  if (host === 'telegram.org' || host.endsWith('.telegram.org')) {
+    return {
+      name: 'Telegram',
+      matches: lower.includes('telegram') && (
+        lower.includes('webogram') || lower.includes('tdweb') ||
+        lower.includes('web.telegram.org') || lower.includes('telegram.org/')
+      ),
+    };
+  }
+  if (host === 'whatsapp.com' || host.endsWith('.whatsapp.com')) {
+    return {
+      name: 'WhatsApp',
+      matches: lower.includes('whatsapp') && (
+        lower.includes('static.whatsapp.net') || lower.includes('web.whatsapp.com') ||
+        lower.includes('/assets/')
+      ),
+    };
+  }
+  return null;
 }
 
 export function assessSiteContent(
@@ -98,28 +161,55 @@ export function assessSiteContent(
   if (isImage) {
     // Бинарную картинку нативный HTTP отдаёт строкой; HTML вместо неё — не успех.
     return text.trim().length > 0 && !/<!doctype|<html|<head/i.test(lower)
-      ? { own: true, intercepted: false }
+      ? { own: true, intercepted: false, proof: 'endpoint' }
       : { own: false, intercepted: true, reason: 'вместо значка сайта пришла HTML-страница' };
   }
 
-  if (isChatGpt(url)) {
+  const strict = strictService(url, lower);
+  if (strict) {
     if (httpStatus >= 400) {
       return {
         own: false,
         intercepted: false,
-        reason: `ChatGPT вернул HTTP ${httpStatus} — приложение не открыто`,
+        reason: `${strict.name} вернул HTTP ${httpStatus} — страница не открыта`,
       };
     }
-    if (!looksLikeChatGptApp(lower)) {
+    if (!strict.matches) {
       return {
         own: false,
         intercepted: true,
-        reason: 'вместо приложения ChatGPT пришла другая страница',
+        reason: `вместо приложения ${strict.name} пришла другая страница`,
       };
     }
+    return { own: true, intercepted: false, proof: 'app' };
   }
 
-  return text.trim().length > 0
-    ? { own: true, intercepted: false }
-    : { own: false, intercepted: true, reason: 'сервер вернул пустой ответ' };
+  if (httpStatus >= 400) {
+    return {
+      own: false,
+      intercepted: false,
+      reason: `сервер вернул HTTP ${httpStatus} — страница не открыта`,
+    };
+  }
+  if (!text.trim()) {
+    return { own: false, intercepted: true, reason: 'сервер вернул пустой ответ' };
+  }
+  const looksLikeHtml = /<!doctype|<html|<head|<title|<script|<body/i.test(lower);
+  if (!looksLikeHtml) {
+    return {
+      own: true,
+      intercepted: false,
+      proof: 'endpoint',
+      reason: 'адрес ответил текстом или данными, но не веб-страницей',
+    };
+  }
+  const brand = expectedBrand(url);
+  if (brand && !lower.includes(brand.toLowerCase())) {
+    return {
+      own: false,
+      intercepted: true,
+      reason: `HTML не содержит признаков сайта ${brand}`,
+    };
+  }
+  return { own: true, intercepted: false, proof: 'page' };
 }

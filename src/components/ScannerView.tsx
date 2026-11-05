@@ -508,7 +508,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   return (
     <div className="space-y-4">
       {/* ======================= ГЛАВНАЯ КАРТОЧКА ======================= */}
-      <section className="relative overflow-hidden rounded-[1.75rem] border p-5 sm:p-7"
+      <section className="relative overflow-hidden rounded-[1.75rem] border p-4 sm:p-7"
         style={{
           borderColor: 'var(--line)',
           background:
@@ -562,15 +562,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           )}
 
           {/* ---------- Круглая кнопка-радар ---------- */}
-          <div className="relative mt-6 mb-1 grid place-items-center">
+          <div className="relative mt-4 mb-1 grid place-items-center">
             {scanning && (
               <>
                 <span
-                  className="radar-ring absolute w-40 h-40 sm:w-44 sm:h-44 rounded-full"
+                  className="radar-ring absolute w-36 h-36 sm:w-44 sm:h-44 rounded-full"
                   style={{ border: '1.5px solid rgb(var(--accent) / 0.45)' }}
                 />
                 <span
-                  className="radar-ring absolute w-40 h-40 sm:w-44 sm:h-44 rounded-full"
+                  className="radar-ring absolute w-36 h-36 sm:w-44 sm:h-44 rounded-full"
                   style={{ border: '1px solid rgb(var(--accent) / 0.3)', animationDelay: '0.9s' }}
                 />
               </>
@@ -579,7 +579,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             <button
               type="button"
               onClick={scanning ? handleScanTap : handleStartCheck}
-              className="relative w-[10.5rem] h-[10.5rem] sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center select-none tap-chunky"
+              className="relative w-[8.75rem] h-[8.75rem] sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center select-none tap-chunky"
               style={{
                 background: scanning
                   ? 'linear-gradient(160deg, rgb(var(--accent)), rgb(var(--accent-2)))'
@@ -663,8 +663,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               </div>
             </div>
           ) : showResult && activeScan ? (
-            <div className="mt-4 w-full max-w-sm space-y-1">
-              <h2 className="text-[15.5px] font-extrabold leading-snug">{activeScan.verdict_title}</h2>
+            <div className="mt-3 w-full max-w-sm space-y-1">
+              <h2 className="text-[15px] font-extrabold leading-snug">{activeScan.verdict_title}</h2>
               <p className="text-[12px] text-dim leading-snug line-clamp-2">{activeScan.verdict_summary}</p>
               <p className="text-[10.5px] text-muted pt-0.5">
                 {relativeScanTime(activeScan.created_at)}

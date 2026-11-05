@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Info,
   Shield,
   ShieldCheck,
   ShieldAlert,
@@ -12,14 +13,12 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
-  X,
   Loader2,
-  GitBranch,
   Globe,
   Link2,
   QrCode,
   Download,
-  Upload,
+  FileText,
   ChevronDown,
   ChevronRight,
   Search,
@@ -27,18 +26,26 @@ import {
   Check,
   Signal,
   Radio,
-  FileText,
   AlertTriangle,
-  Link,
   Server,
+  ArrowUpRight,
 } from 'lucide-react';
-import type {
-  ClientConnectionInfo,
-  VpnProfile,
-  VpnSubscription,
-} from '../types';
-import { apiFetch } from '../lib/api';
 import { QRCodeCanvas } from 'qrcode.react';
+import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
+import { apiFetch } from '../lib/api';
+import { isNativeApp } from '../lib/nativeBridge';
+import { IS_DEMO_BUILD } from '../lib/scanner';
+import { Sheet } from './ui/Sheet';
+import {
+  Button,
+  Chip,
+  CountryBadge,
+  EmptyState,
+  Notice,
+  SectionTitle,
+  Skeleton,
+  StatusIcon,
+} from './ui/kit';
 
 interface VpnMonitorViewProps {
   profiles: VpnProfile[];
@@ -66,7 +73,6 @@ const PROTOCOLS = [
   { value: 'Cloudflare WARP', dpi: 'low' as const, hint: 'Стандартные эндпоинты часто блокируются' },
 ];
 
-// Убирает ведущий эмодзи-флаг/иконку из имени узла: флаг уже рисуется отдельно по country_code
 const stripLeadingFlag = (name: string) => {
   const trimmed = name.trim();
   const stripped = trimmed
@@ -98,14 +104,6 @@ const COUNTRY_BY_NAME: Array<[RegExp, string]> = [
   [/канад|ca-/i, 'CA'],
 ];
 
-// Флаг страны: сначала по country_code, затем по названию/локации узла
-const nodeFlag = (code?: string, ...labels: Array<string | undefined>) => {
-  if (code && code.length === 2 && code !== 'XX') return COUNTRY_FLAG(code);
-  const hay = labels.filter(Boolean).join(' ');
-  const hit = COUNTRY_BY_NAME.find(([re]) => re.test(hay));
-  return hit ? COUNTRY_FLAG(hit[1]) : '🌐';
-};
-
 const COUNTRY_FLAG = (code: string) => {
   if (!code || code.length !== 2 || code === 'XX') return '🌐';
   return String.fromCodePoint(
@@ -114,6 +112,20 @@ const COUNTRY_FLAG = (code: string) => {
       .split('')
       .map((c) => 127397 + c.charCodeAt(0))
   );
+};
+
+const nodeFlag = (code?: string, ...labels: Array<string | undefined>) => {
+  if (code && code.length === 2 && code !== 'XX') return COUNTRY_FLAG(code);
+  const hay = labels.filter(Boolean).join(' ');
+  const hit = COUNTRY_BY_NAME.find(([re]) => re.test(hay));
+  return hit ? COUNTRY_FLAG(hit[1]) : '🌐';
+};
+
+/** Код страны по названию узла/локации, если панель его не отдала. */
+const guessCode = (...labels: Array<string | undefined>): string => {
+  const hay = labels.filter(Boolean).join(' ');
+  const hit = COUNTRY_BY_NAME.find(([re]) => re.test(hay));
+  return hit ? hit[1] : 'XX';
 };
 
 function formatBytes(bytes: number): string {
@@ -128,6 +140,16 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+const statusTone = (status: VpnProfile['status']) =>
+  status === 'online' ? 'ok' : status === 'degraded' ? 'warn' : 'bad';
+
+const STATUS_LABEL: Record<VpnProfile['status'], string> = {
+  online: 'онлайн',
+  degraded: 'медленно',
+  blocked: 'блок',
+  unknown: 'нет данных',
+};
+
 export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   profiles,
   setProfiles,
@@ -136,7 +158,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   connection,
   connLoading,
   onRefreshConnection,
-  darkMode,
   showToast,
 }) => {
   const [checkingAll, setCheckingAll] = useState(false);
@@ -146,7 +167,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   const [protoFilter, setProtoFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  // ---------- Add/Edit VPN node modal ----------
+  // ---------- узел вручную ----------
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<VpnProfile | null>(null);
   const [name, setName] = useState('');
@@ -162,7 +183,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // ---------- Subscription modal ----------
+  // ---------- подписка ----------
   const [subModalOpen, setSubModalOpen] = useState(false);
   const [subTab, setSubTab] = useState<'url' | 'links'>('url');
   const [subUrl, setSubUrl] = useState('');
@@ -170,17 +191,24 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   const [subAutoUpdate, setSubAutoUpdate] = useState(true);
   const [subInterval, setSubInterval] = useState(12);
   const [subSaving, setSubSaving] = useState(false);
+  const [subStage, setSubStage] = useState<'idle' | 'working'>('idle');
+  const [subError, setSubError] = useState<string | null>(null);
   const [importText, setImportText] = useState('');
   const [importingLinks, setImportingLinks] = useState(false);
-  const [preview, setPreview] = useState<
-    Array<{ name: string; protocol: string; host: string; port: number; location: string; country_code: string }>
-  >([]);
 
-  // ---------- QR modal ----------
+  // ---------- QR ----------
   const [qrNode, setQrNode] = useState<VpnProfile | null>(null);
   const [qrValue, setQrValue] = useState<string>('');
   const [qrLoading, setQrLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--surface-2)',
+    border: '1px solid var(--line)',
+    color: 'var(--text)',
+  };
+  const input =
+    'w-full px-3 py-2.5 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-[rgb(var(--accent)/0.3)]';
 
   const openCreate = () => {
     setEditing(null);
@@ -237,7 +265,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         is_primary: isPrimary,
         notes,
       };
-
       if (editing) {
         const res = await apiFetch<{ profile: VpnProfile }>(`/api/vpn-profiles/${editing.id}`, {
           method: 'PATCH',
@@ -257,16 +284,14 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           body: JSON.stringify(payload),
         });
         setProfiles((prev) => {
-          const next = res.profile.is_primary
-            ? prev.map((x) => ({ ...x, is_primary: false }))
-            : prev;
+          const next = res.profile.is_primary ? prev.map((x) => ({ ...x, is_primary: false })) : prev;
           return [res.profile, ...next];
         });
-        showToast('success', `Узел «${res.profile.name}» добавлен и проверен по TCP`);
+        showToast('success', `Узел «${res.profile.name}» добавлен`);
       }
       setModalOpen(false);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Ошибка сохранения VPN');
+      showToast('error', err instanceof Error ? err.message : 'Ошибка сохранения узла');
     } finally {
       setSaving(false);
     }
@@ -280,17 +305,13 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       });
       setProfiles((prev) => prev.map((item) => (item.id === p.id ? res.profile : item)));
       showToast(
-        res.profile.status === 'online'
-          ? 'success'
-          : res.profile.status === 'degraded'
-          ? 'warning'
-          : 'error',
-        `${res.profile.name}: ${
+        res.profile.status === 'online' ? 'success' : res.profile.status === 'degraded' ? 'warning' : 'error',
+        `${stripLeadingFlag(res.profile.name)}: ${
           res.profile.status === 'online'
-            ? `онлайн, ${res.profile.latency_ms} мс`
+            ? `${res.profile.latency_ms} мс`
             : res.profile.status === 'degraded'
-            ? `повышенный пинг ${res.profile.latency_ms} мс`
-            : 'TCP-хендшейк не проходит (блок ТСПУ?)'
+            ? `медленно, ${res.profile.latency_ms} мс`
+            : 'TCP не проходит — вероятно блок'
         }`
       );
     } catch (err) {
@@ -308,7 +329,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       });
       setProfiles(res.profiles);
       const online = res.profiles.filter((p) => p.status === 'online').length;
-      showToast('success', `Проверено узлов: ${res.profiles.length} (онлайн: ${online})`);
+      showToast('success', `Проверено ${res.profiles.length} узлов, онлайн ${online}`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Ошибка массовой проверки');
     } finally {
@@ -324,10 +345,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         method: 'PATCH',
         body: JSON.stringify({ is_primary: true }),
       });
-      showToast('success', `«${p.name}» выбран основным узлом`);
+      showToast('success', `«${stripLeadingFlag(p.name)}» — основной узел`);
     } catch {
       setProfiles(backup);
-      showToast('error', 'Не удалось обновить основной VPN');
+      showToast('error', 'Не удалось обновить основной узел');
     }
   };
 
@@ -343,22 +364,22 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           )
         );
       }
-      showToast('info', `Узел «${p.name}» удалён`);
+      showToast('info', `Узел «${stripLeadingFlag(p.name)}» удалён`);
     } catch {
       setProfiles(backup);
       showToast('error', 'Ошибка удаления узла');
     }
   };
 
-  // ---------- Subscription handling ----------
   const openSubModal = () => {
     setSubUrl('');
     setSubName('');
     setSubAutoUpdate(true);
     setSubInterval(12);
     setImportText('');
-    setPreview([]);
     setSubTab('url');
+    setSubError(null);
+    setSubStage('idle');
     setSubModalOpen(true);
   };
 
@@ -369,6 +390,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       return;
     }
     setSubSaving(true);
+    setSubError(null);
+    setSubStage('working');
     try {
       const res = await apiFetch<{
         subscription: VpnSubscription;
@@ -386,15 +409,15 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       });
       setSubscriptions((prev) => [res.subscription, ...prev]);
       setProfiles(res.profiles);
-      showToast(
-        'success',
-        `Подписка загружена: ${res.imported} серверов, онлайн ${res.online}`
-      );
+      showToast('success', `Подписка загружена: ${res.imported} узлов`);
       setSubModalOpen(false);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Не удалось загрузить подписку');
+      const message = err instanceof Error ? err.message : 'Не удалось загрузить подписку';
+      setSubError(message);
+      showToast('error', 'Подписка не загрузилась — подробности в окне');
     } finally {
       setSubSaving(false);
+      setSubStage('idle');
     }
   };
 
@@ -402,24 +425,21 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     e.preventDefault();
     if (!importText.trim()) return;
     setImportingLinks(true);
+    setSubError(null);
     try {
-      const res = await apiFetch<{
-        imported: number;
-        profiles: VpnProfile[];
-        preview: typeof preview;
-      }>('/api/vpn-profiles/import', {
-        method: 'POST',
-        body: JSON.stringify({ text: importText.trim(), group_name: 'Импорт вручную' }),
-      });
-      setProfiles(res.profiles);
-      setPreview(res.preview);
-      showToast('success', `Импортировано серверов: ${res.imported}`);
-      if (res.imported > 0) setSubModalOpen(false);
-    } catch (err) {
-      showToast(
-        'error',
-        err instanceof Error ? err.message : 'Не удалось распознать ссылки'
+      const res = await apiFetch<{ imported: number; profiles: VpnProfile[] }>(
+        '/api/vpn-profiles/import',
+        {
+          method: 'POST',
+          body: JSON.stringify({ text: importText.trim(), group_name: 'Импорт вручную' }),
+        }
       );
+      setProfiles(res.profiles);
+      showToast('success', `Импортировано узлов: ${res.imported}`);
+      if (res.imported > 0) setSubModalOpen(false);
+      else setSubError('В тексте не нашлось ни одной ссылки на узел. Поддерживаются vless://, vmess://, trojan://, ss://, hysteria2://, tuic://, wg://');
+    } catch (err) {
+      setSubError(err instanceof Error ? err.message : 'Не удалось распознать ссылки');
     } finally {
       setImportingLinks(false);
     }
@@ -435,20 +455,15 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       }>(`/api/vpn-subscriptions/${s.id}/sync`, { method: 'POST' });
       setSubscriptions((prev) => prev.map((item) => (item.id === s.id ? res.subscription : item)));
       setProfiles(res.profiles);
-      showToast('success', `«${s.name}»: обновлено ${res.imported} серверов`);
+      showToast('success', `«${s.name}»: обновлено ${res.imported} узлов`);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ошибка синхронизации';
       setSubscriptions((prev) =>
         prev.map((item) =>
-          item.id === s.id
-            ? {
-                ...item,
-                last_sync_status: 'error',
-                last_sync_message: err instanceof Error ? err.message : 'Ошибка синхронизации',
-              }
-            : item
+          item.id === s.id ? { ...item, last_sync_status: 'error', last_sync_message: message } : item
         )
       );
-      showToast('error', err instanceof Error ? err.message : 'Ошибка синхронизации');
+      showToast('error', message);
     } finally {
       setSyncingId(null);
     }
@@ -474,12 +489,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     setQrLoading(true);
     setQrValue(p.raw_link || '');
     try {
-      const res = await apiFetch<{ qr: string; target: string }>(
-        `/api/vpn-profiles/${p.id}/qr`
-      );
+      const res = await apiFetch<{ qr: string; target: string }>(`/api/vpn-profiles/${p.id}/qr`);
       setQrValue(res.target);
     } catch {
-      // остаётся значение raw_link
+      // остаётся raw_link
     } finally {
       setQrLoading(false);
     }
@@ -491,11 +504,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       setCopiedKey(key);
       window.setTimeout(() => setCopiedKey(null), 1600);
     } catch {
-      showToast('error', 'Браузер запретил доступ к буферу обмена');
+      showToast('error', 'Не удалось скопировать');
     }
   };
 
-  // ---------- Derived data ----------
   const filteredProfiles = useMemo(() => {
     return profiles.filter((p) => {
       if (protoFilter !== 'all' && p.dpi_resistance !== protoFilter) return false;
@@ -516,7 +528,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     for (const p of filteredProfiles) {
       const key = p.subscription_id
         ? subscriptions.find((s) => s.id === p.subscription_id)?.name || p.group_name || 'Подписка'
-        : 'Мои серверы';
+        : 'Мои узлы';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(p);
     }
@@ -531,195 +543,151 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     const latencies = profiles
       .map((p) => p.latency_ms)
       .filter((v): v is number => typeof v === 'number');
-    const best = profiles
-      .filter((p) => p.status === 'online' && p.latency_ms)
-      .sort((a, b) => (a.latency_ms || 0) - (b.latency_ms || 0))[0];
     return {
       total,
       online,
       degraded,
       blocked,
-      avg: latencies.length
-        ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
-        : null,
-      best,
+      avg: latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null,
     };
   }, [profiles]);
 
-  const card = darkMode ? 'bg-slate-900/65 border-slate-800' : 'bg-white border-slate-200 shadow-sm';
-  const inputCls = `w-full px-3.5 py-2.5 rounded-xl border text-sm ${
-    darkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-  }`;
+  const vpnOn = Boolean(connection?.vpn_detected);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">VPN-клиент и мониторинг</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Подписки, импорт ссылок, пинг узлов и перенос профиля на телефон по QR
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {profiles.length > 0 && (
-            <button
-              type="button"
-              disabled={checkingAll}
-              onClick={handleCheckAll}
-              className={`px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold flex items-center gap-1.5 ${
-                darkMode
-                  ? 'bg-slate-900 border-slate-800 text-slate-200 hover:bg-slate-800'
-                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <RefreshCw className={`w-4 h-4 ${checkingAll ? 'animate-spin' : ''}`} />
-              Пинг всех
-            </button>
-          )}
-
-          <button
-            type="button"
+    <div className="space-y-4">
+      {/* ---------- Заголовок ---------- */}
+      <header className="space-y-2">
+        <h1 className="text-[22px] font-black tracking-tight">VPN-узлы</h1>
+        <p className="text-[12.5px] text-dim leading-snug">
+          Подписки и узлы: проверяем доступность каждого сервера и показываем статус. Туннеля внутри
+          приложения нет — подключение выполняет ваш VPN-клиент.
+        </p>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            variant="primary"
+            size="md"
+            icon={<Link2 className="w-4 h-4" />}
             onClick={openSubModal}
-            className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
           >
-            <Link2 className="w-4 h-4" />
             Добавить подписку
-          </button>
-
-          <button
-            type="button"
-            onClick={openCreate}
-            className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-lg shadow-sky-500/20"
-          >
-            <Plus className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="md" icon={<Plus className="w-4 h-4" />} onClick={openCreate}>
             Узел вручную
-          </button>
-        </div>
-      </div>
-
-      {/* Live current device card */}
-      <div
-        className={`rounded-3xl border p-5 sm:p-6 ${
-          connection?.vpn_detected
-            ? darkMode
-              ? 'bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 border-amber-500/40'
-              : 'bg-amber-50 border-amber-300'
-            : darkMode
-            ? 'bg-slate-900/70 border-slate-800'
-            : 'bg-white border-slate-200 shadow-sm'
-        }`}
-      >
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div
-              className={`p-3 rounded-2xl border shrink-0 ${
-                connection?.vpn_detected
-                  ? 'bg-amber-500/15 border-amber-500/35 text-amber-400'
-                  : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400'
-              }`}
+          </Button>
+          {profiles.length > 0 && (
+            <Button
+              variant="ghost"
+              size="md"
+              loading={checkingAll}
+              icon={<RefreshCw className="w-4 h-4" />}
+              onClick={handleCheckAll}
             >
-              {connection?.vpn_detected ? (
-                <ShieldAlert className="w-7 h-7" />
-              ) : (
-                <ShieldCheck className="w-7 h-7" />
-              )}
+              Проверить все
+            </Button>
+          )}
+        </div>
+      </header>
+
+      {/* ---------- Текущее соединение ---------- */}
+      <section
+        className="rounded-[1.5rem] border p-4"
+        style={{
+          borderColor: vpnOn ? 'rgb(var(--warning) / 0.35)' : 'var(--line)',
+          background: vpnOn
+            ? 'color-mix(in srgb, rgb(var(--warning)) 8%, var(--surface))'
+            : 'var(--surface)',
+        }}
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className="w-10 h-10 rounded-2xl grid place-items-center shrink-0"
+            style={{
+              background: vpnOn ? 'rgb(var(--warning) / 0.14)' : 'rgb(var(--success) / 0.12)',
+              color: vpnOn ? 'rgb(var(--warning))' : 'rgb(var(--success))',
+            }}
+          >
+            {vpnOn ? <ShieldAlert className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted">
+                сейчас
+              </span>
+              <span
+                className="text-[10.5px] font-bold px-2 py-0.5 rounded-full"
+                style={{
+                  background: vpnOn ? 'rgb(var(--warning) / 0.16)' : 'rgb(var(--success) / 0.14)',
+                  color: vpnOn ? 'rgb(var(--warning))' : 'rgb(var(--success))',
+                }}
+              >
+                {vpnOn ? 'VPN включён' : 'прямое подключение'}
+              </span>
             </div>
-
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-extrabold uppercase tracking-wider text-sky-400">
-                  Текущее соединение устройства
-                </span>
-                <span
-                  className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                    connection?.vpn_detected
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-emerald-500 text-slate-950'
-                  }`}
-                >
-                  {connection?.vpn_detected ? 'VPN АКТИВЕН' : 'ПРЯМОЕ ПОДКЛЮЧЕНИЕ'}
-                </span>
-              </div>
-
-              <h2 className="text-lg sm:text-xl font-bold mt-1">
-                {connection
-                  ? `${COUNTRY_FLAG(connection.country_code)} ${connection.country_name}${
-                      connection.city ? `, ${connection.city}` : ''
-                    } — ${connection.isp}`
-                  : 'Определение сетевого маршрута...'}
-              </h2>
-
-              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-400 mt-1.5 font-mono">
-                <span>IP: {connection?.ip || '...'}</span>
-                {connection?.asn && <span>ASN: {connection.asn}</span>}
-                <span>
-                  {connection?.is_hosting
-                    ? 'Дата-центр / VPS'
-                    : connection?.is_mobile
-                    ? 'Мобильная сеть (LTE)'
-                    : 'Домашний / проводной'}
-                </span>
-              </div>
-
-              {connection?.vpn_reasons && connection.vpn_reasons.length > 0 && (
-                <div className="mt-2.5 text-xs text-amber-400 space-y-0.5">
-                  {connection.vpn_reasons.map((r, i) => (
-                    <div key={i}>• {r}</div>
-                  ))}
-                </div>
-              )}
+            <div className="text-[14px] font-bold mt-1 leading-snug break-words">
+              {connection
+                ? `${connection.country_name}${connection.city ? `, ${connection.city}` : ''} — ${
+                    connection.isp || 'провайдер неизвестен'
+                  }`
+                : 'определяем маршрут…'}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted font-mono mt-1">
+              <span>IP {connection?.ip || '…'}</span>
+              {connection?.asn && <span>{connection.asn}</span>}
+              <span>
+                {connection?.is_hosting
+                  ? 'дата-центр'
+                  : connection?.is_mobile
+                  ? 'мобильная сеть'
+                  : 'проводная сеть'}
+              </span>
             </div>
           </div>
-
           <button
             type="button"
-            disabled={connLoading}
             onClick={onRefreshConnection}
-            className={`px-4 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 self-start md:self-center shrink-0 ${
-              darkMode
-                ? 'bg-slate-950 border-slate-800 hover:bg-slate-800 text-slate-200'
-                : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-800'
-            }`}
+            disabled={connLoading}
+            className="shrink-0 p-2 rounded-xl border text-dim tap"
+            style={{ borderColor: 'var(--line)' }}
+            aria-label="Перепроверить соединение"
           >
             <RefreshCw className={`w-4 h-4 ${connLoading ? 'animate-spin' : ''}`} />
-            Перепроверить
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* Stats */}
+      {/* ---------- Статистика ---------- */}
       {profiles.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-2">
           {[
-            { label: 'Всего серверов', value: stats.total, icon: Server, tone: 'text-sky-400' },
-            { label: 'Онлайн', value: stats.online, icon: CheckCircle2, tone: 'text-emerald-400' },
-            { label: 'Замедлены', value: stats.degraded, icon: Clock, tone: 'text-amber-400' },
-            { label: 'Заблокированы', value: stats.blocked, icon: XCircle, tone: 'text-rose-400' },
+            { label: 'всего', value: stats.total, color: 'var(--text)' },
+            { label: 'онлайн', value: stats.online, color: 'rgb(var(--success))' },
+            { label: 'медленно', value: stats.degraded, color: 'rgb(var(--warning))' },
+            { label: 'блок', value: stats.blocked, color: 'rgb(var(--danger))' },
           ].map((s) => (
-            <div key={s.label} className={`rounded-2xl border p-4 ${card}`}>
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-400 font-bold">
-                <s.icon className={`w-3.5 h-3.5 ${s.tone}`} />
+            <div
+              key={s.label}
+              className="rounded-2xl border px-2 py-2.5 text-center"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+            >
+              <div className="text-[1.05rem] font-black font-mono leading-none" style={{ color: s.color }}>
+                {s.value}
+              </div>
+              <div className="text-[9.5px] uppercase tracking-wide text-muted mt-1 font-bold">
                 {s.label}
               </div>
-              <div className="mt-2 text-2xl font-black">{s.value}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Subscriptions */}
+      {/* ---------- Подписки ---------- */}
       {subscriptions.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-              <Link2 className="w-4 h-4 text-emerald-400" />
-              Подписки ({subscriptions.length})
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <section className="space-y-2">
+          <SectionTitle right={<span className="text-[11px] text-muted">{subscriptions.length}</span>}>
+            Подписки
+          </SectionTitle>
+          <div className="space-y-2">
             {subscriptions.map((s) => {
               const usedPct =
                 s.traffic_total_bytes > 0
@@ -731,41 +699,31 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                 : null;
               const subNodes = profiles.filter((p) => p.subscription_id === s.id);
               const subOnline = subNodes.filter((p) => p.status === 'online').length;
-              const subDegraded = subNodes.filter((p) => p.status === 'degraded').length;
-              const subBlocked = subNodes.filter((p) => p.status === 'blocked').length;
-              const checkedCount = subOnline + subDegraded + subBlocked;
+              const failed = s.last_sync_status === 'error';
               return (
-                <div
+                <article
                   key={s.id}
-                  className={`rounded-2xl border p-4 ${card} ${
-                    s.last_sync_status === 'error' ? 'border-rose-500/40' : ''
-                  }`}
+                  className="rounded-2xl border p-3.5"
+                  style={{
+                    borderColor: failed ? 'rgb(var(--danger) / 0.4)' : 'var(--line)',
+                    background: 'var(--surface)',
+                  }}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-bold text-sm truncate">{s.name}</h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          {s.node_count} {s.node_count === 1 ? 'узел' : s.node_count < 5 ? 'узла' : 'узлов'}
-                        </span>
-                        {checkedCount > 0 && (
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              subBlocked === 0
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
-                                : subOnline > subBlocked
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
-                                : 'bg-rose-500/10 text-rose-400 border-rose-500/25'
-                            }`}
-                          >
-                            {subOnline} из {checkedCount} работают
-                          </span>
-                        )}
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-300 border border-slate-500/30 uppercase">
-                          {s.format}
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-[13.5px] font-bold truncate">{s.name}</h3>
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'var(--accent-soft)', color: 'rgb(var(--accent))' }}
+                        >
+                          {s.node_count} узлов
                         </span>
                         {expired && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                            style={{ background: 'rgb(var(--danger) / 0.14)', color: 'rgb(var(--danger))' }}
+                          >
                             истекла
                           </span>
                         )}
@@ -773,34 +731,31 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                       <button
                         type="button"
                         onClick={() => copy(s.url, `sub-${s.id}`)}
-                        className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-sky-400 font-mono truncate max-w-full"
+                        className="mt-1 flex items-center gap-1 text-[10.5px] text-muted font-mono truncate max-w-full tap"
                         title="Скопировать ссылку подписки"
                       >
                         {copiedKey === `sub-${s.id}` ? (
-                          <Check className="w-3 h-3 text-emerald-400" />
+                          <Check className="w-3 h-3 shrink-0" style={{ color: 'rgb(var(--success))' }} />
                         ) : (
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-3 h-3 shrink-0" />
                         )}
                         <span className="truncate">{s.url}</span>
                       </button>
                     </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
                         disabled={syncingId === s.id}
                         onClick={() => handleSyncSubscription(s)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-emerald-400 transition-colors"
+                        className="p-2 rounded-lg text-dim hover:text-[color:var(--text)] tap"
                         title="Обновить подписку"
                       >
-                        <RefreshCw
-                          className={`w-4 h-4 ${syncingId === s.id ? 'animate-spin' : ''}`}
-                        />
+                        <RefreshCw className={`w-4 h-4 ${syncingId === s.id ? 'animate-spin' : ''}`} />
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteSubscription(s)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-rose-400 transition-colors"
+                        className="p-2 rounded-lg text-dim hover:text-[rgb(var(--danger))] tap"
                         title="Удалить подписку"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -808,762 +763,649 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Traffic bar */}
-                  {s.traffic_total_bytes === 0 && (
-                    <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400">
-                      <Radio className="w-3 h-3 text-emerald-400" />
-                      Лимит трафика не указан — тариф без ограничения или сервер не отдал заголовок
-                    </div>
-                  )}
                   {s.traffic_total_bytes > 0 && (
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                    <div className="mt-2.5">
+                      <div className="flex justify-between text-[10.5px] text-muted mb-1">
                         <span>Трафик</span>
                         <span className="font-mono">
                           {formatBytes(s.traffic_used_bytes)} / {formatBytes(s.traffic_total_bytes)}
-                          <span className="text-slate-500"> · {usedPct}%</span>
                         </span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                         <div
-                          className={`h-full rounded-full ${
-                            usedPct > 85
-                              ? 'bg-rose-500'
-                              : usedPct > 60
-                              ? 'bg-amber-400'
-                              : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${usedPct}%` }}
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${usedPct}%`,
+                            background:
+                              usedPct > 85
+                                ? 'rgb(var(--danger))'
+                                : usedPct > 60
+                                ? 'rgb(var(--warning))'
+                                : 'rgb(var(--success))',
+                          }}
                         />
                       </div>
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-[11px] text-slate-400">
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2.5 text-[10.5px] text-muted">
                     <span>
-                      Обновлено:{' '}
+                      Обновлено{' '}
                       {s.last_synced_at
-                        ? new Date(s.last_synced_at).toLocaleString('ru-RU')
+                        ? new Date(s.last_synced_at).toLocaleString('ru-RU', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
                         : 'никогда'}
                     </span>
                     {s.expires_on && (
-                      <span className={expired ? 'text-rose-400' : daysLeft !== null && daysLeft <= 7 ? 'text-amber-400' : ''}>
-                        До: {new Date(s.expires_on).toLocaleDateString('ru-RU')}
-                        {daysLeft !== null && !expired && (
-                          <span className="text-slate-500"> · осталось {daysLeft} дн.</span>
-                        )}
-                        {expired && <span> · истекла</span>}
+                      <span style={{ color: expired ? 'rgb(var(--danger))' : daysLeft !== null && daysLeft <= 7 ? 'rgb(var(--warning))' : undefined }}>
+                        До {new Date(s.expires_on).toLocaleDateString('ru-RU')}
+                        {daysLeft !== null && !expired && ` · ${daysLeft} дн.`}
                       </span>
                     )}
-                    <span className="inline-flex items-center gap-1">
-                      <Radio className="w-3 h-3 text-emerald-400" />
-                      Авто: {s.auto_update ? `каждые ${s.update_interval_hours} ч` : 'выкл'}
-                    </span>
+                    <span>авто: {s.auto_update ? `каждые ${s.update_interval_hours} ч` : 'выкл'}</span>
+                    {subNodes.length > 0 && (
+                      <span style={{ color: 'rgb(var(--success))' }}>
+                        {subOnline}/{subNodes.length} онлайн
+                      </span>
+                    )}
                   </div>
 
-                  {checkedCount > 0 && (
-                    <div className="mt-2.5 h-1.5 rounded-full bg-slate-800 overflow-hidden flex">
-                      <div
-                        className="h-full bg-emerald-500"
-                        style={{ width: `${(subOnline / subNodes.length) * 100}%` }}
-                      />
-                      <div
-                        className="h-full bg-amber-400"
-                        style={{ width: `${(subDegraded / subNodes.length) * 100}%` }}
-                      />
-                      <div
-                        className="h-full bg-rose-500"
-                        style={{ width: `${(subBlocked / subNodes.length) * 100}%` }}
-                      />
+                  {!failed && s.last_sync_message && (
+                    <div className="mt-2 flex items-start gap-1.5 text-[10.5px] rounded-xl px-2 py-1.5 text-dim"
+                      style={{ background: 'var(--surface-2)' }}>
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-px opacity-70" />
+                      <span className="leading-snug">{s.last_sync_message}</span>
                     </div>
                   )}
 
-                  {s.last_sync_status === 'error' && s.last_sync_message && (
-                    <div className="mt-2 flex items-start gap-1.5 text-[11px] text-rose-400">
+                  {failed && s.last_sync_message && (
+                    <div
+                      className="mt-2 flex items-start gap-1.5 text-[11px] rounded-xl p-2"
+                      style={{ background: 'rgb(var(--danger) / 0.1)', color: 'rgb(var(--danger))' }}
+                    >
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>{s.last_sync_message}</span>
+                      <span className="leading-snug">{s.last_sync_message}</span>
                     </div>
                   )}
-                </div>
+                </article>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Filters */}
+      {/* ---------- Поиск ---------- */}
       {profiles.length > 0 && (
-        <div className={`rounded-2xl border p-3 flex flex-col sm:flex-row gap-2 ${card}`}>
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по названию, хосту или локации (Амстердам, Reality, 1.2.3.4)..."
-              className={`${inputCls} pl-10`}
+              placeholder="Поиск: Амстердам, Reality, 1.2.3.4"
+              className={`${input} pl-9`}
+              style={inputStyle}
             />
           </div>
-          <select
-            value={protoFilter}
-            onChange={(e) => setProtoFilter(e.target.value as typeof protoFilter)}
-            className={`px-3 py-2.5 rounded-xl border text-xs font-semibold sm:w-56 ${
-              darkMode
-                ? 'bg-slate-950 border-slate-800 text-slate-200'
-                : 'bg-slate-50 border-slate-200 text-slate-800'
-            }`}
-          >
-            <option value="all">Любая устойчивость к ТСПУ</option>
-            <option value="high">Высокая (Reality / AWG)</option>
-            <option value="medium">Средняя (QUIC / SS)</option>
-            <option value="low">Низкая (чистый WG / OpenVPN)</option>
-          </select>
+          <div className="chip-rail">
+            {(
+              [
+                ['all', 'Все'],
+                ['high', 'Устойчивые'],
+                ['medium', 'Средние'],
+                ['low', 'Слабые'],
+              ] as const
+            ).map(([v, label]) => (
+              <Chip key={v} active={protoFilter === v} onClick={() => setProtoFilter(v)}>
+                {label}
+              </Chip>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Node list grouped */}
+      {/* ---------- Список узлов ---------- */}
       {profiles.length === 0 ? (
-        <div className={`rounded-3xl border p-10 text-center ${card}`}>
-          <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/25 flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-7 h-7 text-sky-400" />
-          </div>
-          <h3 className="text-lg font-bold">Серверов пока нет</h3>
-          <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
-            Вставьте ссылку подписки от вашего провайдера (Happ, Hiddify, v2rayN, Streisand) —
-            мы сами распознаем все узлы, проставим флаги стран и проверим их доступность по TCP.
-          </p>
-          <div className="flex flex-wrap justify-center gap-2 mt-5">
-            <button
-              type="button"
-              onClick={openSubModal}
-              className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm inline-flex items-center gap-2"
-            >
-              <Link2 className="w-4 h-4" />
-              Добавить подписку
-            </button>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="px-5 py-2.5 rounded-xl border border-slate-700 text-slate-200 font-bold text-sm inline-flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Ввести узел вручную
-            </button>
-          </div>
+        <div
+          className="rounded-[1.5rem] border"
+          style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+        >
+          <EmptyState
+            icon={<Shield className="w-5 h-5" />}
+            title="Узлов пока нет"
+            text="Вставьте ссылку подписки от провайдера — приложение само распознает все узлы, проставит страны и проверит доступность каждого."
+            action={
+              <Button variant="primary" size="md" icon={<Link2 className="w-4 h-4" />} onClick={openSubModal}>
+                Добавить подписку
+              </Button>
+            }
+          />
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2.5">
           {grouped.map(([groupName, nodes]) => {
             const isCollapsed = collapsed[groupName];
+            const onlineCount = nodes.filter((n) => n.status === 'online').length;
             return (
-              <div key={groupName} className={`rounded-2xl border overflow-hidden ${card}`}>
+              <section
+                key={groupName}
+                className="rounded-2xl border overflow-hidden"
+                style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+              >
                 <button
                   type="button"
-                  onClick={() =>
-                    setCollapsed((prev) => ({ ...prev, [groupName]: !prev[groupName] }))
-                  }
-                  className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-800/20 transition-colors"
+                  onClick={() => setCollapsed((prev) => ({ ...prev, [groupName]: !prev[groupName] }))}
+                  className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left tap"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isCollapsed ? (
-                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                    )}
-                    <span className="font-bold text-sm truncate">{groupName}</span>
-                    <span className="text-[11px] text-slate-400 shrink-0">
-                      {nodes.length} узл{nodes.length === 1 ? 'ел' : nodes.length < 5 ? 'а' : 'ов'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] shrink-0">
-                    <span className="text-emerald-400 font-bold">
-                      {nodes.filter((n) => n.status === 'online').length} online
-                    </span>
-                    {nodes.filter((n) => n.status === 'blocked').length > 0 && (
-                      <span className="text-rose-400 font-bold">
-                        {nodes.filter((n) => n.status === 'blocked').length} block
-                      </span>
-                    )}
-                  </div>
+                  {isCollapsed ? (
+                    <ChevronRight className="w-4 h-4 text-muted shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-muted shrink-0" />
+                  )}
+                  <span className="text-[12.5px] font-bold truncate flex-1">{groupName}</span>
+                  <span className="text-[11px] font-mono shrink-0" style={{ color: 'rgb(var(--success))' }}>
+                    {onlineCount}/{nodes.length}
+                  </span>
                 </button>
 
                 {!isCollapsed && (
-                  <div className="border-t border-slate-800/60 divide-y divide-slate-800/50">
+                  <div className="border-t" style={{ borderColor: 'var(--line)' }}>
                     {nodes.map((p) => {
-                      const isOnline = p.status === 'online';
-                      const isDegraded = p.status === 'degraded';
+                      const tone = statusTone(p.status);
+                      const color =
+                        tone === 'ok'
+                          ? 'rgb(var(--success))'
+                          : tone === 'warn'
+                          ? 'rgb(var(--warning))'
+                          : 'rgb(var(--danger))';
                       return (
                         <div
                           key={p.id}
-                          className={`px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3 ${
-                            p.is_primary ? 'bg-sky-500/5' : ''
-                          }`}
+                          className="px-3.5 py-2.5 border-b last:border-b-0"
+                          style={{ borderColor: 'var(--line)' }}
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <span className="text-xl leading-none shrink-0">
-                              {nodeFlag(p.country_code, p.name, p.location)}
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-semibold text-sm truncate">{stripLeadingFlag(p.name)}</span>
+                          <div className="flex items-center gap-2.5">
+                            <CountryBadge
+                              code={p.country_code && p.country_code !== 'XX' ? p.country_code : guessCode(p.name, p.location)}
+                              size={28}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[12.5px] font-semibold truncate">
+                                  {stripLeadingFlag(p.name)}
+                                </span>
                                 {Boolean(p.is_primary) && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30 inline-flex items-center gap-0.5">
-                                    <Star className="w-2.5 h-2.5 fill-current" /> основной
-                                  </span>
+                                  <Star className="w-3 h-3 shrink-0" style={{ color: 'rgb(var(--accent))' }} />
                                 )}
                                 {Boolean(p.whitelist_bypass) && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                    RU-каскад
+                                  <span
+                                    className="text-[9.5px] font-bold px-1 py-0.5 rounded"
+                                    style={{ background: 'rgb(var(--success) / 0.15)', color: 'rgb(var(--success))' }}
+                                  >
+                                    RU
                                   </span>
                                 )}
                               </div>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mt-0.5">
-                                <span className="font-mono">
-                                  {p.host}:{p.port}
-                                </span>
-                                <span>{p.location}</span>
-                                <span className="text-slate-500">{p.protocol}</span>
+                              <div className="text-[10.5px] text-muted font-mono truncate mt-0.5">
+                                {p.host}:{p.port} · {p.protocol}
                               </div>
                             </div>
+                            <span
+                              className="inline-flex items-center gap-1 text-[10.5px] font-bold px-1.5 py-1 rounded-md shrink-0 font-mono"
+                              style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
+                            >
+                              <StatusIcon status={p.status} className="w-3 h-3" />
+                              {p.latency_ms != null ? `${p.latency_ms} мс` : STATUS_LABEL[p.status]}
+                            </span>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span
-                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg ${
-                                isOnline
-                                  ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/25'
-                                  : isDegraded
-                                  ? 'text-amber-400 bg-amber-500/10 border border-amber-500/25'
-                                  : 'text-rose-400 bg-rose-500/10 border border-rose-500/25'
-                              }`}
-                            >
-                              {isOnline ? (
-                                <Signal className="w-3 h-3" />
-                              ) : isDegraded ? (
-                                <Clock className="w-3 h-3" />
-                              ) : (
-                                <XCircle className="w-3 h-3" />
-                              )}
-                              {p.latency_ms ? `${p.latency_ms} мс` : isOnline ? 'online' : isDegraded ? 'shaping' : 'block'}
-                            </span>
-
-                            <div className="flex items-center gap-0.5">
-                              <button
-                                type="button"
-                                disabled={checkingId === p.id}
-                                onClick={() => handleCheckOne(p)}
-                                className="p-2 rounded-lg text-slate-400 hover:text-sky-400 transition-colors"
-                                title="TCP-пинг"
-                              >
-                                {checkingId === p.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Zap className="w-4 h-4" />
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenQr(p)}
-                                className="p-2 rounded-lg text-slate-400 hover:text-violet-400 transition-colors"
-                                title="QR-код для телефона"
-                              >
-                                <QrCode className="w-4 h-4" />
-                              </button>
-                              {!p.is_primary && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSetPrimary(p)}
-                                  className="p-2 rounded-lg text-slate-400 hover:text-amber-400 transition-colors"
-                                  title="Сделать основным"
-                                >
-                                  <Star className="w-4 h-4" />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => openEdit(p)}
-                                className="p-2 rounded-lg text-slate-400 hover:text-sky-400 transition-colors"
-                                title="Редактировать"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(p)}
-                                className="p-2 rounded-lg text-slate-400 hover:text-rose-400 transition-colors"
-                                title="Удалить"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
+                          <div className="flex items-center gap-0.5 mt-1.5 -ml-1.5">
+                            <IconAction
+                              title="Проверить TCP"
+                              onClick={() => handleCheckOne(p)}
+                              loading={checkingId === p.id}
+                              icon={<Zap className="w-3.5 h-3.5" />}
+                            />
+                            <IconAction
+                              title="QR для телефона"
+                              onClick={() => handleOpenQr(p)}
+                              icon={<QrCode className="w-3.5 h-3.5" />}
+                            />
+                            {!p.is_primary && (
+                              <IconAction
+                                title="Сделать основным"
+                                onClick={() => handleSetPrimary(p)}
+                                icon={<Star className="w-3.5 h-3.5" />}
+                              />
+                            )}
+                            <IconAction
+                              title="Изменить"
+                              onClick={() => openEdit(p)}
+                              icon={<Pencil className="w-3.5 h-3.5" />}
+                            />
+                            <IconAction
+                              title="Удалить"
+                              onClick={() => handleDelete(p)}
+                              icon={<Trash2 className="w-3.5 h-3.5" />}
+                              danger
+                            />
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
-              </div>
+              </section>
             );
           })}
         </div>
       )}
 
-      {/* ================= SUBSCRIPTION / IMPORT MODAL ================= */}
-      {subModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div
-            className={`w-full max-w-xl rounded-3xl border p-6 shadow-2xl my-8 ${
-              darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <Link2 className="w-5 h-5 text-emerald-400" />
-                Добавить VPN в клиент
-              </h3>
+      {/* ================= ПОДПИСКА ================= */}
+      <Sheet
+        open={subModalOpen}
+        onClose={() => setSubModalOpen(false)}
+        title="Добавить подписку"
+        subtitle="Ссылку выдаёт панель провайдера"
+        size="md"
+        icon={
+          <div className="w-9 h-9 rounded-xl grid place-items-center accent-soft">
+            <Link2 className="w-4 h-4" />
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+            {(
+              [
+                ['url', 'Ссылка подписки', <Download key="d" className="w-3.5 h-3.5" />],
+                ['links', 'Ссылки узлов', <FileText key="f" className="w-3.5 h-3.5" />],
+              ] as const
+            ).map(([id, label, icon]) => (
               <button
+                key={id}
                 type="button"
-                onClick={() => setSubModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Подписка (subscription URL) или прямая ссылка на сервер. Форматы: VLESS/Reality,
-              VMess, Trojan, Shadowsocks, Hysteria2, TUIC, WireGuard, Clash YAML и base64-подписки.
-            </p>
-
-            <div className="flex gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800 mb-4">
-              <button
-                type="button"
-                onClick={() => setSubTab('url')}
-                className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 ${
-                  subTab === 'url'
-                    ? 'bg-emerald-500 text-slate-950'
-                    : 'text-slate-400 hover:text-slate-200'
+                onClick={() => {
+                  setSubTab(id);
+                  setSubError(null);
+                }}
+                className={`h-9 rounded-lg text-[12px] font-bold inline-flex items-center justify-center gap-1.5 tap ${
+                  subTab === id ? 'accent-solid' : 'text-dim'
                 }`}
               >
-                <Download className="w-3.5 h-3.5" />
-                Ссылка подписки
+                {icon}
+                {label}
               </button>
-              <button
-                type="button"
-                onClick={() => setSubTab('links')}
-                className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 ${
-                  subTab === 'links'
-                    ? 'bg-sky-500 text-slate-950'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                Импорт ссылок / base64
-              </button>
-            </div>
-
-            {subTab === 'url' ? (
-              <form onSubmit={handleAddSubscription} className="space-y-4">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Ссылка подписки (subscription URL) *
-                  </label>
-                  <input
-                    type="url"
-                    required
-                    value={subUrl}
-                    onChange={(e) => setSubUrl(e.target.value)}
-                    placeholder="https://panel.example.com/api/v1/client/subscribe?token=..."
-                    className={`${inputCls} font-mono text-xs`}
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1">
-                    <Link className="w-3 h-3 mt-0.5 shrink-0" />
-                    Ссылку выдают панели Happ / Remnawave / Marzban / 3x-ui / Outline
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // На file:// и внутри sandboxed-iframe origin бывает 'null' — тогда шлём относительный путь
-                      const origin = window.location.origin;
-                      const base = !origin || origin === 'null' ? '' : origin;
-                      setSubUrl(`${base}/api/sample-subscription`);
-                      setSubName('Демо-подписка (8 узлов)');
-                      showToast('info', 'Подставлена демо-подписка — нажмите «Загрузить подписку»');
-                    }}
-                    className="mt-2 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
-                  >
-                    Нет своей подписки? Попробовать демо-подписку из 8 узлов →
-                  </button>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">
-                      Название (необязательно)
-                    </label>
-                    <input
-                      type="text"
-                      value={subName}
-                      onChange={(e) => setSubName(e.target.value)}
-                      placeholder="Например: Мой провайдер"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">
-                      Автообновление, часов
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={168}
-                      value={subInterval}
-                      onChange={(e) => setSubInterval(Number(e.target.value))}
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2.5 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={subAutoUpdate}
-                    onChange={(e) => setSubAutoUpdate(e.target.checked)}
-                    className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500"
-                  />
-                  <span>Автоматически подтягивать изменения серверов</span>
-                </label>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setSubModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-200"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={subSaving}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm inline-flex items-center gap-2"
-                  >
-                    {subSaving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Загружаем и парсим...
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        Загрузить подписку
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleImportLinks} className="space-y-4">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Ссылки или base64-подписка *
-                  </label>
-                  <textarea
-                    required
-                    rows={7}
-                    value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
-                    placeholder={`vless://uuid@nl.example.com:443?security=reality&sni=microsoft.com#🇳🇱 Нидерланды\nvmess://eyJhZGQiOi...\nss://YWVzLTI1Ni1nY206...@fi.example.com:8388#🇫🇮 Хельсинки\ntrojan://pass@de.example.com:443#🇩🇪 Франкфурт`}
-                    className={`${inputCls} font-mono text-[11px] leading-relaxed`}
-                  />
-                </div>
-
-                {preview.length > 0 && (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
-                    <div className="text-xs font-bold text-emerald-400 mb-1.5">
-                      Распознано серверов: {preview.length}
-                    </div>
-                    <div className="space-y-1 max-h-40 overflow-y-auto">
-                      {preview.map((n, i) => (
-                        <div key={i} className="text-[11px] text-slate-300 font-mono flex gap-2">
-                          <span>{COUNTRY_FLAG(n.country_code)}</span>
-                          <span className="truncate">{n.name}</span>
-                          <span className="text-slate-500 ml-auto shrink-0">
-                            {n.host}:{n.port}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setSubModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-200"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={importingLinks}
-                    className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm inline-flex items-center gap-2"
-                  >
-                    {importingLinks ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Импортируем...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-4 h-4" />
-                        Импортировать
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
+            ))}
           </div>
-        </div>
-      )}
 
-      {/* ================= QR MODAL ================= */}
-      {qrNode && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div
-            className={`w-full max-w-sm rounded-3xl border p-6 shadow-2xl ${
-              darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-bold">Перенос на телефон</h3>
-              <button
-                type="button"
-                onClick={() => setQrNode(null)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 flex items-center justify-center">
-              {qrLoading ? (
-                <div className="w-[220px] h-[220px] flex items-center justify-center">
-                  <Loader2 className="w-7 h-7 animate-spin text-slate-500" />
-                </div>
-              ) : (
-                <QRCodeCanvas value={qrValue || `vpn://${qrNode.host}:${qrNode.port}`} size={220} />
-              )}
-            </div>
-
-            <p className="text-xs text-slate-400 mt-3 text-center">
-              Отсканируйте камерой в приложении Happ, v2rayNG, Streisand или Hiddify — профиль
-              «{qrNode.name}» добавится автоматически.
-            </p>
-
-            <div className="mt-3 rounded-xl bg-slate-950/60 border border-slate-800 p-2.5">
-              <div className="text-[10px] text-slate-500 mb-1 font-mono">
-                {qrNode.host}:{qrNode.port} • {qrNode.protocol}
-              </div>
-              <button
-                type="button"
-                onClick={() => copy(qrValue || `vpn://${qrNode.host}:${qrNode.port}`, 'qr-link')}
-                className="w-full text-[11px] text-sky-400 hover:text-sky-300 flex items-center justify-center gap-1.5 font-bold"
-              >
-                {copiedKey === 'qr-link' ? (
-                  <Check className="w-3.5 h-3.5" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-                {qrNode.raw_link ? 'Скопировать ссылку подключения' : 'Скопировать адрес сервера'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= ADD / EDIT NODE MODAL ================= */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div
-            className={`w-full max-w-lg rounded-3xl border p-6 shadow-2xl my-8 ${
-              darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">
-                {editing ? 'Настройки узла' : 'Добавить узел вручную'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Название узла *</label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Финляндия • Reality"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Протокол</label>
-                  <select
-                    value={protocol}
-                    onChange={(e) => handleProtocolChange(e.target.value)}
-                    className={inputCls}
-                  >
-                    {PROTOCOLS.map((pr) => (
-                      <option key={pr.value} value={pr.value}>
-                        {pr.value}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs text-slate-400 mb-1">IP или домен *</label>
-                  <input
-                    type="text"
-                    required
-                    value={host}
-                    onChange={(e) => setHost(e.target.value)}
-                    placeholder="vpn.example.com"
-                    className={`${inputCls} font-mono`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Порт</label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    max={65535}
-                    value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
-                    className={`${inputCls} font-mono`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs text-slate-400 mb-1">Локация</label>
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="Хельсинки, Финляндия"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Страна</label>
-                  <input
-                    type="text"
-                    maxLength={2}
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
-                    placeholder="FI"
-                    className={`${inputCls} font-mono uppercase`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Провайдер</label>
-                  <input
-                    type="text"
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
-                    placeholder="Hetzner / Aeza / Yandex Cloud"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Устойчивость к ТСПУ</label>
-                  <select
-                    value={dpiResistance}
-                    onChange={(e) =>
-                      setDpiResistance(e.target.value as 'high' | 'medium' | 'low')
-                    }
-                    className={inputCls}
-                  >
-                    <option value="high">Высокая (Reality / AWG)</option>
-                    <option value="medium">Средняя (QUIC / SS)</option>
-                    <option value="low">Низкая (чистый протокол)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <label className="flex items-center gap-2.5 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={whitelistBypass}
-                    onChange={(e) => setWhitelistBypass(e.target.checked)}
-                    className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500"
-                  />
-                  <span>
-                    <strong>RU-каскад (анти-белый список)</strong> — входная нода внутри РФ
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-2.5 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isPrimary}
-                    onChange={(e) => setIsPrimary(e.target.checked)}
-                    className="rounded border-slate-700 text-sky-500 focus:ring-sky-500"
-                  />
-                  <span>Сделать основным узлом</span>
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Заметки</label>
-                <textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="SNI маскировка, срок оплаты, особенности..."
-                  className={inputCls}
+          {subTab === 'url' ? (
+            <form onSubmit={handleAddSubscription} className="space-y-3">
+              <label className="block">
+                <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Ссылка подписки</span>
+                <input
+                  type="text"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                  value={subUrl}
+                  onChange={(e) => setSubUrl(e.target.value)}
+                  placeholder="https://panel.example.com/sub/…"
+                  className={`${input} font-mono text-[12px]`}
+                  style={inputStyle}
                 />
-              </div>
+              </label>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-200"
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText();
+                      if (text.trim()) {
+                        setSubUrl(text.trim());
+                        showToast('info', 'Ссылка вставлена из буфера');
+                      }
+                    } catch {
+                      showToast('warning', 'Нет доступа к буферу — вставьте вручную');
+                    }
+                  }}
+                  className="h-8 px-2.5 rounded-full border text-[11.5px] font-semibold text-dim tap"
+                  style={{ borderColor: 'var(--line)' }}
                 >
-                  Отмена
+                  Вставить из буфера
                 </button>
+                {IS_DEMO_BUILD && (
                 <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm"
+                  type="button"
+                  onClick={() => {
+                    const origin = window.location.origin;
+                    const base = !origin || origin === 'null' ? '' : origin;
+                    setSubUrl(`${base}/api/sample-subscription`);
+                    setSubName('Демо-подписка');
+                    showToast('info', 'Подставлена демо-подписка');
+                  }}
+                  className="h-8 px-2.5 rounded-full border text-[11.5px] font-semibold text-dim tap"
+                  style={{ borderColor: 'var(--line)' }}
                 >
-                  {saving ? 'Проверка и сохранение...' : editing ? 'Сохранить' : 'Добавить узел'}
+                  Попробовать демо
                 </button>
+                )}
               </div>
+
+              <label className="block">
+                <span className="block text-[11.5px] font-semibold text-dim mb-1.5">
+                  Название <span className="text-muted font-normal">— необязательно</span>
+                </span>
+                <input
+                  type="text"
+                  value={subName}
+                  onChange={(e) => setSubName(e.target.value)}
+                  placeholder="Например: мой провайдер"
+                  className={input}
+                  style={inputStyle}
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="block text-[11.5px] font-semibold text-dim mb-1.5">
+                    Автообновление, ч
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={subInterval}
+                    onChange={(e) => setSubInterval(Number(e.target.value) || 12)}
+                    className={input}
+                    style={inputStyle}
+                  />
+                </label>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => setSubAutoUpdate((v) => !v)}
+                    className="w-full h-[42px] rounded-xl border text-[12px] font-semibold tap"
+                    style={{
+                      borderColor: 'var(--line)',
+                      background: subAutoUpdate ? 'var(--accent-soft)' : 'var(--surface-2)',
+                      color: subAutoUpdate ? 'rgb(var(--accent))' : 'var(--text-dim)',
+                    }}
+                  >
+                    {subAutoUpdate ? 'Авто включено' : 'Авто выключено'}
+                  </button>
+                </div>
+              </div>
+
+              {subError && (
+                <Notice tone="bad" icon={<AlertTriangle className="w-4 h-4" />}>
+                  <div className="text-[11.5px] leading-relaxed break-words">{subError}</div>
+                </Notice>
+              )}
+
+              {subSaving && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-[11.5px] text-dim">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Скачиваем подписку и ищем узлы…
+                  </div>
+                  <Skeleton className="h-1.5" />
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                block
+                loading={subSaving}
+                icon={<Download className="w-4 h-4" />}
+              >
+                {subSaving ? 'Загружаем…' : 'Загрузить подписку'}
+              </Button>
+
+              <p className="text-[10.5px] text-muted leading-relaxed">
+                Понимаем base64-списки, Clash/YAML, sing-box JSON и отдельные ссылки VLESS, VMess,
+                Trojan, Shadowsocks, Hysteria2, TUIC. Если адрес панели не открывается у вашего
+                оператора — включите VPN и попробуйте снова.
+              </p>
             </form>
-          </div>
+          ) : (
+            <form onSubmit={handleImportLinks} className="space-y-3">
+              <label className="block">
+                <span className="block text-[11.5px] font-semibold text-dim mb-1.5">
+                  Вставьте ссылки узлов или base64-подписку
+                </span>
+                <textarea
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  rows={7}
+                  placeholder={'vless://…\nvmess://…\nss://…'}
+                  className={`${input} font-mono text-[11px] resize-y`}
+                  style={inputStyle}
+                />
+              </label>
+
+              {subError && (
+                <Notice tone="bad" icon={<AlertTriangle className="w-4 h-4" />}>
+                  <div className="text-[11.5px] leading-relaxed break-words">{subError}</div>
+                </Notice>
+              )}
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                block
+                loading={importingLinks}
+                icon={<FileText className="w-4 h-4" />}
+              >
+                Распознать узлы
+              </Button>
+            </form>
+          )}
         </div>
-      )}
+      </Sheet>
+
+      {/* ================= УЗЕЛ ВРУЧНУЮ ================= */}
+      <Sheet
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? 'Изменить узел' : 'Новый узел'}
+        subtitle="Проверим доступность сразу после сохранения"
+        size="md"
+        icon={
+          <div className="w-9 h-9 rounded-xl grid place-items-center accent-soft">
+            <Server className="w-4 h-4" />
+          </div>
+        }
+        footer={
+          <>
+            <Button variant="ghost" size="md" block onClick={() => setModalOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              block
+              loading={saving}
+              onClick={() =>
+                (document.getElementById('node-form') as HTMLFormElement | null)?.requestSubmit()
+              }
+            >
+              Сохранить
+            </Button>
+          </>
+        }
+      >
+        <form id="node-form" onSubmit={handleSave} className="space-y-3">
+          <label className="block">
+            <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Название</span>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="NL Амстердам — Reality"
+              className={input}
+              style={inputStyle}
+            />
+          </label>
+
+          <div className="grid grid-cols-[1fr_5.5rem] gap-2">
+            <label className="block">
+              <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Хост</span>
+              <input
+                type="text"
+                required
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="nl1.example.com"
+                className={`${input} font-mono`}
+                style={inputStyle}
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Порт</span>
+              <input
+                type="number"
+                required
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value) || 443)}
+                className={`${input} font-mono`}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Протокол</span>
+            <select
+              value={protocol}
+              onChange={(e) => handleProtocolChange(e.target.value)}
+              className={input}
+              style={inputStyle}
+            >
+              {PROTOCOLS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.value} — {p.hint}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-[1fr_5rem] gap-2">
+            <label className="block">
+              <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Локация</span>
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                className={input}
+                style={inputStyle}
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Код</span>
+              <input
+                type="text"
+                maxLength={2}
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
+                className={`${input} font-mono uppercase text-center`}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setWhitelistBypass((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-[12px] font-semibold tap"
+            style={{
+              borderColor: 'var(--line)',
+              background: whitelistBypass ? 'rgb(var(--success) / 0.1)' : 'var(--surface-2)',
+              color: whitelistBypass ? 'rgb(var(--success))' : 'var(--text-dim)',
+            }}
+          >
+            <span>RU-каскад (обход белых списков)</span>
+            {whitelistBypass ? <Check className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+          </button>
+        </form>
+      </Sheet>
+
+      {/* ================= QR ================= */}
+      <Sheet
+        open={Boolean(qrNode)}
+        onClose={() => setQrNode(null)}
+        title={qrNode ? stripLeadingFlag(qrNode.name) : 'QR'}
+        subtitle="Отсканируйте в VPN-клиенте на телефоне"
+        size="sm"
+        icon={
+          <div className="w-9 h-9 rounded-xl grid place-items-center accent-soft">
+            <QrCode className="w-4 h-4" />
+          </div>
+        }
+      >
+        {qrNode && (
+          <div className="space-y-3">
+            <div className="flex justify-center">
+              <div className="rounded-2xl bg-white p-3">
+                {qrLoading ? (
+                  <div className="w-[200px] h-[200px] grid place-items-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+                  </div>
+                ) : qrValue ? (
+                  <QRCodeCanvas value={qrValue} size={200} level="M" includeMargin={false} />
+                ) : (
+                  <div className="w-[200px] h-[200px] grid place-items-center text-[12px] text-slate-500 text-center px-4">
+                    Ссылка для этого узла недоступна — добавьте узел из подписки
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 justify-center text-[11px] text-muted font-mono">
+              {qrNode.host}:{qrNode.port} · {qrNode.protocol}
+            </div>
+            <Button
+              variant="soft"
+              size="md"
+              block
+              icon={<Copy className="w-4 h-4" />}
+              onClick={() => copy(qrValue, `qr-${qrNode.id}`)}
+            >
+              {copiedKey === `qr-${qrNode.id}` ? 'Скопировано' : 'Скопировать ссылку узла'}
+            </Button>
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 };
+
+const IconAction: React.FC<{
+  title: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  loading?: boolean;
+  danger?: boolean;
+}> = ({ title, icon, onClick, loading, danger }) => (
+  <button
+    type="button"
+    title={title}
+    aria-label={title}
+    onClick={onClick}
+    disabled={loading}
+    className={`p-2 rounded-lg text-dim tap ${danger ? 'hover:text-[rgb(var(--danger))]' : 'hover:text-[rgb(var(--accent))]'}`}
+  >
+    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : icon}
+  </button>
+);

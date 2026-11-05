@@ -1,10 +1,11 @@
 import {
+  explainEmptyParse,
   parseSubscriptionText,
   parseUserInfoHeader,
   safeDecodeBase64,
   type ParsedNode,
 } from '../lib/subscriptionParser';
-import { fetchTextUniversal, isNativeApp, nativeGet } from '../lib/nativeBridge';
+import { fetchTextUniversal, humanizeNetworkError, isNativeApp, nativeGet } from '../lib/nativeBridge';
 
 export interface RealSubscription {
   nodes: ParsedNode[];
@@ -14,100 +15,225 @@ export interface RealSubscription {
   trafficTotal: number;
   expiresOn: string | null;
   rawText: string;
+  /** Каким клиентом удалось получить подписку — полезно в диагностике. */
+  via?: string;
 }
 
 /**
- * Скачивает настоящую подписку по URL через нативный HTTP (только в APK).
- * Разбор — общий с сервером модуль, поэтому распознаются те же 79 узлов,
- * что и в полной версии.
+ * Заголовки, под которыми ходят популярные клиенты. Панели (Marzban, 3x-ui,
+ * Remnawave, Happ, Oversub) отдают разный формат в зависимости от этого:
+ * v2rayNG получает base64-список, Clash Meta — YAML, sing-box — JSON-конфиг.
+ * Поэтому мы пробуем «поговорить» как каждый из них, пока не найдём узлы.
  */
-export async function importRealSubscription(url: string): Promise<RealSubscription> {
-  let text = '';
-  let headers: Record<string, string> = {};
+const CLIENT_PROBES: Array<{ ua: string; accept?: string; via: string }> = [
+  {
+    ua: 'Happ/3.6.0 (PulseNet; Android 14)',
+    via: 'Happ',
+  },
+  {
+    ua: 'v2rayNG/1.9.16 (Linux; Android 14)',
+    accept: '*/*',
+    via: 'v2rayNG',
+  },
+  {
+    ua: 'ClashMetaForAndroid/2.11.1 Mihomo/1.19.0',
+    accept: '*/*',
+    via: 'Clash Meta',
+  },
+  {
+    ua: 'Streisand/1.6 CFNetwork/1494 Darwin/23.4.0',
+    accept: '*/*',
+    via: 'Streisand',
+  },
+  {
+    ua: 'sing-box/1.11.0 (Android 14)',
+    accept: 'application/json',
+    via: 'sing-box',
+  },
+  {
+    ua: 'Hiddify/2.5.7 (Android 14)',
+    accept: '*/*',
+    via: 'Hiddify',
+  },
+];
 
-  if (isNativeApp()) {
-    try {
-      const res = await nativeGet(url, 20000);
-      if (res.status >= 200 && res.status < 300) {
-        text = res.text;
-        headers = res.headers;
-      } else {
-        throw new Error(`сервер ответил ${res.status}`);
-      }
-    } catch (nativeError) {
-      // Вторая попытка — обычный fetch (часть панелей отдаёт CORS-заголовки).
-      try {
-        text = await fetchTextUniversal(url, 20000);
-      } catch (fetchError) {
-        throw new Error(
-          `Панель не отдала подписку. ${
-            nativeError instanceof Error ? nativeError.message : String(nativeError)
-          }. ${
-            fetchError instanceof Error ? fetchError.message : String(fetchError)
-          }`
-        );
-      }
-    }
-  } else {
-    text = await fetchTextUniversal(url, 20000);
-  }
+/**
+ * Нормализуем ссылку: убираем пробелы и «умные» кавычки из вставленного текста.
+ * Если схему забыли («panel.example.com/sub/abc») — подставляем https.
+ */
+export function cleanSubscriptionUrl(input: string): string {
+  const cleaned = input
+    .trim()
+    .replace(/^[«"'`\s]+|[»"'`\s]+$/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');
+  if (!cleaned) return cleaned;
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  // Забыли схему — это самая частая причина «ссылка не принимается».
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/|\?|:|$)/i.test(cleaned)) return `https://${cleaned}`;
+  return cleaned;
+}
 
-  let parsed = parseSubscriptionText(text);
-
-  // Панели отдают разный формат в зависимости от клиента: v2rayNG часто
-  // получает base64-список, Clash — YAML, sing-box — JSON. Если с первого
-  // раза узлов нет, пробуем «поговорить» как другие клиенты.
-  if (parsed.nodes.length === 0 && isNativeApp()) {
-    const agents = [
-      'v2rayNG/1.9.16 (Linux; Android 14)',
-      'ClashMetaForAndroid/2.10.1 Mihomo/1.18.5',
-      'Streisand/1.6 CFNetwork/1494 Darwin/23.4.0',
-    ];
-    for (const ua of agents) {
-      try {
-        const retry = await nativeGet(url, 20000, ua);
-        if (retry.status >= 200 && retry.status < 300 && retry.text) {
-          const again = parseSubscriptionText(retry.text);
-          if (again.nodes.length > 0) {
-            parsed = again;
-            text = retry.text;
-            break;
-          }
-        }
-      } catch {
-        // пробуем следующий клиент
-      }
-    }
-  }
-
-  if (parsed.nodes.length === 0) {
-    const preview = text.slice(0, 120).replace(/\s+/g, ' ').trim();
-    const hint = /^\s*</.test(text)
-      ? 'Сервер отдал HTML-страницу вместо подписки (обычно так панель требует вход или блокирует клиента).'
-      : /^\s*\{/.test(text)
-      ? 'Похоже на JSON неизвестной структуры.'
-      : 'В ответе не нашлось ни одной ссылки на узлы.';
+/**
+ * Скачивает настоящую подписку и разбирает её.
+ *
+ * Порядок:
+ *  1. первый запрос «как Happ» — самый частый формат у панелей этого типа;
+ *  2. если узлов нет — перебираем остальных клиентов (v2rayNG, Clash Meta…);
+ *  3. если сеть вообще не отвечает — сразу понятная ошибка с советом.
+ *
+ * В браузере (не APK) работает обычный fetch: часть панелей отдаёт CORS-заголовки.
+ */
+export async function importRealSubscription(rawUrl: string): Promise<RealSubscription> {
+  const url = cleanSubscriptionUrl(rawUrl);
+  if (!/^https?:\/\//i.test(url)) {
     throw new Error(
-      `${hint} Получено ${text.length} символов. Начало ответа: «${preview}». ` +
-        'Уточните ссылку в личном кабинете или вставьте ссылки узлов вручную.'
+      'Это не похоже на ссылку подписки. Нужен адрес вида https://panel.example.com/sub/xxxx — либо вставьте сами ссылки узлов (vless://, vmess://) на вкладке «Ссылки узлов».'
     );
   }
 
+  // Общий бюджет времени: шесть попыток по 20 секунд — слишком долго для телефона.
+  const deadline = Date.now() + 35000;
+
+  const attempts: string[] = [];
+  let bestEmpty = '';
+  let text = '';
+  let headers: Record<string, string> = {};
+  let via = '';
+
+  for (const probe of CLIENT_PROBES) {
+    if (Date.now() > deadline) {
+      attempts.push('время ожидания истекло');
+      break;
+    }
+    try {
+      const res = isNativeApp()
+        ? await nativeGet(url, 20000, probe.ua, probe.accept ? { Accept: probe.accept } : {})
+        : await legacyFetch(url, probe.ua);
+
+      if (res.status < 200 || res.status >= 300) {
+        attempts.push(`${probe.via}: ответ ${res.status}`);
+        // 401/403/404 — дальше перебирать клиентов бессмысленно
+        if ([401, 403, 404, 410].includes(res.status)) break;
+        continue;
+      }
+
+      if (!res.text || res.text.trim().length === 0) {
+        attempts.push(`${probe.via}: пустой ответ`);
+        continue;
+      }
+
+      const parsed = parseSubscriptionText(res.text);
+      if (parsed.nodes.length > 0) {
+        text = res.text;
+        headers = res.headers;
+        via = probe.via;
+        break;
+      }
+
+      // Запоминаем «содержательный, но бесполезный» ответ для диагностики
+      if (!bestEmpty) {
+        bestEmpty = res.text;
+        headers = res.headers;
+      }
+      attempts.push(`${probe.via}: узлов не найдено в ответе`);
+    } catch (err) {
+      // Сетевые ошибки повторяем у следующего клиента только один раз:
+      // если домен не резолвится, шесть попыток ничего не изменят.
+      const reason = humanizeNetworkError(err);
+      attempts.push(`${probe.via}: ${reason}`);
+      if (/не резолвится|не ответил вовремя|TLS/i.test(reason)) break;
+    }
+  }
+
+  if (!text) {
+    // Сеть ответила, но разобрать не удалось — показываем, что именно пришло
+    if (bestEmpty) {
+      const preview = bestEmpty.replace(/\s+/g, ' ').trim().slice(0, 160);
+      const title = readTitle(headers);
+      throw new Error(
+        [
+          explainEmptyParse(bestEmpty),
+          `Размер ответа: ${bestEmpty.length} символов.`,
+          title ? `Панель представилась как «${title}».` : '',
+          `Начало ответа: «${preview}».`,
+          attempts.length ? `Попытки: ${attempts.slice(0, 3).join('; ')}.` : '',
+          'Скопируйте ссылку узла из личного кабинета и вставьте её вручную — импорт по ссылкам работает без панели.',
+        ]
+          .filter(Boolean)
+          .join(' ')
+      );
+    }
+    throw new Error(
+      [
+        'Не удалось скачать подписку.',
+        attempts[0] ? attempts[0].replace(/^[^:]+:\s*/, '').replace(/^\w/, (c) => c.toUpperCase()) + '.' : '',
+        'Если адрес панели не открывается у вашего оператора — включите VPN и нажмите «Загрузить подписку» ещё раз.',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    );
+  }
+
+  const parsed = parseSubscriptionText(text);
   const info = parseUserInfoHeader(headers['subscription-userinfo'] || null);
-  const titleHeader = headers['profile-title'];
-  const title = titleHeader
-    ? titleHeader.startsWith('base64:')
-      ? safeDecodeBase64(titleHeader.slice(7))
-      : titleHeader
-    : '';
 
   return {
     nodes: parsed.nodes,
     format: parsed.format === 'clash' ? 'json' : parsed.format,
-    title: title.trim(),
+    title: readTitle(headers),
     trafficUsed: info.used,
     trafficTotal: info.total,
     expiresOn: info.expires_on,
     rawText: text,
+    via,
   };
+}
+
+/** Заголовки панели: Profile-Title / profile-title, иногда в base64. */
+function readTitle(headers: Record<string, string>): string {
+  const raw =
+    headers['profile-title'] ||
+    headers['profile-username'] ||
+    headers['x-profile-title'] ||
+    '';
+  if (!raw) return '';
+  const value = raw.startsWith('base64:') ? safeDecodeBase64(raw.slice(7)) : raw;
+  // Часть панелей отдаёт нестроковый JSON — тогда просто игнорируем
+  return value && !value.startsWith('{') ? value.trim().slice(0, 80) : '';
+}
+
+/** Обычный fetch для браузера: пробуем с указанным UA, если не вышло — без него. */
+async function legacyFetch(
+  url: string,
+  userAgent: string
+): Promise<{ status: number; text: string; headers: Record<string, string> }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: 'follow',
+      headers: { 'User-Agent': userAgent, Accept: '*/*' },
+    });
+    const text = await res.text();
+    const headers: Record<string, string> = {};
+    res.headers.forEach((v, k) => {
+      headers[k.toLowerCase()] = v;
+    });
+    return { status: res.status, text, headers };
+  } catch (err) {
+    // Браузер мог заблокировать нестандартный UA в CORS-предзапросе — пробуем без него
+    if (isNativeApp()) throw err;
+    try {
+      return await fetchTextUniversal(url, 20000).then((t) => ({
+        status: 200,
+        text: t,
+        headers: {} as Record<string, string>,
+      }));
+    } catch {
+      throw err;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }

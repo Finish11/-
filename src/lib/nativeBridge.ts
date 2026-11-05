@@ -27,7 +27,8 @@ export interface NativeHttpResult {
 export async function nativeGet(
   url: string,
   timeoutMs = 15000,
-  userAgent = 'Happ/3.6.0 (PulseNet; Android 14)'
+  userAgent = 'Happ/3.6.0 (PulseNet; Android 14)',
+  extraHeaders: Record<string, string> = {}
 ): Promise<NativeHttpResult> {
   const started = Date.now();
   try {
@@ -41,6 +42,9 @@ export async function nativeGet(
         // Панели часто отдают ссылки только «клиентским» User-Agent
         'User-Agent': userAgent,
         Accept: '*/*',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+        'Cache-Control': 'no-cache',
+        ...extraHeaders,
       },
     });
     const headers: Record<string, string> = {};
@@ -54,12 +58,7 @@ export async function nativeGet(
       latencyMs: Date.now() - started,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      /timeout|timed out/i.test(message)
-        ? 'Сервер подписки не ответил вовремя'
-        : `Не удалось загрузить подписку: ${message}`
-    );
+    throw new Error(humanizeNetworkError(err));
   }
 }
 
@@ -100,6 +99,32 @@ export async function fetchTextUniversal(url: string, timeoutMs = 20000): Promis
     `Не удалось скачать подписку. ${attempts.join('; ')}. ` +
       'Если панель закрыта паролем или блокирует приложение, вставьте ссылки узлов вручную.'
   );
+}
+
+/**
+ * Человеческое объяснение сетевой ошибки.
+ * Важно различать DNS и TLS: при DNS-сбое проблема почти всегда в сети/операторе,
+ * а не в самой панели — и тогда совет «включите VPN и повторите» реально помогает.
+ */
+export function humanizeNetworkError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/unable to resolve host|no address associated|econnrefused.*dns|nxdomain|enotfound|unknownhost/i.test(message)) {
+    return `домен не резолвится (${shortCause(message)}). Обычно так бывает, когда адрес панели недоступен у вашего оператора: включите VPN и повторите.`;
+  }
+  if (/timeout|timed out/i.test(message)) {
+    return 'сервер не ответил вовремя (таймаут). Попробуйте ещё раз или через VPN.';
+  }
+  if (/ssl|tls|certificate|handshake/i.test(message)) {
+    return `сбой TLS-соединения (${shortCause(message)}). Возможно, соединение подменяет провайдер.`;
+  }
+  if (/cleartext|not permitted/i.test(message)) {
+    return 'Android запретил незашифрованное соединение — нужен https:// в ссылке.';
+  }
+  return shortCause(message) || 'неизвестная сетевая ошибка';
+}
+
+function shortCause(message: string): string {
+  return message.replace(/^.*?(?:Exception|Error):\s*/i, '').slice(0, 160).trim();
 }
 
 /** Замер одного сайта: время ответа на probe_url. Возвращает мс или null. */

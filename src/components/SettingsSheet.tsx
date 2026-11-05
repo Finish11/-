@@ -4,20 +4,26 @@ import {
   CircleCheck,
   Loader2,
   MapPin,
+  MonitorSmartphone,
   Moon,
-  Radio,
+  Palette,
   RefreshCw,
+  Radio,
+  Signal,
+  Sparkles,
   Sun,
   Wifi,
-  X,
+  Zap,
 } from 'lucide-react';
 import {
   CITIES,
   ACCENTS,
   OPERATORS,
   useSettings,
+  type AccentTheme,
   type NetworkType,
   type ProbeMode,
+  type ThemeMode,
 } from '../lib/appSettings';
 import {
   type UpdateInfo,
@@ -27,6 +33,8 @@ import {
   RELEASE_PAGE,
 } from '../lib/appUpdate';
 import { connectionLabel, detectNetworkContext, type NetworkContext } from '../lib/networkInfo';
+import { Sheet } from './ui/Sheet';
+import { Button, Notice, Segmented, SectionTitle, Toggle } from './ui/kit';
 
 interface SettingsSheetProps {
   open: boolean;
@@ -36,58 +44,30 @@ interface SettingsSheetProps {
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 
-const Section: React.FC<{ title: string; hint?: string; children: React.ReactNode; dark: boolean }> = ({
-  title,
-  hint,
+const Row: React.FC<{ children: React.ReactNode; className?: string }> = ({
   children,
-  dark,
+  className = '',
 }) => (
-  <div className="space-y-2.5">
-    <div>
-      <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{title}</div>
-      {hint && <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{hint}</p>}
-    </div>
+  <div
+    className={`rounded-2xl border p-3 ${className}`}
+    style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+  >
     {children}
   </div>
 );
 
-/** Компактный сегментированный переключатель. */
-const Segmented = <T extends string>({
-  value,
-  options,
-  onChange,
-  dark,
-}: {
-  value: T;
-  options: Array<{ value: T; label: string }>;
-  onChange: (v: T) => void;
-  dark: boolean;
-}) => (
-  <div
-    className={`grid gap-1 p-1 rounded-xl border ${options.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} ${
-      dark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-100 border-slate-200'
-    }`}
-  >
-    {options.map((o) => {
-      const active = value === o.value;
-      return (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={`py-1.5 rounded-lg text-[11px] font-bold transition-all active:scale-95 ${
-            active
-              ? 'bg-sky-500 text-slate-950 shadow-sm'
-              : dark
-              ? 'text-slate-400 hover:text-slate-200'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          {o.label}
-        </button>
-      );
-    })}
-  </div>
+const Field: React.FC<{
+  label: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ label, icon, children }) => (
+  <label className="block">
+    <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-dim mb-1.5">
+      {icon}
+      {label}
+    </span>
+    {children}
+  </label>
 );
 
 export const SettingsSheet: React.FC<SettingsSheetProps> = ({
@@ -98,8 +78,6 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   showToast,
 }) => {
   const [settings, update] = useSettings();
-  const [draft, setDraft] = useState(settings);
-  useEffect(() => setDraft(settings), [settings]);
   const [ctx, setCtx] = useState<NetworkContext | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -116,13 +94,14 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
       .finally(() => setDetecting(false));
   }, [open]);
 
-  if (!open) return null;
-
-  const field = `w-full px-3 py-2 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-sky-500/40 ${
-    darkMode
-      ? 'bg-slate-950/70 border-slate-800 text-slate-100'
-      : 'bg-white border-slate-200 text-slate-900'
-  }`;
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--line)',
+    color: 'var(--text)',
+    colorScheme: darkMode ? 'dark' : 'light',
+  };
+  const input =
+    'w-full px-3 py-2 rounded-xl text-[12.5px] outline-none focus:ring-2 focus:ring-[rgb(var(--accent)/0.3)]';
 
   const redetect = async () => {
     setDetecting(true);
@@ -155,72 +134,122 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-
-      <div
-        className={`relative w-full sm:max-w-lg max-h-[88vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border p-5 pb-safe ${
-          darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-        }`}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-extrabold">Настройки</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className={`p-2 rounded-xl ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
-            aria-label="Закрыть"
-          >
-            <X className="w-4 h-4" />
-          </button>
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="Настройки"
+      subtitle="Сеть, замеры и оформление"
+      size="md"
+      icon={
+        <div className="w-9 h-9 rounded-xl grid place-items-center accent-soft">
+          <Sparkles className="w-4 h-4" />
         </div>
+      }
+      footer={
+        <Button variant="primary" size="md" block onClick={onClose}>
+          Готово
+        </Button>
+      }
+    >
+      <div className="space-y-6 pb-2">
+        {/* ---------- Оформление ---------- */}
+        <section className="space-y-2.5">
+          <SectionTitle hint="Тема и акцент применяются сразу">Оформление</SectionTitle>
 
-        <div className="space-y-5">
-          {/* Профиль сети */}
-          <Section
-            title="Профиль сети"
-            hint="Влияет на то, как приложение трактует замер: белые списки обычно вводят только в мобильных сетях."
-            dark={darkMode}
-          >
-            <div className={`rounded-2xl border p-3 space-y-2.5 ${darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5" />
+          <Segmented<ThemeMode>
+            value={settings.theme}
+            onChange={(v) => update({ theme: v })}
+            options={[
+              { value: 'dark', label: 'Тёмная', icon: <Moon className="w-3.5 h-3.5" /> },
+              { value: 'light', label: 'Светлая', icon: <Sun className="w-3.5 h-3.5" /> },
+              { value: 'system', label: 'Системная', icon: <MonitorSmartphone className="w-3.5 h-3.5" /> },
+            ]}
+          />
+
+          <Row>
+            <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-dim mb-2.5">
+              <Palette className="w-3.5 h-3.5" /> Акцентный цвет
+            </div>
+            <div className="flex items-center gap-2.5">
+              {ACCENTS.map((a) => {
+                const active = settings.accent === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    title={a.name}
+                    aria-label={a.name}
+                    onClick={() => update({ accent: a.id as AccentTheme })}
+                    className="relative w-9 h-9 rounded-full tap grid place-items-center"
+                    style={{
+                      background: a.swatch,
+                      boxShadow: active ? `0 0 0 2.5px var(--bg-elevated), 0 0 0 4.5px ${a.swatch}` : 'none',
+                    }}
+                  >
+                    {active && <Check className="w-4 h-4" style={{ color: '#04121f' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </Row>
+
+          <Row>
+            <Toggle
+              checked={settings.calmMotion}
+              onChange={(v) => update({ calmMotion: v })}
+              label="Спокойные анимации"
+              hint="Меньше движения — легче для батареи и для глаз"
+            />
+          </Row>
+        </section>
+
+        {/* ---------- Профиль сети ---------- */}
+        <section className="space-y-2.5">
+          <SectionTitle hint="Влияет на трактовку замера: белые списки обычно вводят только в мобильных сетях">
+            Профиль сети
+          </SectionTitle>
+
+          <Row>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11.5px] text-dim flex items-center gap-1.5 min-w-0">
+                <Radio className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">
                   {detecting
                     ? 'Определяем сеть…'
                     : ctx
                     ? `${connectionLabel(ctx.kind)}${ctx.isp ? ` · ${ctx.isp}` : ''}`
                     : 'Сеть не определена'}
-                </div>
-                <button
-                  type="button"
-                  onClick={redetect}
-                  disabled={detecting}
-                  className="text-[11px] font-bold text-sky-400 inline-flex items-center gap-1 active:scale-95"
-                >
-                  {detecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                  Обновить
-                </button>
+                </span>
               </div>
-              {ctx?.ip && (
-                <div className="text-[10px] font-mono text-slate-500">
-                  IP {ctx.ip} {ctx.countryCode ? `· ${ctx.countryCode}` : ''}
-                  {ctx.city ? ` · ${ctx.city}` : ''}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={redetect}
+                disabled={detecting}
+                className="text-[11.5px] font-bold accent-text inline-flex items-center gap-1 tap shrink-0"
+              >
+                {detecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                Обновить
+              </button>
             </div>
+            {ctx?.ip && (
+              <div className="text-[10.5px] font-mono text-muted mt-1.5 truncate">
+                IP {ctx.ip}
+                {ctx.countryCode ? ` · ${ctx.countryCode}` : ''}
+                {ctx.city ? ` · ${ctx.city}` : ''}
+              </div>
+            )}
+          </Row>
 
-            <label className="block">
-              <span className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
-                <Wifi className="w-3 h-3" /> Оператор
-              </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <Field label="Оператор" icon={<Signal className="w-3.5 h-3.5" />}>
               <select
-                className={field}
-                value={draft.operator}
-                onChange={(e) => setDraft({ ...draft, operator: e.target.value })}
+                className={input}
+                style={inputStyle}
+                value={settings.operator}
+                onChange={(e) => update({ operator: e.target.value })}
               >
                 <option value="">
-                  {ctx ? `Определён автоматически: ${ctx.operator || 'не распознан'}` : 'Определять автоматически'}
+                  {ctx ? `Авто: ${ctx.operator || 'не распознан'}` : 'Определять автоматически'}
                 </option>
                 {OPERATORS.map((o) => (
                   <option key={o} value={o}>
@@ -228,163 +257,111 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
 
-            <label className="block">
-              <span className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
-                <MapPin className="w-3 h-3" /> Город
-              </span>
+            <Field label="Город" icon={<MapPin className="w-3.5 h-3.5" />}>
               <select
-                className={field}
-                value={draft.city}
-                onChange={(e) => setDraft({ ...draft, city: e.target.value })}
+                className={input}
+                style={inputStyle}
+                value={settings.city}
+                onChange={(e) => update({ city: e.target.value })}
               >
-                <option value="">
-                  {ctx?.city ? `Определён автоматически: ${ctx.city}` : 'Определять автоматически'}
-                </option>
+                <option value="">{ctx?.city ? `Авто: ${ctx.city}` : 'Определять автоматически'}</option>
                 {CITIES.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
+          </div>
 
-            <div>
-              <span className="text-[11px] text-slate-500 mb-1 block">Тип подключения</span>
-              <Segmented<NetworkType>
-                value={draft.networkType}
-                onChange={(v) => setDraft({ ...draft, networkType: v })}
-                dark={darkMode}
-                options={[
-                  { value: 'auto', label: 'Авто' },
-                  { value: 'cellular', label: 'Моб. сеть' },
-                  { value: 'wifi', label: 'Wi-Fi' },
-                ]}
-              />
+          <div>
+            <div className="text-[11.5px] font-semibold text-dim mb-1.5 flex items-center gap-1.5">
+              <Wifi className="w-3.5 h-3.5" /> Тип подключения
             </div>
-          </Section>
-
-          {/* Замеры */}
-          <Section
-            title="Замеры"
-            hint="Реальные пробы работают в приложении для Android: сайты проверяются прямыми запросами с телефона."
-            dark={darkMode}
-          >
-            <Segmented<ProbeMode>
-              value={draft.probeMode}
-              onChange={(v) => setDraft({ ...draft, probeMode: v })}
-              dark={darkMode}
+            <Segmented<NetworkType>
+              size="sm"
+              value={settings.networkType}
+              onChange={(v) => update({ networkType: v })}
               options={[
                 { value: 'auto', label: 'Авто' },
-                { value: 'real', label: 'Реальные' },
-                { value: 'demo', label: 'Демо' },
+                { value: 'cellular', label: 'Моб. сеть' },
+                { value: 'wifi', label: 'Wi-Fi' },
               ]}
             />
-          </Section>
+          </div>
+        </section>
 
-          {/* Оформление */}
-          <Section title="Оформление" dark={darkMode}>
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-semibold ${
-                darkMode ? 'border-slate-800 bg-slate-950/40 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-800'
-              }`}
+        {/* ---------- Замеры ---------- */}
+        <section className="space-y-2.5">
+          <SectionTitle hint="В приложении для Android доступны настоящие пробы с телефона">
+            Замеры
+          </SectionTitle>
+          <Segmented<ProbeMode>
+            value={settings.probeMode}
+            onChange={(v) => update({ probeMode: v })}
+            options={[
+              { value: 'auto', label: 'Авто' },
+              { value: 'real', label: 'Реальные', icon: <Zap className="w-3.5 h-3.5" /> },
+              { value: 'demo', label: 'Демо' },
+            ]}
+          />
+          {settings.probeMode === 'demo' && (
+            <Notice tone="warn">
+              Демо-режим подставляет имитацию вместо реальных запросов. Вердикт в нём ничего не
+              говорит о вашей сети.
+            </Notice>
+          )}
+        </section>
+
+        {/* ---------- О приложении ---------- */}
+        <section className="space-y-2.5">
+          <SectionTitle
+            hint="Обновления раздаются через GitHub Releases"
+            right={<span className="font-mono text-[11px] text-muted">{version || 'веб-версия'}</span>}
+          >
+            О приложении
+          </SectionTitle>
+
+          <div className="flex gap-2">
+            <Button
+              variant="soft"
+              size="md"
+              block
+              loading={checking}
+              icon={<CircleCheck className="w-4 h-4" />}
+              onClick={handleCheckUpdates}
             >
-              <span className="flex items-center gap-2">
-                {darkMode ? <Moon className="w-4 h-4 text-sky-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
-                {darkMode ? 'Тёмная тема' : 'Светлая тема'}
-              </span>
-              <span className="text-[11px] text-slate-500">переключить</span>
-            </button>
+              Проверить обновления
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => window.open(RELEASE_PAGE, '_blank', 'noreferrer')}
+            >
+              Релизы
+            </Button>
+          </div>
 
-            <div className="mt-2">
-              <p className="text-[11px] text-slate-500 mb-1.5">Акцентный цвет</p>
-              <div className="flex items-center gap-2">
-                {ACCENTS.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    title={a.name}
-                    onClick={() => setDraft({ ...draft, accent: a.id })}
-                    className={`w-8 h-8 rounded-full border-2 tap ${
-                      draft.accent === a.id ? 'border-white scale-110' : 'border-transparent opacity-80'
-                    }`}
-                    style={{ backgroundColor: a.swatch }}
-                    aria-label={a.name}
-                  />
-                ))}
-              </div>
-            </div>
-          </Section>
+          {available && (
+            <a
+              href={available.downloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl accent-soft text-[12.5px] font-bold tap"
+            >
+              <span>Скачать {available.version} для Android</span>
+              <span className="text-[10px] opacity-80">APK</span>
+            </a>
+          )}
 
-          {/* О приложении */}
-          <Section title="О приложении" dark={darkMode}>
-            <div className={`rounded-2xl border p-3 space-y-2 ${darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'}`}>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-500">Версия</span>
-                <span className="font-mono">{version || 'веб-версия'}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCheckUpdates}
-                  disabled={checking}
-                  className="flex-1 py-2 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 text-[11px] font-bold inline-flex items-center justify-center gap-1.5 active:scale-95"
-                >
-                  {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CircleCheck className="w-3.5 h-3.5" />}
-                  Проверить обновления
-                </button>
-                <a
-                  href={RELEASE_PAGE}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-2 rounded-xl border border-slate-700/50 text-[11px] font-bold text-slate-400 inline-flex items-center gap-1"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  Релизы
-                </a>
-              </div>
-            </div>
-          </Section>
-        </div>
-
-        {available && (
-          <a
-            href={available.downloadUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl accent-soft accent-text text-xs font-bold tap"
-          >
-            <span>Скачать {available.version} для Android</span>
-            <span className="text-[10px] opacity-80">APK</span>
-          </a>
-        )}
-
-        <div className="sticky bottom-0 -mx-5 -mb-5 mt-5 px-5 py-3 border-t border-slate-800/60 backdrop-blur-xl flex items-center gap-2 bg-inherit">
-          <button
-            type="button"
-            onClick={() => setDraft(settings)}
-            className={`flex-1 py-2.5 rounded-xl border text-xs font-bold ${
-              darkMode ? 'border-slate-800 text-slate-300' : 'border-slate-200 text-slate-600'
-            }`}
-          >
-            Сбросить
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              update(draft);
-              showToast('success', `Сохранено: ${draft.operator || 'оператор авто'} · ${draft.city || 'город авто'}`);
-              onClose();
-            }}
-            className="flex-[2] py-2.5 rounded-xl bg-sky-500 text-slate-950 text-xs font-extrabold active:scale-95"
-          >
-            Сохранить
-          </button>
-        </div>
+          <p className="text-[11px] text-muted leading-relaxed">
+            Замеры в приложении настоящие: сайты проверяются прямыми запросами с телефона. VPN-туннеля
+            внутри приложения пока нет — узлы только проверяются на доступность.
+          </p>
+        </section>
       </div>
-    </div>
+    </Sheet>
   );
 };

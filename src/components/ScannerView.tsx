@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radar,
   ShieldAlert,
@@ -12,16 +12,18 @@ import {
   Check,
   Send,
   ChevronDown,
-  ChevronUp,
   Sparkles,
   PowerOff,
   Play,
   RefreshCw,
   HelpCircle,
-  Lock,
   Activity,
   Server,
   Eye,
+  RotateCcw,
+  Radio,
+  Gauge,
+  Download,
 } from 'lucide-react';
 import {
   CATEGORY_META,
@@ -35,7 +37,6 @@ import {
 } from '../types';
 import {
   detectCurrentConnection,
-  diagnoseScan,
   evaluateScanVerdict,
   IS_DEMO_BUILD,
   runMultiSiteScan,
@@ -52,6 +53,8 @@ import {
   type NetworkContext,
 } from '../lib/networkInfo';
 import { notifyScanResult } from '../lib/notify';
+import { Sheet } from './ui/Sheet';
+import { Button, Chip, Notice, SectionTitle, StatusDot } from './ui/kit';
 
 interface ScannerViewProps {
   user: User;
@@ -62,11 +65,66 @@ interface ScannerViewProps {
   onScanSaved: (scan: ScanRecord) => void;
   onQuickReportIncident: (scan: ScanRecord) => void;
   onNavigateSites: () => void;
-  /** Перечитать каталог после «быстрого выбора» сервисов. */
+  onNavigateVpn: () => void;
   onSitesChanged: () => void;
   darkMode: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
+
+type Phase = 'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done';
+
+const VERDICT_META = {
+  WHITELIST_ACTIVE: {
+    label: 'Белые списки',
+    tone: 'bad' as const,
+    icon: WifiOff,
+    accentRgb: 'var(--danger)',
+  },
+  TOTAL_JAMMING: {
+    label: 'Шатдаун',
+    tone: 'bad' as const,
+    icon: AlertTriangle,
+    accentRgb: 'var(--danger)',
+  },
+  SEVERE_RESTRICTIONS: {
+    label: 'Жёсткие ограничения',
+    tone: 'warn' as const,
+    icon: ShieldAlert,
+    accentRgb: 'var(--warning)',
+  },
+  DPI_THROTTLING: {
+    label: 'Фильтрация ТСПУ',
+    tone: 'warn' as const,
+    icon: ShieldAlert,
+    accentRgb: 'var(--warning)',
+  },
+  OPEN_INTERNET: {
+    label: 'Интернет открыт',
+    tone: 'ok' as const,
+    icon: ShieldCheck,
+    accentRgb: 'var(--success)',
+  },
+};
+
+const toneColor = (tone: 'ok' | 'warn' | 'bad') =>
+  tone === 'ok' ? 'rgb(var(--success))' : tone === 'warn' ? 'rgb(var(--warning))' : 'rgb(var(--danger))';
+
+/** Мини-полоса прогресса. */
+const Meter: React.FC<{ pct: number; color?: string; height?: number }> = ({
+  pct,
+  color = 'rgb(var(--accent))',
+  height = 6,
+}) => (
+  <div
+    className="w-full rounded-full overflow-hidden"
+    style={{ height, background: 'var(--surface-2)' }}
+  >
+    <div
+      className="h-full rounded-full transition-[width] duration-500 ease-out"
+      style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }}
+    />
+  </div>
+);
 
 export const ScannerView: React.FC<ScannerViewProps> = ({
   user,
@@ -77,6 +135,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   onScanSaved,
   onQuickReportIncident,
   onNavigateSites,
+  onNavigateVpn,
   onSitesChanged,
   darkMode,
   showToast,
@@ -85,21 +144,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [appSettings] = useSettings();
   const [netCtx, setNetCtx] = useState<NetworkContext | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    detectNetworkContext()
-      .then((c) => alive && setNetCtx(c))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-    // пересчитываем при смене оператора/города/типа сети в настройках
-  }, [appSettings.operator, appSettings.city, appSettings.networkType, appSettings.probeMode]);
-
-  const [phase, setPhase] = useState<
-    'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done'
-  >('idle');
-
+  const [phase, setPhase] = useState<Phase>('idle');
   const [detectedConn, setDetectedConn] = useState<ClientConnectionInfo | null>(connection);
   const [progress, setProgress] = useState({ done: 0, total: 0, currentDomain: '' });
   const [liveResults, setLiveResults] = useState<ScanSiteResult[]>([]);
@@ -110,94 +155,114 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [showTips, setShowTips] = useState(false);
   const [quickNote, setQuickNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [showAllSites, setShowAllSites] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const vpnWatchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (connection && phase === 'idle') {
-      setDetectedConn(connection);
-    }
+    let alive = true;
+    detectNetworkContext()
+      .then((c) => alive && setNetCtx(c))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [appSettings.operator, appSettings.city, appSettings.networkType, appSettings.probeMode]);
+
+  useEffect(() => {
+    if (connection && phase === 'idle') setDetectedConn(connection);
   }, [connection, phase]);
 
   useEffect(() => {
-    if (!activeScan && latestScan) {
-      setActiveScan(latestScan);
-    }
+    if (!activeScan && latestScan) setActiveScan(latestScan);
   }, [latestScan, activeScan]);
 
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       abortRef.current?.abort();
       if (vpnWatchTimerRef.current) window.clearInterval(vpnWatchTimerRef.current);
-    };
-  }, []);
+    },
+    []
+  );
 
   const enabledSitesCount = sites.filter((s) => Boolean(s.enabled)).length;
 
-  // Step 1: User presses main button "ПРОВЕРИТЬ СЕТЬ"
-  const handleStartCheck = async () => {
-    if (enabledSitesCount === 0) {
-      showToast('warning', 'Нет включённых сайтов для проверки. Включите или добавьте сайты в каталоге.');
-      onNavigateSites();
-      return;
-    }
-
+  const stopVpnWatch = () => {
     if (vpnWatchTimerRef.current) {
       window.clearInterval(vpnWatchTimerRef.current);
       vpnWatchTimerRef.current = null;
     }
+  };
 
+  /* ------------------------------ запуск замера ------------------------------ */
+
+  const handleStartCheck = async () => {
+    if (enabledSitesCount === 0) {
+      showToast('warning', 'Нет включённых сайтов. Добавьте сервисы или включите их в каталоге.');
+      onNavigateSites();
+      return;
+    }
+    stopVpnWatch();
     setPhase('precheck');
-    // В APK определяем сеть по-настоящему: иначе кнопка брала мок-данные
-    // и принудительно ставила «без VPN» с чужим оператором.
-    const conn: ClientConnectionInfo = isNativeApp()
-      ? (toClientConnection(await detectNetworkContext()) as ClientConnectionInfo)
-      : await detectCurrentConnection(simMode);
+
+    let conn: ClientConnectionInfo;
+    try {
+      conn = isNativeApp()
+        ? (toClientConnection(await detectNetworkContext()) as ClientConnectionInfo)
+        : await detectCurrentConnection(simMode);
+    } catch {
+      conn = {
+        ip: '—',
+        country_code: 'RU',
+        country_name: 'Россия',
+        region: '',
+        city: '',
+        isp: '',
+        org: '',
+        asn: '',
+        is_hosting: false,
+        is_proxy: false,
+        is_mobile: false,
+        vpn_detected: false,
+        vpn_confidence: 'none',
+        vpn_reasons: [],
+        webrtc_ips: [],
+      };
+      showToast('warning', 'Не удалось определить сеть — проверяем как есть');
+    }
+
     setDetectedConn(conn);
     onConnectionDetected(conn);
 
-    // If VPN is ON -> warn the user and let them choose: Turn off VPN OR Check access with VPN!
     if (conn.vpn_detected) {
       if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
       setPhase('vpn_prompt');
       return;
     }
 
-    // Otherwise run full scan immediately
     await executeSiteScan(conn, simMode === 'live' ? 'direct' : 'simulated', simMode);
   };
 
-  // Option A from VPN Modal: Watch for user turning VPN OFF (plus manual button to proceed immediately)
   const handleWaitForVpnOff = () => {
     setPhase('waiting_vpn_off');
-    if (vpnWatchTimerRef.current) window.clearInterval(vpnWatchTimerRef.current);
-
-    // If user was in sim_vpn mode, switching VPN off switches to live (or clean carrier check)
-    if (simMode === 'sim_vpn') {
-      setSimMode('live');
-    }
+    stopVpnWatch();
+    if (simMode === 'sim_vpn') setSimMode('live');
 
     vpnWatchTimerRef.current = window.setInterval(async () => {
       const fresh = await detectCurrentConnection('live');
       setDetectedConn(fresh);
       onConnectionDetected(fresh);
       if (!fresh.vpn_detected) {
-        if (vpnWatchTimerRef.current) {
-          window.clearInterval(vpnWatchTimerRef.current);
-          vpnWatchTimerRef.current = null;
-        }
-        showToast('success', `VPN отключён (${fresh.isp}). Запускаем чистую проверку сети!`);
+        stopVpnWatch();
+        showToast('success', `VPN отключён (${fresh.isp || 'ваш оператор'}). Запускаем проверку.`);
         executeSiteScan(fresh, 'vpn_turned_off', 'live');
       }
     }, 2600);
   };
 
   const handleConfirmTurnedOffNow = async () => {
-    if (vpnWatchTimerRef.current) {
-      window.clearInterval(vpnWatchTimerRef.current);
-      vpnWatchTimerRef.current = null;
-    }
+    stopVpnWatch();
     setPhase('precheck');
     const nextMode = simMode === 'sim_vpn' ? 'sim_whitelist' : simMode;
     const fresh = await detectCurrentConnection(simMode === 'sim_vpn' ? 'live' : nextMode);
@@ -206,17 +271,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     await executeSiteScan(fresh, 'vpn_turned_off', simMode === 'sim_vpn' ? 'live' : nextMode);
   };
 
-  // Option B from VPN Modal: Check availability WITH active VPN
   const handleProceedWithVpn = async () => {
-    if (vpnWatchTimerRef.current) {
-      window.clearInterval(vpnWatchTimerRef.current);
-      vpnWatchTimerRef.current = null;
-    }
+    stopVpnWatch();
     if (!detectedConn) return;
     await executeSiteScan(detectedConn, 'with_vpn', simMode);
   };
 
-  // Шаг 2: параллельная проверка всех включённых сайтов (по умолчанию 75)
   const executeSiteScan = async (
     conn: ClientConnectionInfo,
     vpnMode: 'direct' | 'with_vpn' | 'vpn_turned_off' | 'simulated',
@@ -229,6 +289,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setPhase('scanning');
     setLiveResults([]);
     setSiteFilter('all');
+    setShowAllSites(false);
     setProgress({ done: 0, total: enabledSitesCount, currentDomain: '' });
 
     const progressCb = (done: number, total: number, latest: ScanSiteResult, partial: ScanSiteResult[]) => {
@@ -236,8 +297,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       setLiveResults([...partial]);
     };
 
-    // В приложении для Android замеры настоящие: запросы идут нативным HTTP
-    // и не упираются в CORS. В браузере остаются симуляции.
     const useRealProbes = isNativeApp() && appSettings.probeMode !== 'demo';
 
     const results = useRealProbes
@@ -249,44 +308,43 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
 
-    // Итог уходит в уведомление — удобно, если приложение свернули
     const okCount = results.filter((r) => r.status === 'ok' || r.status === 'slow').length;
     void notifyScanResult(
       `Проверка готова: ${evaluated.verdict_title}`,
-      `${okCount} из ${results.length} доступны · ${appSettings.operator || netCtx?.operator || user.carrier}${
-        netCtx?.city ? ', ' + netCtx.city : ''
-      }`
+      `${okCount} из ${results.length} доступны · ${
+        appSettings.operator || netCtx?.operator || user.carrier
+      }${netCtx?.city ? `, ${netCtx.city}` : ''}`
     );
+
     const carrierLabel =
       vpnMode === 'with_vpn'
         ? `VPN • ${conn.country_name}${conn.city ? `, ${conn.city}` : ''}`
-        : `${appSettings.operator || conn.isp || user.carrier} • ${
-            appSettings.city || conn.city || user.region
-          }`;
+        : `${appSettings.operator || conn.isp || user.carrier} • ${appSettings.city || conn.city || user.region}`;
+
+    const payload = {
+      ...evaluated,
+      vpn_detected: conn.vpn_detected && vpnMode === 'with_vpn',
+      vpn_mode: vpnMode,
+      ip_address: conn.ip,
+      country_code: conn.country_code,
+      country_name: conn.country_name,
+      city: conn.city,
+      isp: conn.isp,
+      asn: conn.asn,
+      carrier_label: carrierLabel,
+      note: '',
+      results,
+    };
 
     try {
       const saved = await apiFetch<{ scan: ScanRecord }>('/api/scans', {
         method: 'POST',
-        body: JSON.stringify({
-          ...evaluated,
-          vpn_detected: conn.vpn_detected && vpnMode === 'with_vpn',
-          vpn_mode: vpnMode,
-          ip_address: conn.ip,
-          country_code: conn.country_code,
-          country_name: conn.country_name,
-          city: conn.city,
-          isp: conn.isp,
-          asn: conn.asn,
-          carrier_label: carrierLabel,
-          note: '',
-          results,
-        }),
+        body: JSON.stringify(payload),
       });
       setActiveScan(saved.scan);
       setQuickNote('');
       onScanSaved(saved.scan);
     } catch {
-      // Fallback local display if offline during total shutdown!
       const localScan: ScanRecord = {
         id: Date.now(),
         user_id: user.id,
@@ -300,7 +358,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         isp: conn.isp,
         asn: conn.asn,
         carrier_label: carrierLabel,
-        note: 'Сохранено локально (сервер временно недоступен)',
+        note: 'Сохранено локально (сервер недоступен)',
         pinned: false,
         results,
         created_at: new Date().toISOString(),
@@ -319,13 +377,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setPhase('done');
   };
 
+  /** Тап по кнопке во время замера: во время самого замера — отмена,
+   *  во время короткой проверки VPN — ничего не делаем, чтобы не мигало. */
+  const handleScanTap = () => {
+    if (phase === 'precheck') return;
+    handleCancelScan();
+  };
+
   const handleCancelScan = () => {
     abortRef.current?.abort();
-    if (vpnWatchTimerRef.current) {
-      window.clearInterval(vpnWatchTimerRef.current);
-      vpnWatchTimerRef.current = null;
-    }
+    stopVpnWatch();
     setPhase('idle');
+    setProgress({ done: 0, total: 0, currentDomain: '' });
   };
 
   const handleSaveQuickNote = async (e: React.FormEvent) => {
@@ -348,8 +411,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
   };
 
-  const handleCopyTelegramReport = async () => {
-    if (!activeScan) return;
+  const reportText = useMemo(() => {
+    if (!activeScan) return '';
     const emoji =
       activeScan.verdict === 'WHITELIST_ACTIVE'
         ? '🔴'
@@ -360,33 +423,35 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         : activeScan.verdict === 'DPI_THROTTLING'
         ? '🟡'
         : '🟢';
-
-    const text = [
-      `${emoji} ПульсСети — Диагностика интернета`,
+    return [
+      `${emoji} ПульсСети — диагностика интернета`,
       `Вердикт: ${activeScan.verdict_title}`,
       `Сеть: ${activeScan.carrier_label} (${activeScan.country_code})`,
-      `VPN при проверке: ${activeScan.vpn_detected ? 'Включён' : 'Выключен'}`,
-      `Доступно сайтов: ${activeScan.ok_sites + activeScan.slow_sites} из ${activeScan.total_sites}`,
-      `• Сайты РФ (белый список): ${activeScan.ru_ok_pct}%`,
-      `• Глобальные / CDN: ${activeScan.global_ok_pct}%`,
-      `• Видео и соцсети (DPI): ${activeScan.dpi_ok_pct}%`,
-      `Средний пинг: ${activeScan.avg_latency_ms} мс`,
+      `VPN при проверке: ${activeScan.vpn_detected ? 'включён' : 'выключен'}`,
+      `Доступно: ${activeScan.ok_sites + activeScan.slow_sites} из ${activeScan.total_sites}`,
+      `• Белый список РФ: ${activeScan.ru_ok_pct}%`,
+      `• Нейтральные сайты: ${activeScan.global_ok_pct}%`,
+      `• Заблокированы РКН: ${activeScan.dpi_ok_pct}%`,
+      `Средний отклик: ${activeScan.avg_latency_ms} мс`,
       `Время: ${new Date(activeScan.created_at).toLocaleString('ru-RU')}`,
     ].join('\n');
+  }, [activeScan]);
 
+  const handleCopyReport = async () => {
+    if (!reportText) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(reportText);
       setCopiedReport(true);
-      showToast('success', 'Отчёт скопирован! Можно вставить в Telegram или чат');
+      showToast('success', 'Отчёт скопирован — можно вставить в Telegram');
       setTimeout(() => setCopiedReport(false), 2500);
     } catch {
       showToast('error', 'Не удалось скопировать в буфер обмена');
     }
   };
 
-  // Compute displayed results (live during scan, or activeScan when idle/done)
-  const displayedResults =
-    phase === 'scanning' ? liveResults : activeScan?.results || [];
+  /* --------------------------------- данные --------------------------------- */
+
+  const displayedResults = phase === 'scanning' ? liveResults : activeScan?.results || [];
 
   const filteredResults = displayedResults.filter((r) => {
     if (siteFilter === 'all') return true;
@@ -395,23 +460,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     return r.category === siteFilter;
   });
 
-  // Group stats by category
-  const categoryStats = (Object.keys(CATEGORY_META) as SiteCategory[])
-    .map((catKey) => {
-      const items = displayedResults.filter((r) => r.category === catKey);
-      const okCount = items.filter((r) => r.status === 'ok' || r.status === 'slow').length;
-      return {
-        key: catKey,
-        meta: CATEGORY_META[catKey],
-        total: items.length,
-        ok: okCount,
-        pct: items.length > 0 ? Math.round((okCount / items.length) * 100) : 0,
-      };
-    })
-    .filter((c) => c.total > 0);
+  const visibleSites = showAllSites ? filteredResults : filteredResults.slice(0, 12);
 
-  // Три группы ресурсов: перечень Минцифры / нейтральные / заблокированные РКН
-  const roleGroups = (() => {
+  const roleGroups = useMemo(() => {
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const groupOf = (r: ScanSiteResult) => {
       const site = r.site_id ? sitesMap.get(r.site_id) : undefined;
@@ -433,296 +484,560 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         total: items.length,
         ok: alive.length,
         pct: items.length ? Math.round((alive.length / items.length) * 100) : 0,
-        blockedList: items.filter((r) => !reach(r)),
       };
     };
     return { ru: build('ru'), neutral: build('neutral'), blocked: build('blocked') };
-  })();
+  }, [displayedResults, sites]);
 
-  const verdictTheme = (verdict?: string) => {
-    switch (verdict) {
-      case 'WHITELIST_ACTIVE':
-      case 'TOTAL_JAMMING':
-        return {
-          card: darkMode
-            ? 'bg-gradient-to-br from-rose-950/90 via-rose-950/50 to-slate-900 border-rose-500/50 shadow-rose-950/40'
-            : 'bg-rose-50 border-rose-300',
-          badge: 'bg-rose-500 text-white',
-          iconColor: 'text-rose-400',
-          Icon: WifiOff,
-        };
-      case 'SEVERE_RESTRICTIONS':
-        return {
-          card: darkMode
-            ? 'bg-gradient-to-br from-orange-950/80 via-slate-900 to-slate-900 border-orange-500/45'
-            : 'bg-orange-50 border-orange-300',
-          badge: 'bg-orange-500 text-slate-950',
-          iconColor: 'text-orange-400',
-          Icon: AlertTriangle,
-        };
-      case 'DPI_THROTTLING':
-        return {
-          card: darkMode
-            ? 'bg-gradient-to-br from-amber-950/65 via-slate-900 to-slate-900 border-amber-500/40'
-            : 'bg-amber-50 border-amber-300',
-          badge: 'bg-amber-400 text-slate-950',
-          iconColor: 'text-amber-400',
-          Icon: ShieldAlert,
-        };
-      default:
-        return {
-          card: darkMode
-            ? 'bg-gradient-to-br from-emerald-950/65 via-slate-900 to-slate-900 border-emerald-500/40'
-            : 'bg-emerald-50 border-emerald-300',
-          badge: 'bg-emerald-500 text-slate-950',
-          iconColor: 'text-emerald-400',
-          Icon: ShieldCheck,
-        };
-    }
-  };
+  const meta = VERDICT_META[(activeScan?.verdict as keyof typeof VERDICT_META) || 'OPEN_INTERNET'];
+  const okCount = displayedResults.filter((r) => r.status === 'ok' || r.status === 'slow').length;
+  const blockedCount = displayedResults.filter((r) => r.status === 'blocked').length;
+  const scanning = phase === 'scanning' || phase === 'precheck';
+  const progressPct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+  const showResult = Boolean(activeScan) && phase !== 'scanning';
 
-  const vStyle = verdictTheme(activeScan?.verdict);
-  const VerdictIcon = vStyle.Icon;
+  const connectionLine = detectedConn
+    ? `${appSettings.operator || netCtx?.operator || detectedConn.isp || 'сеть'} · ${
+        appSettings.city || netCtx?.city || detectedConn.city || user.region
+      }`
+    : `готов проверить ${enabledSitesCount} сайтов`;
 
   return (
-    <div className="space-y-6 anim-fade-up">
-      {/* ==================== HERO MOBILE-FIRST RADAR BUTTON CARD ==================== */}
-      <div
-        className={`relative overflow-hidden rounded-3xl border p-6 sm:p-8 text-center transition-all ${
-          darkMode
-            ? 'bg-gradient-to-b from-slate-900/95 via-slate-900/80 to-slate-950 border-slate-800/90 shadow-2xl'
-            : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 shadow-xl'
-        }`}
+    <div className="space-y-4">
+      {/* ======================= ГЛАВНАЯ КАРТОЧКА ======================= */}
+      <section className="relative overflow-hidden rounded-[1.75rem] border p-5 sm:p-7"
+        style={{
+          borderColor: 'var(--line)',
+          background:
+            'radial-gradient(120% 90% at 50% -20%, rgb(var(--accent) / 0.16), transparent 60%), var(--surface)',
+        }}
       >
-        {/* Ambient glow */}
+        {/* Мягкое свечение за кнопкой */}
         <div
-          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full blur-3xl pointer-events-none transition-colors duration-700 ${
-            phase === 'scanning' || phase === 'precheck'
-              ? 'bg-sky-500/20'
-              : activeScan?.verdict === 'WHITELIST_ACTIVE' || activeScan?.verdict === 'TOTAL_JAMMING'
-              ? 'bg-rose-500/15'
-              : 'bg-sky-500/10'
-          }`}
+          className="pointer-events-none absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 w-[22rem] h-[22rem] rounded-full blur-[70px] opacity-60"
+          style={{
+            background: scanning
+              ? 'rgb(var(--accent) / 0.35)'
+              : showResult
+              ? `color-mix(in srgb, ${meta.accentRgb} 32%, transparent)`
+              : 'rgb(var(--accent) / 0.2)',
+          }}
         />
 
-        <div className="relative z-10 max-w-xl mx-auto flex flex-col items-center">
-          {/* Top Connection Pill */}
-          <div
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium border mb-6 ${
-              detectedConn?.vpn_detected
-                ? 'bg-amber-500/15 border-amber-500/35 text-amber-400'
-                : darkMode
-                ? 'bg-slate-950/80 border-slate-800 text-slate-300'
-                : 'bg-slate-100 border-slate-200 text-slate-700'
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                detectedConn?.vpn_detected ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-              }`}
-            />
-            {detectedConn ? (
-              <span>
-                {detectedConn.vpn_detected ? 'Обнаружен VPN: ' : 'Ваша сеть: '}
-                <strong className="font-semibold">
-                  {detectedConn.country_name} •{' '}
-                  {appSettings.operator || netCtx?.operator || detectedConn.isp}
-                  {netCtx ? ` (${netCtx.kind === 'cellular' ? 'LTE' : netCtx.kind === 'wifi' ? 'Wi-Fi' : 'сеть'})` : ''}
-                  {appSettings.city || netCtx?.city ? `, ${appSettings.city || netCtx?.city}` : ''}
-                </strong>{' '}
-                <span className="font-mono opacity-75">({detectedConn.ip})</span>
+        <div className="relative flex flex-col items-center text-center">
+          {showResult ? (
+            /* ---------- Компактная пилюля результата ---------- */
+            <button
+              onClick={() => setShowAllSites(true)}
+              className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full border text-[12px] font-semibold tap"
+              style={{
+                borderColor: 'var(--line-strong)',
+                background: 'var(--surface-2)',
+                color: 'var(--text)',
+              }}
+            >
+              <StatusDot tone={meta.tone}>
+                <span>{meta.label}</span>
+              </StatusDot>
+              <span className="text-muted">·</span>
+              <span className="font-mono text-[11px]">
+                {okCount}/{displayedResults.length} доступно
               </span>
-            ) : (
-              <span>Готов к проверке {enabledSitesCount} сайтов и VPN</span>
-            )}
-          </div>
+              <ChevronDown className="w-3.5 h-3.5 text-muted" />
+            </button>
+          ) : (
+            <div
+              className="inline-flex items-center gap-2 h-8 px-3 rounded-full border text-[11.5px] font-medium max-w-full"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+            >
+              <SignalBadge vpn={Boolean(detectedConn?.vpn_detected)} loading={phase === 'precheck'} />
+              <span className="truncate text-dim">{connectionLine}</span>
+            </div>
+          )}
 
-          {/* BIG TACTILE 1-TAP RADAR BUTTON */}
-          <div className="relative my-2 flex items-center justify-center">
-            {(phase === 'scanning' || phase === 'precheck') && (
+          {/* ---------- Круглая кнопка-радар ---------- */}
+          <div className="relative mt-6 mb-1 grid place-items-center">
+            {scanning && (
               <>
-                <span className="absolute w-48 h-48 rounded-full border-2 border-sky-400/40 animate-radar" />
                 <span
-                  className="absolute w-48 h-48 rounded-full border border-cyan-400/30 animate-radar"
-                  style={{ animationDelay: '0.8s' }}
+                  className="radar-ring absolute w-40 h-40 sm:w-44 sm:h-44 rounded-full"
+                  style={{ border: '1.5px solid rgb(var(--accent) / 0.45)' }}
+                />
+                <span
+                  className="radar-ring absolute w-40 h-40 sm:w-44 sm:h-44 rounded-full"
+                  style={{ border: '1px solid rgb(var(--accent) / 0.3)', animationDelay: '0.9s' }}
                 />
               </>
             )}
 
             <button
               type="button"
-              onClick={
-                phase === 'scanning' || phase === 'precheck' ? handleCancelScan : handleStartCheck
-              }
-              className={`relative w-44 h-44 sm:w-48 sm:h-48 rounded-full flex flex-col items-center justify-center transition-all duration-300 active:scale-95 select-none shadow-2xl border-4 ${
-                phase === 'scanning' || phase === 'precheck'
-                  ? 'bg-gradient-to-b from-sky-500 to-blue-600 border-sky-300/60 text-white shadow-sky-500/30'
-                  : 'bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 border-sky-300/40 text-slate-950 shadow-sky-500/25 hover:shadow-sky-400/40'
-              }`}
+              onClick={scanning ? handleScanTap : handleStartCheck}
+              className="relative w-[10.5rem] h-[10.5rem] sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center select-none tap-chunky"
+              style={{
+                background: scanning
+                  ? 'linear-gradient(160deg, rgb(var(--accent)), rgb(var(--accent-2)))'
+                  : showResult
+                  ? `radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, ${meta.accentRgb} 26%, transparent), var(--surface-solid))`
+                  : 'linear-gradient(160deg, rgb(var(--accent)), rgb(var(--accent-2)))',
+                color: scanning || !showResult ? 'var(--accent-contrast)' : 'var(--text)',
+                border: `1px solid ${showResult && !scanning ? `color-mix(in srgb, ${meta.accentRgb} 45%, transparent)` : 'transparent'}`,
+                boxShadow: scanning
+                  ? '0 22px 60px -22px rgb(var(--accent) / 0.85)'
+                  : showResult
+                  ? `0 18px 50px -28px ${meta.accentRgb}`
+                  : '0 22px 55px -20px rgb(var(--accent) / 0.7)',
+                transition: 'transform .18s ease, box-shadow .25s ease, background .35s ease',
+              }}
             >
+              {/* Внутреннее кольцо-дуга */}
+              <span
+                className="pointer-events-none absolute inset-2 rounded-full"
+                style={{ border: '1px solid currentColor', opacity: 0.14 }}
+              />
+
               {phase === 'precheck' ? (
                 <>
-                  <RefreshCw className="w-11 h-11 animate-spin mb-2" />
-                  <span className="text-sm font-extrabold uppercase tracking-wider">
-                    Проверка VPN
-                  </span>
-                  <span className="text-[11px] opacity-85 mt-0.5">Анализ IP и ASN...</span>
+                  <RefreshCw className="w-8 h-8 animate-spin" />
+                  <span className="mt-2 text-[13px] font-extrabold tracking-wide">Проверяем VPN…</span>
                 </>
               ) : phase === 'scanning' ? (
                 <>
-                  <div className="text-3xl font-black font-mono leading-none">
-                    {progress.total > 0
-                      ? `${Math.round((progress.done / progress.total) * 100)}%`
-                      : '0%'}
-                  </div>
-                  <span className="text-xs font-bold uppercase tracking-wider mt-1.5">
-                    {progress.done} из {progress.total}
+                  <span className="text-[2rem] font-black font-mono leading-none tabular-nums">
+                    {progressPct}%
                   </span>
-                  <span className="text-[10px] opacity-80 mt-1 px-3 truncate max-w-[150px] font-mono">
-                    {progress.currentDomain}
+                  <span className="text-[11.5px] font-bold mt-1 opacity-80 tabular-nums">
+                    {progress.done} / {progress.total}
                   </span>
-                  <span className="text-[10px] underline opacity-80 mt-1">Отменить</span>
+                  <span className="mt-1.5 text-[10px] opacity-70 max-w-[8rem] truncate font-mono">
+                    {progress.currentDomain || '…'}
+                  </span>
+                  <span className="mt-1 text-[10px] font-bold uppercase tracking-wider opacity-80">
+                    Отменить
+                  </span>
+                </>
+              ) : showResult ? (
+                <>
+                  {(() => {
+                    const Icon = meta.icon;
+                    return <Icon className="w-9 h-9" style={{ color: meta.accentRgb }} />;
+                  })()}
+                  <span className="mt-2 text-[13px] font-extrabold">Повторить</span>
+                  <span className="text-[10px] opacity-60 mt-0.5">замер сети</span>
                 </>
               ) : (
                 <>
-                  <Radar className="w-12 h-12 mb-2 stroke-[2.2]" />
-                  <span className="text-base sm:text-lg font-black uppercase tracking-wide leading-tight">
+                  <Radar className="w-9 h-9" strokeWidth={2.1} />
+                  <span className="mt-2 text-[15px] font-black tracking-tight leading-tight">
                     Проверить
                     <br />
                     сеть
                   </span>
-                  <span className="text-[11px] font-semibold opacity-80 mt-1">
-                    {enabledSitesCount} сайтов + VPN
+                  <span className="mt-1 text-[10.5px] font-semibold opacity-70">
+                    {enabledSitesCount} сайтов
                   </span>
                 </>
               )}
             </button>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-400 mt-5 max-w-md">
-            Проверяет включён ли VPN, пингует {enabledSitesCount} российских и мировых ресурсов и
-            определяет <strong>белые списки</strong>, <strong>глушение LTE</strong> или{' '}
-            <strong>блокировки ТСПУ</strong>.
-          </p>
-
-          {/* Live Scanning Progress Bar */}
-          {phase === 'scanning' && (
-            <div className="w-full max-w-md mt-5">
-              <div className="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-sky-400 via-cyan-400 to-emerald-400 transition-all duration-200"
-                  style={{
-                    width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%`,
-                  }}
-                />
-              </div>
-              <div className="flex justify-between text-[11px] text-slate-400 mt-1.5 font-mono">
-                <span>
-                  ОК: {liveResults.filter((r) => r.status === 'ok' || r.status === 'slow').length}
+          {/* ---------- Прогресс / краткий итог ---------- */}
+          {phase === 'scanning' ? (
+            <div className="w-full max-w-sm mt-5 space-y-2">
+              <Meter pct={progressPct} height={7} />
+              <div className="flex justify-between text-[11px] text-dim font-medium">
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
+                  доступно {okCount}
                 </span>
-                <span>
-                  Недоступно: {liveResults.filter((r) => r.status === 'blocked').length}
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
+                  недоступно {blockedCount}
                 </span>
               </div>
             </div>
+          ) : showResult && activeScan ? (
+            <div className="mt-4 w-full max-w-sm space-y-1">
+              <h2 className="text-[15.5px] font-extrabold leading-snug">{activeScan.verdict_title}</h2>
+              <p className="text-[12px] text-dim leading-snug line-clamp-2">{activeScan.verdict_summary}</p>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-1">
+              <h2 className="text-[17px] font-extrabold tracking-tight">Что с вашим интернетом?</h2>
+              <p className="text-[12.5px] text-dim max-w-xs mx-auto leading-relaxed">
+                Проверим VPN, {enabledSitesCount} сайтов и определим — белые списки, фильтрация ТСПУ
+                или глушение.
+              </p>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* ==================== МОИ СЕРВИСЫ ПОД ГЛАВНОЙ КНОПКОЙ ==================== */}
-      {phase !== 'scanning' && (
-        <div className="mt-3">
-          <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
-            <span className={`px-2 py-0.5 rounded-full border ${
-              netCtx?.kind === 'cellular'
-                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-                : 'border-slate-700/60 bg-slate-800/40 text-slate-300'
-            }`}>
+          {/* ---------- Чипы сети ---------- */}
+          <div className="mt-4 chip-rail w-full justify-center px-1">
+            <Chip active>
+              <Radio className="w-3 h-3" />
               {connectionLabel(netCtx?.kind || 'unknown')}
-            </span>
-            {(netCtx?.operator || user.carrier) && (
-              <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
-                {appSettings.operator || netCtx?.operator || user.carrier}
-              </span>
+            </Chip>
+            {(appSettings.operator || netCtx?.operator) && (
+              <Chip>
+                <Gauge className="w-3 h-3" />
+                {appSettings.operator || netCtx?.operator}
+              </Chip>
             )}
-            {(netCtx?.city || user.region) && (
-              <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
-                {appSettings.city || netCtx?.city || user.region}
-              </span>
+            {(appSettings.city || netCtx?.city || user.region) && (
+              <Chip>{appSettings.city || netCtx?.city || user.region}</Chip>
             )}
-            {netCtx?.source !== 'settings' && !netCtx?.operator && (
-              <button
-                type="button"
-                onClick={onNavigateSites}
-                className="text-sky-400 hover:underline"
-                title="Оператор и город можно указать в настройках"
-              >
-                уточнить
-              </button>
+            {detectedConn?.ip && detectedConn.ip !== '—' && (
+              <Chip>
+                <span className="font-mono text-[11px]">{detectedConn.ip}</span>
+              </Chip>
             )}
           </div>
-
-          <QuickPicks
-            sites={sites}
-            darkMode={darkMode}
-            showToast={showToast}
-            onSitesChanged={onSitesChanged}
-            onOpenCatalog={onNavigateSites}
-            results={displayedResults}
-          />
         </div>
-      )}
+      </section>
 
-      {/* ==================== VPN DETECTED ACTION MODAL / SHEET ==================== */}
-      {(phase === 'vpn_prompt' || phase === 'waiting_vpn_off') && detectedConn && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div
-            className={`w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl border p-6 sm:p-7 shadow-2xl animate-in fade-in slide-in-from-bottom-4 ${
-              darkMode
-                ? 'bg-slate-900 border-amber-500/40 text-slate-100'
-                : 'bg-white border-amber-300 text-slate-900'
-            }`}
-          >
-            <div className="flex items-start gap-4 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center shrink-0">
-                <ShieldAlert className="w-6 h-6 text-amber-400" />
-              </div>
-              <div>
-                <span className="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 mb-1">
-                  Обнаружен активный туннель
-                </span>
-                <h3 className="text-xl font-extrabold leading-snug">
-                  У вас сейчас включён VPN!
-                </h3>
-              </div>
+      {/* ======================= МОИ СЕРВИСЫ ======================= */}
+      <QuickPicks
+        sites={sites}
+        darkMode={darkMode}
+        showToast={showToast}
+        onSitesChanged={onSitesChanged}
+        onOpenCatalog={onNavigateSites}
+        results={displayedResults}
+        scanning={phase === 'scanning'}
+      />
+
+      {/* ======================= ПОЛНЫЙ ОТЧЁТ ======================= */}
+      {showResult && activeScan && (
+        <section className="space-y-3 anim-fade-up">
+          {/* Три группы ресурсов */}
+          <div className="rounded-[1.5rem] border p-4 sm:p-5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+            <SectionTitle
+              hint="Диагноз ставится по первым двум группам: третья без VPN падает всегда"
+              right={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<RefreshCw className="w-3.5 h-3.5" />}
+                  onClick={handleStartCheck}
+                >
+                  Ещё раз
+                </Button>
+              }
+            >
+              Что проверяли
+            </SectionTitle>
+
+            <div className="mt-3 space-y-2.5">
+              <GroupRow
+                title="Белый список РФ"
+                hint="Перечень Минцифры — работает даже при отключениях"
+                stats={roleGroups.ru}
+                color="var(--accent)"
+              />
+              <GroupRow
+                title="Нейтральные сайты"
+                hint="Google, Википедия, GitHub — в РФ не заблокированы"
+                stats={roleGroups.neutral}
+                color={roleGroups.neutral.pct <= 40 ? 'rgb(var(--danger))' : 'rgb(var(--success))'}
+              />
+              <GroupRow
+                title="Заблокированы РКН"
+                hint="YouTube, Discord, Instagram — без VPN не открываются"
+                stats={roleGroups.blocked}
+                color="rgb(var(--violet))"
+              />
             </div>
 
             <div
-              className={`p-4 rounded-2xl border mb-4 text-xs space-y-1.5 ${
-                darkMode
-                  ? 'bg-slate-950/80 border-slate-800 text-slate-300'
-                  : 'bg-slate-50 border-slate-200 text-slate-700'
-              }`}
+              className="mt-3 rounded-2xl border p-3 text-[12px] leading-relaxed"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
             >
-              <div className="flex justify-between">
-                <span className="text-slate-400">Внешний IP-адрес:</span>
-                <span className="font-mono font-bold">{detectedConn.ip}</span>
+              <span className="font-bold">Вывод. </span>
+              <Conclusion groups={roleGroups} withVpn={activeScan.vpn_detected} />
+            </div>
+          </div>
+
+          {/* Метрики */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <Metric
+              label="Белый список РФ"
+              value={`${activeScan.ru_ok_pct}%`}
+              color="var(--accent)"
+              pct={activeScan.ru_ok_pct}
+            />
+            <Metric
+              label="Нейтральные сайты"
+              value={`${activeScan.global_ok_pct}%`}
+              color={
+                activeScan.global_ok_pct <= 30
+                  ? 'rgb(var(--danger))'
+                  : activeScan.global_ok_pct < 70
+                  ? 'rgb(var(--warning))'
+                  : 'rgb(var(--success))'
+              }
+              pct={activeScan.global_ok_pct}
+            />
+            <Metric
+              label="Через VPN"
+              value={`${activeScan.dpi_ok_pct}%`}
+              color={activeScan.dpi_ok_pct < 40 ? 'rgb(var(--warning))' : 'rgb(var(--success))'}
+              pct={activeScan.dpi_ok_pct}
+            />
+            <Metric
+              label="Средний отклик"
+              value={`${activeScan.avg_latency_ms}`}
+              unit="мс"
+              color="rgb(var(--violet))"
+              pct={Math.max(4, 100 - Math.min(100, (activeScan.avg_latency_ms / 1500) * 100))}
+              hint="короче — лучше"
+            />
+          </div>
+
+          {/* Маршрут / приватность */}
+          <div className="grid sm:grid-cols-3 gap-2.5">
+            <InfoTile
+              icon={<Server className="w-4 h-4" />}
+              title="Маршрут и ASN"
+              value={
+                detectedConn
+                  ? `${detectedConn.isp || 'неизвестно'} ${detectedConn.asn ? `· ${detectedConn.asn}` : ''}`
+                  : 'нет данных'
+              }
+              hint={
+                detectedConn?.is_hosting ? 'Похоже на дата-центр (VPN)' : 'Потребительская сеть оператора'
+              }
+              color="var(--accent)"
+            />
+            <InfoTile
+              icon={<Eye className="w-4 h-4" />}
+              title="Утечки WebRTC"
+              value={detectedConn?.split_tunnel ? 'Разные IP в HTTP и WebRTC' : 'Утечек не найдено'}
+              hint={`Часовой пояс: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`}
+              color="rgb(var(--success))"
+            />
+            <InfoTile
+              icon={<Activity className="w-4 h-4" />}
+              title="Cloudflare и Google Video"
+              value={(() => {
+                const cf = displayedResults.find((r) => r.domain.includes('cloudflare'));
+                const gv = displayedResults.find((r) => r.domain.includes('googlevideo'));
+                const fmt = (s?: string) => (s === 'ok' ? 'ок' : s === 'slow' ? 'медленно' : s ? 'блок' : '—');
+                return `CF: ${fmt(cf?.status)} · GV: ${fmt(gv?.status)}`;
+              })()}
+              hint="Проверка TLS из вашей сети"
+              color="rgb(var(--violet))"
+            />
+          </div>
+
+          {/* Действия */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="soft"
+              size="md"
+              icon={copiedReport ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              onClick={handleCopyReport}
+            >
+              {copiedReport ? 'Скопировано' : 'Отчёт в Telegram'}
+            </Button>
+            {(activeScan.verdict === 'WHITELIST_ACTIVE' ||
+              activeScan.verdict === 'TOTAL_JAMMING' ||
+              activeScan.verdict === 'SEVERE_RESTRICTIONS') && (
+              <Button
+                variant="danger"
+                size="md"
+                icon={<Send className="w-3.5 h-3.5" />}
+                onClick={() => onQuickReportIncident(activeScan)}
+              >
+                Сообщить о сбое
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="md"
+              icon={showTips ? <ChevronDown className="w-4 h-4 rotate-180" /> : <HelpCircle className="w-4 h-4" />}
+              onClick={() => setShowTips((v) => !v)}
+            >
+              Что делать
+            </Button>
+          </div>
+
+          {showTips && (
+            <div
+              className="rounded-2xl border p-4 grid sm:grid-cols-3 gap-4 text-[12px] leading-relaxed anim-fade-up"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+            >
+              <div>
+                <div className="font-bold mb-1" style={{ color: 'rgb(var(--danger))' }}>
+                  1. Белые списки
+                </div>
+                Прямые подключения к зарубежным IP не установят даже TCP-соединение. Работает домашний
+                Wi-Fi (шатдаун обычно только в мобильных сетях) либо каскад через российскую облачную
+                ноду.
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Локация узла:</span>
-                <span className="font-semibold">
-                  {detectedConn.country_name}
-                  {detectedConn.city ? `, ${detectedConn.city}` : ''} ({detectedConn.country_code})
-                </span>
+              <div>
+                <div className="font-bold mb-1" style={{ color: 'rgb(var(--warning))' }}>
+                  2. Фильтрация ТСПУ
+                </div>
+                Когда глобальные сайты открываются, а YouTube или звонки — нет, помогают протоколы с
+                маскировкой TLS/UDP: VLESS + Reality, AmneziaWG, Hysteria2.
               </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-400 shrink-0">Провайдер / ASN:</span>
-                <span className="font-semibold text-right truncate">
-                  {detectedConn.isp} {detectedConn.asn ? `(${detectedConn.asn})` : ''}
-                </span>
+              <div>
+                <div className="font-bold mb-1" style={{ color: 'rgb(var(--accent))' }}>
+                  3. Госуслуги и банки
+                </div>
+                С зарубежным VPN российские сервисы могут не пускать трафик. Настройте раздельное
+                туннелирование: домены <code className="font-mono">.ru</code> — напрямую.
               </div>
+            </div>
+          )}
+
+          {/* Заметка */}
+          <form onSubmit={handleSaveQuickNote} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={quickNote}
+              onChange={(e) => setQuickNote(e.target.value)}
+              placeholder={activeScan.note ? `Заметка: ${activeScan.note}` : 'Пометка к замеру (например, «МТС 4G на улице»)'}
+              className="flex-1 h-10 px-3 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-[rgb(var(--accent)/0.3)]"
+              style={{
+                background: 'var(--surface-2)',
+                border: '1px solid var(--line)',
+                color: 'var(--text)',
+                colorScheme: darkMode ? 'dark' : 'light',
+              }}
+            />
+            {quickNote.trim() && (
+              <Button type="submit" size="sm" variant="primary" loading={savingNote}>
+                Сохранить
+              </Button>
+            )}
+          </form>
+        </section>
+      )}
+
+      {/* ======================= ДЕТАЛЬНЫЙ СПИСОК САЙТОВ ======================= */}
+      <Sheet
+        open={showAllSites}
+        onClose={() => setShowAllSites(false)}
+        title="Доступность сайтов"
+        subtitle={`${filteredResults.length} из ${displayedResults.length} · ${activeScan?.carrier_label || ''}`}
+        size="md"
+        icon={
+          <div className="w-9 h-9 rounded-xl grid place-items-center accent-soft">
+            <Radar className="w-4 h-4" />
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div className="chip-rail">
+            <Chip active={siteFilter === 'all'} onClick={() => setSiteFilter('all')}>
+              Все {displayedResults.length}
+            </Chip>
+            <Chip active={siteFilter === 'ok'} onClick={() => setSiteFilter('ok')}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
+              Доступны {displayedResults.filter((r) => r.status === 'ok' || r.status === 'slow').length}
+            </Chip>
+            <Chip active={siteFilter === 'blocked'} onClick={() => setSiteFilter('blocked')}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
+              Недоступны {displayedResults.filter((r) => r.status === 'blocked').length}
+            </Chip>
+            {(Object.keys(CATEGORY_META) as SiteCategory[])
+              .filter((c) => displayedResults.some((r) => r.category === c))
+              .map((c) => (
+                <Chip key={c} active={siteFilter === c} onClick={() => setSiteFilter(c)}>
+                  {CATEGORY_META[c].label}
+                </Chip>
+              ))}
+          </div>
+
+          <div className="space-y-1.5">
+            {filteredResults.map((item, idx) => {
+              const tone: 'ok' | 'warn' | 'bad' =
+                item.status === 'ok' ? 'ok' : item.status === 'slow' ? 'warn' : 'bad';
+              return (
+                <div
+                  key={`${item.domain}-${idx}`}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl border"
+                  style={{
+                    borderColor: 'var(--line)',
+                    background:
+                      tone === 'ok'
+                        ? 'var(--surface-2)'
+                        : `color-mix(in srgb, ${toneColor(tone)} 8%, var(--surface-2))`,
+                  }}
+                >
+                  {tone === 'ok' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--success))' }} />
+                  ) : tone === 'warn' ? (
+                    <Clock className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--warning))' }} />
+                  ) : (
+                    <XCircle className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--danger))' }} />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] font-semibold truncate">{item.name}</div>
+                    <div className="text-[10.5px] font-mono text-muted truncate">{item.domain}</div>
+                  </div>
+                  <span
+                    className="text-[11.5px] font-mono font-semibold shrink-0"
+                    style={{
+                      color:
+                        tone === 'ok'
+                          ? 'rgb(var(--success))'
+                          : tone === 'warn'
+                          ? 'rgb(var(--warning))'
+                          : 'rgb(var(--danger))',
+                    }}
+                  >
+                    {item.latency_ms != null ? `${item.latency_ms} мс` : 'нет ответа'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Sheet>
+
+      {/* ======================= VPN-ШТОРКА (через портал!) ======================= */}
+      <Sheet
+        open={(phase === 'vpn_prompt' || phase === 'waiting_vpn_off') && Boolean(detectedConn)}
+        onClose={handleCancelScan}
+        title={phase === 'waiting_vpn_off' ? 'Ждём отключения VPN' : 'У вас включён VPN'}
+        subtitle={
+          phase === 'waiting_vpn_off'
+            ? 'Приложение заметит смену IP автоматически'
+            : 'От этого зависит смысл проверки'
+        }
+        size="sm"
+        icon={
+          <div
+            className="w-9 h-9 rounded-xl grid place-items-center"
+            style={{
+              background: 'rgb(var(--warning) / 0.14)',
+              border: '1px solid rgb(var(--warning) / 0.32)',
+              color: 'rgb(var(--warning))',
+            }}
+          >
+            <ShieldAlert className="w-4 h-4" />
+          </div>
+        }
+      >
+        {detectedConn && (
+          <div className="space-y-3">
+            <div
+              className="rounded-2xl border p-3 space-y-1.5 text-[12px]"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+            >
+              <RowKV k="Внешний IP" v={detectedConn.ip} mono />
+              <RowKV
+                k="Локация"
+                v={`${detectedConn.country_name}${detectedConn.city ? `, ${detectedConn.city}` : ''} (${detectedConn.country_code})`}
+              />
+              <RowKV k="Провайдер" v={`${detectedConn.isp}${detectedConn.asn ? ` (${detectedConn.asn})` : ''}`} />
               {detectedConn.vpn_reasons.length > 0 && (
-                <div className="pt-2 mt-2 border-t border-slate-800/70 text-[11px] text-amber-400/90 space-y-1">
+                <div
+                  className="pt-2 mt-1 border-t space-y-1 text-[11px]"
+                  style={{ borderColor: 'var(--line)', color: 'rgb(var(--warning))' }}
+                >
                   {detectedConn.vpn_reasons.map((reason, i) => (
                     <div key={i}>• {reason}</div>
                   ))}
@@ -731,798 +1046,206 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </div>
 
             {phase === 'waiting_vpn_off' ? (
-              <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center gap-3">
-                  <RefreshCw className="w-5 h-5 text-sky-400 animate-spin shrink-0" />
-                  <div className="text-xs leading-relaxed">
-                    <div className="font-bold text-sky-300 text-sm">
-                      Ждём отключения VPN на телефоне...
-                    </div>
-                    Откройте шторку или настройки телефона и выключите VPN — приложение автоматически
-                    заметит смену IP на вашего оператора и запустит проверку!
-                  </div>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={handleConfirmTurnedOffNow}
-                    className="w-full py-3.5 px-4 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2"
-                  >
-                    <Play className="w-4 h-4" />
-                    Я выключил — начать сейчас
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleProceedWithVpn}
-                    className={`w-full py-3.5 px-4 rounded-2xl border font-semibold text-sm flex items-center justify-center gap-2 ${
-                      darkMode
-                        ? 'border-slate-700 hover:bg-slate-800 text-slate-200'
-                        : 'border-slate-300 hover:bg-slate-100 text-slate-800'
-                    }`}
-                  >
-                    Всё равно проверить с VPN
-                  </button>
-                </div>
+              <div className="space-y-2.5">
+                <Notice tone="info" icon={<RefreshCw className="w-4 h-4 animate-spin" />}>
+                  Отключите VPN в шторке телефона — как только сменится IP, проверка начнётся сама.
+                </Notice>
+                <Button variant="primary" size="lg" block icon={<Play className="w-4 h-4" />} onClick={handleConfirmTurnedOffNow}>
+                  Я выключил — начать сейчас
+                </Button>
+                <Button variant="outline" size="md" block onClick={handleProceedWithVpn}>
+                  Всё равно проверить с VPN
+                </Button>
               </div>
             ) : (
-              <>
-                <p className="text-sm text-slate-400 leading-relaxed mb-5">
-                  Чтобы узнать, включены ли <strong>белые списки</strong> или глушат ли интернет у
-                  вашего оператора, рекомендуется отключить VPN. Либо вы можете проверить, как
-                  открываются сайты прямо через этот VPN.
+              <div className="space-y-2.5">
+                <p className="text-[12.5px] text-dim leading-relaxed">
+                  Чтобы увидеть <strong style={{ color: 'var(--text)' }}>белые списки</strong> или
+                  глушение у оператора, VPN нужно выключить. Либо проверим, как сайты открываются
+                  через этот туннель.
                 </p>
-
-                <div className="space-y-2.5">
-                  <button
-                    type="button"
-                    onClick={handleWaitForVpnOff}
-                    className="w-full py-3.5 px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/15 transition-all"
-                  >
-                    <PowerOff className="w-4 h-4" />
-                    Выключить VPN и проверить сеть оператора
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleProceedWithVpn}
-                    className="w-full py-3.5 px-4 rounded-2xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/35 text-sky-300 font-bold text-sm flex items-center justify-center gap-2 transition-all"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    Проверить доступ к сайтам с включённым VPN
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCancelScan}
-                    className="w-full py-2.5 text-xs font-medium text-slate-400 hover:text-slate-200"
-                  >
-                    Отмена
-                  </button>
-                </div>
-              </>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  block
+                  icon={<PowerOff className="w-4 h-4" />}
+                  onClick={handleWaitForVpnOff}
+                >
+                  Выключить VPN и проверить
+                </Button>
+                <Button
+                  variant="soft"
+                  size="md"
+                  block
+                  icon={<ShieldCheck className="w-4 h-4" />}
+                  onClick={handleProceedWithVpn}
+                >
+                  Проверить с включённым VPN
+                </Button>
+                <Button variant="ghost" size="sm" block onClick={handleCancelScan}>
+                  Отмена
+                </Button>
+              </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ==================== DIAGNOSTIC VERDICT BANNER ==================== */}
-      {activeScan && phase !== 'scanning' && (
-        <div className={`rounded-3xl border p-5 sm:p-7 shadow-xl transition-all ${vStyle.card}`}>
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
-            <div className="flex items-start gap-4">
-              <div
-                className={`w-13 h-13 p-3 rounded-2xl border shrink-0 ${
-                  darkMode ? 'bg-slate-950/60 border-white/10' : 'bg-white border-black/10'
-                }`}
-              >
-                <VerdictIcon className={`w-7 h-7 ${vStyle.iconColor}`} />
-              </div>
-
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                  <span
-                    className={`text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${vStyle.badge}`}
-                  >
-                    {activeScan.verdict === 'WHITELIST_ACTIVE'
-                      ? 'ЕСТЬ БЕЛЫЕ СПИСКИ'
-                      : activeScan.verdict === 'TOTAL_JAMMING'
-                      ? 'ШАТДАУН / ГЛУШЕНИЕ'
-                      : activeScan.verdict === 'SEVERE_RESTRICTIONS'
-                      ? 'ЖЁСТКИЕ ОГРАНИЧЕНИЯ'
-                      : activeScan.verdict === 'DPI_THROTTLING'
-                      ? 'ФИЛЬТРАЦИЯ ТСПУ'
-                      : 'БЕЛЫХ СПИСКОВ НЕТ'}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    {new Date(activeScan.created_at).toLocaleString('ru-RU', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                  {activeScan.vpn_detected && (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                      Проверено с VPN ({activeScan.country_code})
-                    </span>
-                  )}
-                </div>
-
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                  {activeScan.verdict_title}
-                </h2>
-                <p
-                  className={`text-sm mt-1.5 leading-relaxed max-w-3xl ${
-                    darkMode ? 'text-slate-300' : 'text-slate-700'
-                  }`}
-                >
-                  {activeScan.verdict_summary}
-                </p>
-              </div>
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex flex-wrap sm:flex-nowrap gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleCopyTelegramReport}
-                className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all ${
-                  darkMode
-                    ? 'bg-slate-950/70 border-slate-700/80 hover:bg-slate-900 text-slate-200'
-                    : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-800'
-                }`}
-              >
-                {copiedReport ? (
-                  <Check className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Copy className="w-4 h-4 text-sky-400" />
-                )}
-                {copiedReport ? 'Скопировано!' : 'Отчёт для Telegram'}
-              </button>
-
-              {(activeScan.verdict === 'WHITELIST_ACTIVE' ||
-                activeScan.verdict === 'TOTAL_JAMMING' ||
-                activeScan.verdict === 'SEVERE_RESTRICTIONS') && (
-                <button
-                  type="button"
-                  onClick={() => onQuickReportIncident(activeScan)}
-                  className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white flex items-center gap-1.5 shadow-lg shadow-rose-500/20 transition-all"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Сообщить о сбое в регионе
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* 4 Diagnostic KPI Meters */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-            <div
-              className={`p-3.5 rounded-2xl border ${
-                darkMode ? 'bg-slate-950/60 border-white/10' : 'bg-white/80 border-slate-200'
-              }`}
-            >
-              <div className="text-[11px] text-slate-400 font-medium">🇷🇺 Белый список РФ</div>
-              <div className="flex items-baseline justify-between mt-1">
-                <span className="text-2xl font-black font-mono text-sky-400">
-                  {activeScan.ru_ok_pct}%
-                </span>
-                <span className="text-[11px] text-slate-400">Перечень Минцифры</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-slate-800 mt-2 overflow-hidden">
-                <div
-                  className="h-full bg-sky-400 rounded-full"
-                  style={{ width: `${activeScan.ru_ok_pct}%` }}
-                />
-              </div>
-            </div>
-
-            <div
-              className={`p-3.5 rounded-2xl border ${
-                darkMode ? 'bg-slate-950/60 border-white/10' : 'bg-white/80 border-slate-200'
-              }`}
-            >
-              <div className="text-[11px] text-slate-400 font-medium">
-                🌐 Нейтральные (не заблокированы)
-              </div>
-              <div className="flex items-baseline justify-between mt-1">
-                <span
-                  className={`text-2xl font-black font-mono ${
-                    activeScan.global_ok_pct <= 30
-                      ? 'text-rose-400'
-                      : activeScan.global_ok_pct < 70
-                      ? 'text-amber-400'
-                      : 'text-emerald-400'
-                  }`}
-                >
-                  {activeScan.global_ok_pct}%
-                </span>
-                <span className="text-[11px] text-slate-400">Google / Wiki / GitHub</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-slate-800 mt-2 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    activeScan.global_ok_pct <= 30
-                      ? 'bg-rose-500'
-                      : activeScan.global_ok_pct < 70
-                      ? 'bg-amber-400'
-                      : 'bg-emerald-400'
-                  }`}
-                  style={{ width: `${activeScan.global_ok_pct}%` }}
-                />
-              </div>
-            </div>
-
-            <div
-              className={`p-3.5 rounded-2xl border ${
-                darkMode ? 'bg-slate-950/60 border-white/10' : 'bg-white/80 border-slate-200'
-              }`}
-            >
-              <div className="text-[11px] text-slate-400 font-medium">🚫 Заблокированы РКН</div>
-              <div className="flex items-baseline justify-between mt-1">
-                <span
-                  className={`text-2xl font-black font-mono ${
-                    activeScan.dpi_ok_pct < 40
-                      ? 'text-amber-400'
-                      : 'text-emerald-400'
-                  }`}
-                >
-                  {activeScan.dpi_ok_pct}%
-                </span>
-                <span className="text-[11px] text-slate-400">YouTube / Discord / IG</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-slate-800 mt-2 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    activeScan.dpi_ok_pct < 40 ? 'bg-amber-400' : 'bg-emerald-400'
-                  }`}
-                  style={{ width: `${activeScan.dpi_ok_pct}%` }}
-                />
-              </div>
-            </div>
-
-            <div
-              className={`p-3.5 rounded-2xl border ${
-                darkMode ? 'bg-slate-950/60 border-white/10' : 'bg-white/80 border-slate-200'
-              }`}
-            >
-              <div className="text-[11px] text-slate-400 font-medium">⚡ Сводка доступности</div>
-              <div className="flex items-baseline justify-between mt-1">
-                <span className="text-2xl font-black font-mono">
-                  {activeScan.ok_sites + activeScan.slow_sites}
-                  <span className="text-sm text-slate-400 font-normal">
-                    /{activeScan.total_sites}
-                  </span>
-                </span>
-                <span className="text-xs font-mono text-sky-400">
-                  ~{activeScan.avg_latency_ms} мс
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-400 mt-2 truncate">
-                {activeScan.carrier_label}
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Note + Survival Guide Expander */}
-          <div className="mt-4 pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <form onSubmit={handleSaveQuickNote} className="flex items-center gap-2 flex-1 max-w-md">
-              <input
-                type="text"
-                value={quickNote}
-                onChange={(e) => setQuickNote(e.target.value)}
-                placeholder={
-                  activeScan.note
-                    ? `Заметка: ${activeScan.note} (изменить...)`
-                    : 'Добавить пометку к замеру (напр. «МТС 4G на улице»)...'
-                }
-                className={`flex-1 px-3 py-1.5 rounded-xl border text-xs ${
-                  darkMode
-                    ? 'bg-slate-950/70 border-slate-700/80 text-white placeholder:text-slate-500'
-                    : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              />
-              {quickNote.trim() && (
-                <button
-                  type="submit"
-                  disabled={savingNote}
-                  className="px-3 py-1.5 rounded-xl bg-sky-500 text-slate-950 font-bold text-xs"
-                >
-                  Сохранить
-                </button>
-              )}
-            </form>
-
-            <button
-              type="button"
-              onClick={() => setShowTips((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-400 hover:text-sky-300"
-            >
-              <HelpCircle className="w-4 h-4" />
-              <span>Памятка: что делать при белых списках и глушении?</span>
-              {showTips ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
-
-          {showTips && (
-            <div
-              className={`mt-3 p-4 rounded-2xl border text-xs leading-relaxed grid sm:grid-cols-3 gap-4 ${
-                darkMode
-                  ? 'bg-slate-950/80 border-slate-800 text-slate-300'
-                  : 'bg-white border-slate-200 text-slate-700'
-              }`}
-            >
-              <div>
-                <div className="font-bold text-rose-400 mb-1">1. Если включены «Белые списки»</div>
-                Прямые подключения к зарубежным IP (обычный VPN в Нидерландах/Германии) не установят
-                даже TCP-соединение. Работают проводной домашний Wi-Fi (обычно шатдаун вводят только
-                на мобильных сетях) либо каскадные туннели через российскую облачную ноду (Яндекс /
-                VK / Selectel → Зарубеж).
-              </div>
-              <div>
-                <div className="font-bold text-amber-400 mb-1">2. Если блокировки ТСПУ / DPI</div>
-                Когда глобальные сайты работают, а не грузятся YouTube, Discord или звонки — помогает
-                протокол с маскировкой TLS/UDP: <strong>VLESS + XTLS-Reality</strong>,{' '}
-                <strong>AmneziaWG</strong> или <strong>Hysteria2</strong>.
-              </div>
-              <div>
-                <div className="font-bold text-sky-400 mb-1">3. Если не открываются Госуслуги</div>
-                При включённом зарубежном VPN российские банки и Госуслуги могут не пускать трафик.
-                Настройте раздельное туннелирование (Routing Rules: домены <code>.ru</code> и{' '}
-                <code>gosuslugi.ru</code> — напрямую).
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ==================== 3 GROUPS: БЕЛЫЙ СПИСОК / НЕЙТРАЛЬНЫЕ / ЗАБЛОКИРОВАННЫЕ ==================== */}
-      {activeScan && phase !== 'scanning' && roleGroups.ru.total + roleGroups.neutral.total > 0 && (
-        <div
-          className={`rounded-3xl border p-5 sm:p-6 space-y-4 ${
-            darkMode ? 'bg-slate-900/60 border-slate-800/80' : 'bg-white border-slate-200 shadow-sm'
-          }`}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-            <div>
-              <h3 className="text-base sm:text-lg font-bold">Что именно проверялось</h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Три независимые группы: перечень Минцифры, нейтральные (не заблокированные)
-                сайты и сервисы, заблокированные РКН. Диагноз ставится по первым двум.
-              </p>
-            </div>
-            <span className="text-[11px] text-slate-500 shrink-0">
-              Всего узлов: {displayedResults.length}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {/* 1. Белый список */}
-            <div className="rounded-2xl border border-sky-500/30 bg-sky-500/5 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold uppercase tracking-wide text-sky-300">
-                  🇷🇺 Белый список РФ
-                </div>
-                <div className="text-sm font-black font-mono text-sky-300">
-                  {roleGroups.ru.ok}/{roleGroups.ru.total}
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Перечень Минцифры — должен открываться даже при отключениях мобильного интернета.
-              </p>
-              <div className="h-1.5 rounded-full bg-slate-800 mt-2.5 overflow-hidden">
-                <div
-                  className="h-full bg-sky-400 rounded-full"
-                  style={{ width: `${roleGroups.ru.pct}%` }}
-                />
-              </div>
-              <div className="mt-2.5 space-y-1 max-h-32 overflow-y-auto pr-1">
-                {roleGroups.ru.items.slice(0, 12).map((r, i) => (
-                  <div key={`ru-${r.domain}-${i}`} className="flex items-center gap-1.5 text-[11px]">
-                    {r.status === 'blocked' ? (
-                      <XCircle className="w-3 h-3 text-rose-400 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                    )}
-                    <span className="truncate text-slate-300">{r.name}</span>
-                    <span className="ml-auto font-mono text-slate-500 shrink-0">
-                      {r.latency_ms ? `${r.latency_ms}мс` : '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 2. Нейтральные */}
-            <div
-              className={`rounded-2xl border p-4 ${
-                roleGroups.neutral.pct <= 40
-                  ? 'border-rose-500/40 bg-rose-500/5'
-                  : 'border-emerald-500/30 bg-emerald-500/5'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div
-                  className={`text-xs font-extrabold uppercase tracking-wide ${
-                    roleGroups.neutral.pct <= 40 ? 'text-rose-300' : 'text-emerald-300'
-                  }`}
-                >
-                  🌐 Нейтральные (не заблокированы)
-                </div>
-                <div className="text-sm font-black font-mono text-slate-200">
-                  {roleGroups.neutral.ok}/{roleGroups.neutral.total}
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Google, Википедия, GitHub, Cloudflare, Steam — в РФ не заблокированы. Если они
-                лежат, значит режут интернет целиком.
-              </p>
-              <div className="h-1.5 rounded-full bg-slate-800 mt-2.5 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    roleGroups.neutral.pct <= 40 ? 'bg-rose-500' : 'bg-emerald-400'
-                  }`}
-                  style={{ width: `${roleGroups.neutral.pct}%` }}
-                />
-              </div>
-              <div className="mt-2.5 space-y-1 max-h-32 overflow-y-auto pr-1">
-                {roleGroups.neutral.items.slice(0, 12).map((r, i) => (
-                  <div key={`n-${r.domain}-${i}`} className="flex items-center gap-1.5 text-[11px]">
-                    {r.status === 'blocked' ? (
-                      <XCircle className="w-3 h-3 text-rose-400 shrink-0" />
-                    ) : r.status === 'slow' ? (
-                      <Clock className="w-3 h-3 text-amber-400 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                    )}
-                    <span className="truncate text-slate-300">{r.name}</span>
-                    <span className="ml-auto font-mono text-slate-500 shrink-0">
-                      {r.latency_ms ? `${r.latency_ms}мс` : '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 3. Заблокированные РКН */}
-            <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold uppercase tracking-wide text-violet-300">
-                  🚫 Заблокированы РКН
-                </div>
-                <div className="text-sm font-black font-mono text-violet-300">
-                  {roleGroups.blocked.ok}/{roleGroups.blocked.total}
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                YouTube, Discord, Instagram, WhatsApp… Без VPN не открываются всегда — поэтому
-                их падение НЕ означает белый список.
-              </p>
-              <div className="flex flex-wrap gap-1 mt-2.5 max-h-32 overflow-y-auto pr-1">
-                {(roleGroups.blocked.items.length > 0
-                  ? roleGroups.blocked.items
-                  : []
-                ).slice(0, 18).map((r, i) => (
-                  <span
-                    key={`b-${r.domain}-${i}`}
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      r.status === 'blocked'
-                        ? 'border-rose-500/30 text-rose-300 bg-rose-500/10'
-                        : 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
-                    }`}
-                    title={r.domain}
-                  >
-                    {r.name}
-                  </span>
-                ))}
-              </div>
-              <div className="text-[10px] text-slate-500 mt-2">
-                Открылись через VPN: {roleGroups.blocked.ok} из {roleGroups.blocked.total}
-              </div>
-            </div>
-          </div>
-
-          {/* Итоговый вывод */}
-          <div
-            className={`rounded-2xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3 ${
-              darkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
-            }`}
-          >
-            <div className="text-xs leading-relaxed text-slate-300 flex-1">
-              <span className="font-extrabold text-slate-100">Вывод: </span>
-              {roleGroups.ru.pct >= 45 && roleGroups.neutral.pct <= 40 && !activeScan.vpn_detected && (
-                <>
-                  российские сервисы открываются, а нейтральный зарубежный интернет режется —{' '}
-                  <span className="text-rose-400 font-bold">это режим белых списков</span>.
-                </>
-              )}
-              {(roleGroups.ru.pct < 45 || roleGroups.neutral.total === 0) &&
-                roleGroups.neutral.pct < 30 &&
-                roleGroups.ru.pct < 45 && (
-                  <>
-                    не открывается почти всё, включая сайты РФ —{' '}
-                    <span className="text-rose-400 font-bold">
-                      похоже на глушение сети / шатдаун
-                    </span>
-                    .
-                  </>
-                )}
-              {roleGroups.neutral.pct >= 60 && roleGroups.blocked.pct < 70 && (
-                <>
-                  нейтральный интернет открыт, значит белых списков нет; недоступны только
-                  сервисы из реестра РКН —{' '}
-                  <span className="text-amber-400 font-bold">работает обычная фильтрация ТСПУ</span>
-                  .
-                </>
-              )}
-              {roleGroups.neutral.pct >= 65 && roleGroups.blocked.pct >= 70 && (
-                <>
-                  доступно всё, включая заблокированные сервисы —{' '}
-                  <span className="text-emerald-400 font-bold">
-                    либо VPN включён, либо сеть без ограничений
-                  </span>
-                  .
-                </>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={onNavigateSites}
-              className="shrink-0 text-[11px] font-bold px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 hover:bg-sky-500/25"
-            >
-              Открыть каталог статусов →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== EXTRA PROTOCOL & PRIVACY TELEMETRY CARDS ==================== */}
-      <div className="grid sm:grid-cols-3 gap-3">
-        <div
-          className={`p-4 rounded-2xl border flex items-start gap-3 ${
-            darkMode ? 'bg-slate-900/60 border-slate-800/80' : 'bg-white border-slate-200'
-          }`}
-        >
-          <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400">
-            <Server className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-bold">Маршрут и ASN</div>
-            <div className="text-xs text-slate-400 truncate mt-0.5">
-              {detectedConn
-                ? `${detectedConn.isp} ${detectedConn.asn ? `• ${detectedConn.asn}` : ''}`
-                : 'Ожидание замера'}
-            </div>
-            <div className="text-[11px] text-sky-400 mt-1">
-              {detectedConn?.is_hosting
-                ? 'Обнаружен серверный хостинг / VPS'
-                : 'Потребительская сеть оператора'}
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`p-4 rounded-2xl border flex items-start gap-3 ${
-            darkMode ? 'bg-slate-900/60 border-slate-800/80' : 'bg-white border-slate-200'
-          }`}
-        >
-          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
-            <Eye className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-bold">Утечка WebRTC / Split-Tunnel</div>
-            <div className="text-xs text-slate-400 truncate mt-0.5">
-              {detectedConn?.split_tunnel
-                ? 'Разные IP в HTTP и WebRTC!'
-                : 'Утечек реального IP через WebRTC нет'}
-            </div>
-            <div className="text-[11px] text-emerald-400 mt-1">
-              Часовой пояс: {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`p-4 rounded-2xl border flex items-start gap-3 ${
-            darkMode ? 'bg-slate-900/60 border-slate-800/80' : 'bg-white border-slate-200'
-          }`}
-        >
-          <div className="p-2 rounded-xl bg-violet-500/10 text-violet-400">
-            <Activity className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-bold">Статус Cloudflare & YouTube GGC</div>
-            <div className="text-xs text-slate-400 mt-0.5">
-              {(() => {
-                const cf = displayedResults.find((r) => r.domain === 'cloudflare.com');
-                const ggc = displayedResults.find((r) => r.domain === 'googlevideo.com');
-                if (!cf && !ggc) return 'Нажмите «Проверить сеть»';
-                return `CF: ${cf?.status === 'ok' ? 'ОК' : 'Блок'} • GGC: ${
-                  ggc?.status === 'ok' ? 'ОК' : ggc?.status === 'slow' ? 'Замедлен' : 'Блок'
-                }`;
-              })()}
-            </div>
-            <div className="text-[11px] text-violet-400 mt-1 flex items-center gap-1">
-              <Lock className="w-3 h-3" /> HTTPS / TLS проверка из браузера
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ==================== CATEGORY BREAKDOWN & FULL SITES MATRIX ==================== */}
-      {displayedResults.length > 0 && (
-        <div
-          className={`rounded-3xl border p-5 sm:p-6 ${
-            darkMode ? 'bg-slate-900/60 border-slate-800/80' : 'bg-white border-slate-200 shadow-sm'
-          }`}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-            <div>
-              <h3 className="text-base sm:text-lg font-bold">
-                Детальная доступность сайтов ({displayedResults.length})
-              </h3>
-              <p className="text-xs text-slate-400">
-                Сравнение по 6 категориям: если зелёный только «Белый список РФ», значит внешний
-                интернет отрезан
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={onNavigateSites}
-              className="text-xs font-semibold text-sky-400 hover:text-sky-300 self-start sm:self-auto"
-            >
-              Настроить список сайтов →
-            </button>
-          </div>
-
-          {/* Category Progress Pills */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
-            {categoryStats.map((cat) => (
-              <button
-                key={cat.key}
-                type="button"
-                onClick={() => setSiteFilter(siteFilter === cat.key ? 'all' : cat.key)}
-                className={`p-3.5 rounded-2xl border text-left transition-all ${
-                  siteFilter === cat.key
-                    ? 'border-sky-500 bg-sky-500/10'
-                    : darkMode
-                    ? 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center justify-between text-xs font-bold mb-1.5">
-                  <span className="truncate">{cat.meta.label}</span>
-                  <span
-                    className={`font-mono ${
-                      cat.pct >= 75
-                        ? 'text-emerald-400'
-                        : cat.pct >= 35
-                        ? 'text-amber-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {cat.ok}/{cat.total} ({cat.pct}%)
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-300 ${
-                      cat.pct >= 75
-                        ? 'bg-emerald-400'
-                        : cat.pct >= 35
-                        ? 'bg-amber-400'
-                        : 'bg-rose-500'
-                    }`}
-                    style={{ width: `${cat.pct}%` }}
-                  />
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Quick Status Filter Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-4">
-            <button
-              type="button"
-              onClick={() => setSiteFilter('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                siteFilter === 'all'
-                  ? 'accent-solid border-transparent'
-                  : darkMode
-                  ? 'bg-slate-950 border-slate-800 text-slate-400'
-                  : 'bg-slate-100 border-slate-200 text-slate-600'
-              }`}
-            >
-              Все ({displayedResults.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSiteFilter('blocked')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                siteFilter === 'blocked'
-                  ? 'bg-rose-500 text-white border-rose-400'
-                  : darkMode
-                  ? 'bg-slate-950 border-slate-800 text-rose-400'
-                  : 'bg-rose-50 border-rose-200 text-rose-600'
-              }`}
-            >
-              Недоступны ({displayedResults.filter((r) => r.status === 'blocked').length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSiteFilter('ok')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                siteFilter === 'ok'
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                  : darkMode
-                  ? 'bg-slate-950 border-slate-800 text-emerald-400'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-              }`}
-            >
-              Доступны (
-              {displayedResults.filter((r) => r.status === 'ok' || r.status === 'slow').length})
-            </button>
-          </div>
-
-          {/* Grid of all sites */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {filteredResults.map((item, idx) => {
-              const isOk = item.status === 'ok';
-              const isSlow = item.status === 'slow';
-              return (
-                <div
-                  key={`${item.domain}-${idx}`}
-                  className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
-                    isOk
-                      ? darkMode
-                        ? 'bg-slate-950/60 border-slate-800/90'
-                        : 'bg-slate-50/70 border-slate-200'
-                      : isSlow
-                      ? darkMode
-                        ? 'bg-amber-950/25 border-amber-500/30'
-                        : 'bg-amber-50 border-amber-200'
-                      : darkMode
-                      ? 'bg-rose-950/25 border-rose-500/30'
-                      : 'bg-rose-50/70 border-rose-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    {isOk ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    ) : isSlow ? (
-                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold truncate">{item.name}</div>
-                      <div className="text-[11px] text-slate-400 font-mono truncate">
-                        {item.domain}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    {isOk ? (
-                      <span className="text-xs font-mono font-semibold text-emerald-400">
-                        {item.latency_ms} мс
-                      </span>
-                    ) : isSlow ? (
-                      <span className="text-xs font-mono font-semibold text-amber-400">
-                        {item.latency_ms} мс
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-bold text-rose-400">Блок / Таймаут</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+        )}
+      </Sheet>
     </div>
   );
 };
+
+/* ------------------------------- подкомпоненты ------------------------------- */
+
+const SignalBadge: React.FC<{ vpn: boolean; loading: boolean }> = ({ vpn, loading }) => (
+  <span className="flex items-center gap-1.5">
+    <span
+      className="w-1.5 h-1.5 rounded-full"
+      style={{ background: vpn ? 'rgb(var(--warning))' : 'rgb(var(--success))' }}
+    />
+    <span
+      className="text-[10.5px] font-bold uppercase tracking-wider"
+      style={{ color: vpn ? 'rgb(var(--warning))' : 'rgb(var(--success))' }}
+    >
+      {loading ? '…' : vpn ? 'VPN' : 'без VPN'}
+    </span>
+  </span>
+);
+
+const RowKV: React.FC<{ k: string; v: string; mono?: boolean }> = ({ k, v, mono }) => (
+  <div className="flex justify-between gap-3">
+    <span className="text-dim shrink-0">{k}</span>
+    <span className={`text-right truncate ${mono ? 'font-mono font-semibold' : 'font-semibold'}`}>{v}</span>
+  </div>
+);
+
+const GroupRow: React.FC<{
+  title: string;
+  hint: string;
+  stats: { ok: number; total: number; pct: number };
+  color: string;
+}> = ({ title, hint, stats, color }) => (
+  <div
+    className="rounded-xl border p-2.5"
+    style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+  >
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold min-w-0">
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+        <span className="truncate">{title}</span>
+      </span>
+      <span className="text-[12px] font-mono font-bold shrink-0" style={{ color }}>
+        {stats.ok}/{stats.total}
+      </span>
+    </div>
+    <div className="text-[10.5px] text-muted mt-0.5 leading-snug">{hint}</div>
+    <div className="mt-2">
+      <Meter pct={stats.pct} color={color} height={5} />
+    </div>
+  </div>
+);
+
+const Conclusion: React.FC<{
+  groups: { ru: { pct: number; total: number }; neutral: { pct: number }; blocked: { pct: number; total: number } };
+  withVpn: boolean;
+}> = ({ groups, withVpn }) => {
+  const { ru, neutral, blocked } = groups;
+  if (withVpn && blocked.pct >= 70) {
+    return (
+      <span className="text-dim">
+        через VPN открывается почти всё, включая заблокированные сервисы — туннель работает.
+      </span>
+    );
+  }
+  if (ru.pct >= 45 && neutral.pct <= 40) {
+    return (
+      <span className="text-dim">
+        российские сервисы открываются, а нейтральный зарубежный интернет режется —{' '}
+        <span className="font-bold" style={{ color: 'rgb(var(--danger))' }}>
+          это режим белых списков
+        </span>
+        .
+      </span>
+    );
+  }
+  if (ru.pct < 45 && neutral.pct < 30) {
+    return (
+      <span className="text-dim">
+        не открывается почти ничего, включая сайты РФ —{' '}
+        <span className="font-bold" style={{ color: 'rgb(var(--danger))' }}>
+          похоже на глушение сети или шатдаун
+        </span>
+        .
+      </span>
+    );
+  }
+  if (neutral.pct >= 60 && blocked.pct < 70) {
+    return (
+      <span className="text-dim">
+        нейтральный интернет открыт, значит белых списков нет; недоступны только сервисы из реестра
+        РКН — <span className="font-bold" style={{ color: 'rgb(var(--warning))' }}>работает фильтрация ТСПУ</span>.
+      </span>
+    );
+  }
+  return (
+    <span className="text-dim">
+      доступно всё, включая заблокированные сервисы —{' '}
+      <span className="font-bold" style={{ color: 'rgb(var(--success))' }}>
+        либо VPN включён, либо сеть без ограничений
+      </span>
+      .
+    </span>
+  );
+};
+
+const Metric: React.FC<{
+  label: string;
+  value: string;
+  unit?: string;
+  color: string;
+  pct: number;
+  hint?: string;
+}> = ({ label, value, unit, color, pct, hint }) => (
+  <div
+    className="rounded-2xl border p-3"
+    style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+  >
+    <div className="text-[10px] font-semibold text-muted uppercase tracking-wide">{label}</div>
+    <div className="flex items-baseline gap-1 mt-0.5">
+      <span className="text-[1.35rem] font-black font-mono leading-tight tabular-nums" style={{ color }}>
+        {value}
+      </span>
+      {unit && <span className="text-[10.5px] font-semibold text-muted">{unit}</span>}
+    </div>
+    <div className="mt-2">
+      <Meter pct={pct} color={color} height={4} />
+    </div>
+    {hint && <div className="text-[10px] text-muted mt-1.5">{hint}</div>}
+  </div>
+);
+
+const InfoTile: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+  hint: string;
+  color: string;
+}> = ({ icon, title, value, hint, color }) => (
+  <div
+    className="rounded-2xl border p-3 flex gap-2.5"
+    style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+  >
+    <div
+      className="w-8 h-8 rounded-xl grid place-items-center shrink-0"
+      style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
+    >
+      {icon}
+    </div>
+    <div className="min-w-0">
+      <div className="text-[11.5px] font-bold">{title}</div>
+      <div className="text-[11.5px] text-dim truncate mt-0.5">{value}</div>
+      <div className="text-[10.5px] mt-0.5 truncate" style={{ color }}>
+        {hint}
+      </div>
+    </div>
+  </div>
+);

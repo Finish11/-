@@ -53,7 +53,7 @@ export function App() {
       setToasts((prev) => [...prev, { id, type, message }]);
       window.setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 4200);
+      }, 4000);
     },
     []
   );
@@ -297,6 +297,7 @@ export function App() {
                 onScanSaved={handleScanSaved}
                 onQuickReportIncident={handleQuickReportIncident}
                 onNavigateSites={() => setActiveTab('sites')}
+                onNavigateVpn={() => setActiveTab('vpn')}
                 onSitesChanged={loadWorkspaceData}
                 darkMode={darkMode}
                 showToast={showToast}

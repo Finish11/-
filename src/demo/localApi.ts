@@ -431,7 +431,10 @@ async function handle(path: string, method: string, body: any): Promise<Response
 
       // В APK запрос к серверу подписки идёт нативным HTTP (без CORS) и парсится
       // общим модулем — так импортируются все узлы, а не только демо-набор.
-      if (isNativeApp() && /^https?:\/\//i.test(url)) {
+      // В APK — только настоящие данные: любые демо-узлы здесь были бы обманом.
+      // В браузере тоже пробуем настоящий импорт (CORS обычно не мешает), а запасной
+      // демо-набор показываем лишь когда ссылка недоступна из предпросмотра.
+      if (/^https?:\/\//i.test(url)) {
         try {
           const real = await importRealSubscription(url);
           const subId = genId();
@@ -464,9 +467,21 @@ async function handle(path: string, method: string, body: any): Promise<Response
             online: 0,
           }, 201);
         } catch (err) {
+          const message = err instanceof Error ? err.message : 'Не удалось загрузить подписку';
+          if (isNativeApp()) return json({ error: message }, 502);
+          // Браузерный предпросмотр: честно помечаем подписку как демонстрационную.
+          const subId = genId();
+          const demo = demoNodesFallback(body, state, subId, message);
+          state.subscriptions = [demo.sub, ...state.subscriptions];
+          state.profiles = [...demo.nodes, ...state.profiles];
           return json(
-            { error: err instanceof Error ? err.message : 'Не удалось загрузить подписку' },
-            502
+            {
+              subscription: demo.sub,
+              profiles: state.profiles,
+              imported: demo.nodes.length,
+              online: demo.nodes.filter((n) => n.status === 'online').length,
+            },
+            201
           );
         }
       }
@@ -682,3 +697,67 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   }
   return realFetch(input, init);
 };
+
+
+/**
+ * Демо-набор узлов для браузерного предпросмотра.
+ * Используется только когда в APK-подобном окружении нет сети — сам APK этот путь
+ * не проходит: там ошибка показывается пользователю как есть.
+ */
+function demoNodesFallback(
+  body: Row | undefined,
+  state: DemoState,
+  subId: number,
+  reason: string
+): { sub: Row; nodes: Row[] } {
+  const specs = [
+    ['Амстердам • Reality', 'VLESS + Reality', 'Нидерланды', 'NL', 'aeza.net', 443],
+    ['Хельсинки • Reality', 'VLESS + Reality', 'Финляндия', 'FI', 'upcloud.com', 443],
+    ['Франкфурт • gRPC', 'VLESS', 'Германия', 'DE', 'hetzner.com', 8443],
+    ['RU-каскад', 'VLESS + Reality', 'Россия', 'RU', 'selectel.ru', 443],
+    ['Стокгольм • Trojan', 'Trojan-gRPC', 'Швеция', 'SE', 'bahnhof.net', 443],
+    ['Варшава • Shadowsocks', 'Shadowsocks-2022', 'Польша', 'PL', 'ovhcloud.com', 8388],
+  ] as const;
+  const sub: Row = {
+    id: subId,
+    user_id: state.user.id,
+    name: body?.name || 'Демо-подписка',
+    url: body?.url || 'https://example.com/sub',
+    format: 'base64',
+    provider: '',
+    auto_update: body?.auto_update !== false,
+    update_interval_hours: Number(body?.update_interval_hours || 12),
+    last_synced_at: new Date().toISOString(),
+    last_sync_status: 'ok',
+    last_sync_message: `Демо-узлы: сеть недоступна (${reason.slice(0, 60)})`,
+    traffic_used_bytes: 3149922304,
+    traffic_total_bytes: 53687091200,
+    expires_on: new Date(Date.now() + 60 * 864e5).toISOString(),
+    node_count: specs.length,
+    created_at: new Date().toISOString(),
+  };
+  const nodes: Row[] = specs.map(([name, proto, loc, cc, host, port], i) => ({
+    id: genId(),
+    user_id: state.user.id,
+    subscription_id: subId,
+    group_name: sub.name,
+    name,
+    protocol: proto,
+    location: loc,
+    country_code: cc,
+    host,
+    port,
+    provider: '',
+    dpi_resistance: 'high',
+    whitelist_bypass: cc === 'RU',
+    status: i < 4 ? 'online' : 'degraded',
+    latency_ms: 48 + i * 19,
+    uptime_pct: 99,
+    is_primary: false,
+    notes: '',
+    raw_link: `vless://demo@${host}:${port}#${encodeURIComponent(name)}`,
+    last_checked_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  }));
+  return { sub, nodes };
+}

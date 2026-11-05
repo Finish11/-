@@ -98,7 +98,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthenticated, showToast }
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col lg:flex-row relative">
       {IS_DEMO_BUILD && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,28rem)] rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-[11px] leading-snug text-amber-200 text-center">
-          🧪 Автономный демо-режим: вход работает офлайн, проверки имитируются. Полная версия — в
+          Автономный демо-режим: вход работает офлайн, проверки имитируются. Полная версия — в
           предпросмотре сайта.
         </div>
       )}

@@ -12,43 +12,47 @@ interface ToastContainerProps {
   onDismiss: (id: string) => void;
 }
 
+/**
+ * Сообщения снизу — так они не перекрывают шапку и не «прыгают» перед глазами.
+ * Показываем не больше трёх, остальные ждут в очереди.
+ */
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
-  if (toasts.length === 0) return null;
+  const visible = toasts.slice(-3);
+  if (visible.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 left-4 sm:left-auto sm:w-96 z-[90] flex flex-col gap-2 pointer-events-none">
-      {toasts.map((t) => {
-        const styles =
+    <div className="fixed inset-x-0 bottom-0 z-[95] pointer-events-none flex flex-col-reverse items-center gap-2 px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:pb-5">
+      {visible.map((t) => {
+        const meta =
           t.type === 'success'
-            ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-100'
+            ? { color: 'rgb(var(--success))', Icon: CheckCircle2 }
             : t.type === 'error'
-            ? 'bg-rose-950/95 border-rose-500/40 text-rose-100'
+            ? { color: 'rgb(var(--danger))', Icon: XCircle }
             : t.type === 'warning'
-            ? 'bg-amber-950/95 border-amber-500/40 text-amber-100'
-            : 'bg-slate-900/95 border-sky-500/40 text-slate-100';
-
-        const Icon =
-          t.type === 'success'
-            ? CheckCircle2
-            : t.type === 'error'
-            ? XCircle
-            : t.type === 'warning'
-            ? AlertTriangle
-            : Info;
-
+            ? { color: 'rgb(var(--warning))', Icon: AlertTriangle }
+            : { color: 'rgb(var(--accent))', Icon: Info };
+        const { color, Icon } = meta;
         return (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md transition-all ${styles}`}
+            role="status"
+            className="pointer-events-auto w-full max-w-sm flex items-start gap-2.5 rounded-2xl px-3.5 py-2.5 anim-fade-up"
+            style={{
+              background: 'color-mix(in srgb, var(--bg-elevated) 92%, transparent)',
+              border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
+              boxShadow: '0 16px 40px -20px rgba(0,0,0,.85)',
+              backdropFilter: 'blur(12px)',
+            }}
           >
-            <Icon className="w-5 h-5 shrink-0 mt-0.5 opacity-90" />
-            <p className="text-sm font-medium leading-snug flex-1">{t.message}</p>
+            <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
+            <div className="flex-1 min-w-0 text-[12.5px] leading-snug">{t.message}</div>
             <button
+              type="button"
               onClick={() => onDismiss(t.id)}
-              className="opacity-60 hover:opacity-100 transition-opacity p-0.5"
-              aria-label="Закрыть"
+              className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-lg text-dim hover:text-[color:var(--text)]"
+              aria-label="Скрыть"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         );

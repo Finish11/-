@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
  */
 export type NetworkType = 'auto' | 'wifi' | 'cellular';
 export type ProbeMode = 'auto' | 'real' | 'demo';
+/** Тема оформления: тёмная, светлая или как в системе. */
+export type ThemeMode = 'dark' | 'light' | 'system';
 
 export interface AppSettings {
   /** Оператор: '' — определять автоматически */
@@ -18,6 +20,10 @@ export interface AppSettings {
   probeMode: ProbeMode;
   /** Акцентный цвет интерфейса */
   accent: AccentTheme;
+  /** Тема: dark / light / system */
+  theme: ThemeMode;
+  /** Меньше анимации — для слабых устройств и для тех, кого укачивает */
+  calmMotion: boolean;
 }
 
 export type AccentTheme = 'sky' | 'violet' | 'emerald' | 'amber' | 'rose';
@@ -34,6 +40,32 @@ export const ACCENTS: Array<{ id: AccentTheme; name: string; swatch: string }> =
 export function applyAccent(accent: AccentTheme): void {
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.accent = accent;
+}
+
+/** Тёмная или светлая тема — с учётом системной настройки. */
+export function resolveTheme(mode: ThemeMode): 'dark' | 'light' {
+  if (mode !== 'system') return mode;
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'dark';
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+export function applyTheme(mode: ThemeMode): 'dark' | 'light' {
+  const resolved = resolveTheme(mode);
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('light', resolved === 'light');
+    document.documentElement.classList.toggle('dark', resolved === 'dark');
+    // Иконки/скроллбары WebView тоже перекрашиваются
+    document.documentElement.style.colorScheme = resolved;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', resolved === 'light' ? '#f5f7fb' : '#05070f');
+  }
+  return resolved;
+}
+
+/** Уважаем системное «уменьшить движение» + ручной переключатель. */
+export function applyMotion(calm: boolean): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('calm-motion', calm);
 }
 
 const KEY = 'pulsenet_settings_v1';
@@ -75,6 +107,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   networkType: 'auto',
   probeMode: 'auto',
   accent: 'sky',
+  theme: 'dark',
+  calmMotion: false,
 };
 
 export function readSettings(): AppSettings {
@@ -82,11 +116,14 @@ export function readSettings(): AppSettings {
     const raw = localStorage.getItem(KEY);
     if (!raw) {
       applyAccent(DEFAULT_SETTINGS.accent);
+      applyTheme(DEFAULT_SETTINGS.theme);
       return DEFAULT_SETTINGS;
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const merged = { ...DEFAULT_SETTINGS, ...parsed };
     applyAccent(merged.accent);
+    applyTheme(merged.theme);
+    applyMotion(merged.calmMotion);
     return merged;
   } catch {
     return DEFAULT_SETTINGS;
@@ -101,6 +138,8 @@ export function writeSettings(patch: Partial<AppSettings>): AppSettings {
     // приватный режим — просто не сохраняем
   }
   applyAccent(next.accent);
+  applyTheme(next.theme);
+  applyMotion(next.calmMotion);
   window.dispatchEvent(new CustomEvent(EVENT, { detail: next }));
   return next;
 }

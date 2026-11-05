@@ -41,6 +41,17 @@ import {
   runMultiSiteScan,
 } from '../lib/scanner';
 import { apiFetch } from '../lib/api';
+import { QuickPicks } from './QuickPicks';
+import { isNativeApp } from '../lib/nativeBridge';
+import { runRealSiteScan } from '../lib/realScan';
+import { useSettings } from '../lib/appSettings';
+import {
+  connectionLabel,
+  detectNetworkContext,
+  toClientConnection,
+  type NetworkContext,
+} from '../lib/networkInfo';
+import { notifyScanResult } from '../lib/notify';
 
 interface ScannerViewProps {
   user: User;
@@ -51,6 +62,8 @@ interface ScannerViewProps {
   onScanSaved: (scan: ScanRecord) => void;
   onQuickReportIncident: (scan: ScanRecord) => void;
   onNavigateSites: () => void;
+  /** Перечитать каталог после «быстрого выбора» сервисов. */
+  onSitesChanged: () => void;
   darkMode: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
@@ -64,10 +77,25 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   onScanSaved,
   onQuickReportIncident,
   onNavigateSites,
+  onSitesChanged,
   darkMode,
   showToast,
 }) => {
   const [simMode, setSimMode] = useState<SimulationMode>(IS_DEMO_BUILD ? 'sim_whitelist' : 'live');
+  const [appSettings] = useSettings();
+  const [netCtx, setNetCtx] = useState<NetworkContext | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    detectNetworkContext()
+      .then((c) => alive && setNetCtx(c))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // пересчитываем при смене оператора/города/типа сети в настройках
+  }, [appSettings.operator, appSettings.city, appSettings.networkType, appSettings.probeMode]);
+
   const [phase, setPhase] = useState<
     'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done'
   >('idle');
@@ -121,7 +149,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
 
     setPhase('precheck');
-    const conn = await detectCurrentConnection(simMode);
+    // В APK определяем сеть по-настоящему: иначе кнопка брала мок-данные
+    // и принудительно ставила «без VPN» с чужим оператором.
+    const conn: ClientConnectionInfo = isNativeApp()
+      ? (toClientConnection(await detectNetworkContext()) as ClientConnectionInfo)
+      : await detectCurrentConnection(simMode);
     setDetectedConn(conn);
     onConnectionDetected(conn);
 
@@ -199,24 +231,38 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setSiteFilter('all');
     setProgress({ done: 0, total: enabledSitesCount, currentDomain: '' });
 
-    const results = await runMultiSiteScan(
-      sites,
-      effectiveSimMode,
-      (done, total, latest, partial) => {
-        setProgress({ done, total, currentDomain: latest.domain });
-        setLiveResults([...partial]);
-      },
-      ctrl.signal
-    );
+    const progressCb = (done: number, total: number, latest: ScanSiteResult, partial: ScanSiteResult[]) => {
+      setProgress({ done, total, currentDomain: latest.domain });
+      setLiveResults([...partial]);
+    };
+
+    // В приложении для Android замеры настоящие: запросы идут нативным HTTP
+    // и не упираются в CORS. В браузере остаются симуляции.
+    const useRealProbes = isNativeApp() && appSettings.probeMode !== 'demo';
+
+    const results = useRealProbes
+      ? await runRealSiteScan(sites, progressCb, ctrl.signal)
+      : await runMultiSiteScan(sites, effectiveSimMode, progressCb, ctrl.signal);
 
     if (ctrl.signal.aborted) return;
 
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
+
+    // Итог уходит в уведомление — удобно, если приложение свернули
+    const okCount = results.filter((r) => r.status === 'ok' || r.status === 'slow').length;
+    void notifyScanResult(
+      `Проверка готова: ${evaluated.verdict_title}`,
+      `${okCount} из ${results.length} доступны · ${appSettings.operator || netCtx?.operator || user.carrier}${
+        netCtx?.city ? ', ' + netCtx.city : ''
+      }`
+    );
     const carrierLabel =
       vpnMode === 'with_vpn'
         ? `VPN • ${conn.country_name}${conn.city ? `, ${conn.city}` : ''}`
-        : `${conn.isp || user.carrier} • ${conn.city || user.region}`;
+        : `${appSettings.operator || conn.isp || user.carrier} • ${
+            appSettings.city || conn.city || user.region
+          }`;
 
     try {
       const saved = await apiFetch<{ scan: ScanRecord }>('/api/scans', {
@@ -439,51 +485,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const VerdictIcon = vStyle.Icon;
 
   return (
-    <div className="space-y-6">
-      {/* ==================== DIAGNOSTIC MODE TOOLBAR ==================== */}
-      <div
-        className={`p-3 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-          darkMode
-            ? 'bg-slate-900/70 border-slate-800/80'
-            : 'bg-white border-slate-200 shadow-sm'
-        }`}
-      >
-        <div className="flex items-center gap-2 text-xs">
-          <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
-          <span className="font-semibold">Режим проверки:</span>
-          <span className="text-slate-400 hidden 2xl:inline">
-            «Живая сеть» проверяет ваш реальный интернет на телефоне; пресеты позволяют протестировать сценарии
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 pb-0.5 lg:justify-end">
-          {(
-            [
-              { id: 'live', label: '📡 Живая сеть' },
-              { id: 'sim_whitelist', label: '🔴 Тест: Белые списки' },
-              { id: 'sim_vpn', label: '🛡️ Тест: С VPN' },
-              { id: 'sim_dpi', label: '🟡 Тест: ТСПУ' },
-              { id: 'sim_jamming', label: '📵 Тест: Глушение' },
-            ] as Array<{ id: SimulationMode; label: string }>
-          ).map((m) => (
-            <button
-              key={m.id}
-              disabled={phase === 'scanning' || phase === 'precheck'}
-              onClick={() => setSimMode(m.id)}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border ${
-                simMode === m.id
-                  ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-sm'
-                  : darkMode
-                  ? 'bg-slate-950/80 text-slate-400 border-slate-800 hover:text-slate-200'
-                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:text-slate-900'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
+    <div className="space-y-6 anim-fade-up">
       {/* ==================== HERO MOBILE-FIRST RADAR BUTTON CARD ==================== */}
       <div
         className={`relative overflow-hidden rounded-3xl border p-6 sm:p-8 text-center transition-all ${
@@ -523,7 +525,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <span>
                 {detectedConn.vpn_detected ? 'Обнаружен VPN: ' : 'Ваша сеть: '}
                 <strong className="font-semibold">
-                  {detectedConn.country_name} • {detectedConn.isp}
+                  {detectedConn.country_name} •{' '}
+                  {appSettings.operator || netCtx?.operator || detectedConn.isp}
+                  {netCtx ? ` (${netCtx.kind === 'cellular' ? 'LTE' : netCtx.kind === 'wifi' ? 'Wi-Fi' : 'сеть'})` : ''}
+                  {appSettings.city || netCtx?.city ? `, ${appSettings.city || netCtx?.city}` : ''}
                 </strong>{' '}
                 <span className="font-mono opacity-75">({detectedConn.ip})</span>
               </span>
@@ -623,6 +628,50 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* ==================== МОИ СЕРВИСЫ ПОД ГЛАВНОЙ КНОПКОЙ ==================== */}
+      {phase !== 'scanning' && (
+        <div className="mt-3">
+          <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
+            <span className={`px-2 py-0.5 rounded-full border ${
+              netCtx?.kind === 'cellular'
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border-slate-700/60 bg-slate-800/40 text-slate-300'
+            }`}>
+              {connectionLabel(netCtx?.kind || 'unknown')}
+            </span>
+            {(netCtx?.operator || user.carrier) && (
+              <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
+                {appSettings.operator || netCtx?.operator || user.carrier}
+              </span>
+            )}
+            {(netCtx?.city || user.region) && (
+              <span className="px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/40 text-slate-300">
+                {appSettings.city || netCtx?.city || user.region}
+              </span>
+            )}
+            {netCtx?.source !== 'settings' && !netCtx?.operator && (
+              <button
+                type="button"
+                onClick={onNavigateSites}
+                className="text-sky-400 hover:underline"
+                title="Оператор и город можно указать в настройках"
+              >
+                уточнить
+              </button>
+            )}
+          </div>
+
+          <QuickPicks
+            sites={sites}
+            darkMode={darkMode}
+            showToast={showToast}
+            onSitesChanged={onSitesChanged}
+            onOpenCatalog={onNavigateSites}
+            results={displayedResults}
+          />
+        </div>
+      )}
 
       {/* ==================== VPN DETECTED ACTION MODAL / SHEET ==================== */}
       {(phase === 'vpn_prompt' || phase === 'waiting_vpn_off') && detectedConn && (
@@ -1380,7 +1429,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               onClick={() => setSiteFilter('all')}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
                 siteFilter === 'all'
-                  ? 'bg-sky-500 text-slate-950 border-sky-400'
+                  ? 'accent-solid border-transparent'
                   : darkMode
                   ? 'bg-slate-950 border-slate-800 text-slate-400'
                   : 'bg-slate-100 border-slate-200 text-slate-600'

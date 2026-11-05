@@ -4,6 +4,9 @@
  * чтобы приложение полностью работало без backend и без сети.
  */
 import seed from './bundle-data.json';
+import { parseSubscriptionText, type ParsedNode } from '../lib/subscriptionParser';
+import { isNativeApp, mapLimit, probeNode } from '../lib/nativeBridge';
+import { importRealSubscription } from './realSubscription';
 
 type Row = Record<string, any>;
 
@@ -50,6 +53,34 @@ let nextId = 100000;
 const genId = () => nextId++;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** ParsedNode (общий парсер) → запись профиля в локальном сторе. */
+function nodeToRow(node: ParsedNode, subscriptionId: number | null, groupName: string): Row {
+  const now = new Date().toISOString();
+  return {
+    id: genId(),
+    user_id: state.user.id,
+    subscription_id: subscriptionId,
+    group_name: groupName,
+    name: node.name,
+    protocol: node.protocol,
+    location: node.location,
+    country_code: node.country_code,
+    host: node.host,
+    port: node.port,
+    provider: node.provider,
+    dpi_resistance: node.dpi_resistance,
+    whitelist_bypass: node.whitelist_bypass,
+    status: 'unknown',
+    latency_ms: null,
+    uptime_pct: 100,
+    is_primary: false,
+    notes: '',
+    raw_link: node.raw_link,
+    last_checked_at: null,
+    created_at: now,
+  };
+}
 
 async function handle(path: string, method: string, body: any): Promise<Response> {
   const [rawPath, rawQuery = ''] = path.split('?');
@@ -231,52 +262,15 @@ async function handle(path: string, method: string, body: any): Promise<Response
     if (parts.length === 1 && method === 'GET') return json({ profiles: state.profiles });
 
     if (parts[1] === 'import' && method === 'POST') {
-      await sleep(500);
+      await sleep(320);
       const text = String(body?.text || '');
-      const imported: Row[] = [];
-      const lines = text.split(/\s+/).filter(Boolean);
-      for (const line of lines) {
-        const scheme = line.split('://')[0];
-        if (!['vless', 'vmess', 'trojan', 'ss', 'hysteria2', 'hy2'].includes(scheme)) continue;
-        let host = 'node.example.com';
-        let port = 443;
-        try {
-          const u = new URL(line);
-          host = u.hostname || host;
-          port = Number(u.port || 443);
-          const label = decodeURIComponent(u.hash.replace('#', '')) || host;
-          imported.push({
-            id: genId(),
-            user_id: state.user.id,
-            subscription_id: null,
-            group_name: 'Импорт вручную',
-            name: label,
-            protocol: scheme === 'vless' ? 'VLESS + Reality' : scheme,
-            location: 'Импортировано',
-            country_code: 'XX',
-            host,
-            port,
-            provider: '',
-            dpi_resistance: 'high',
-            whitelist_bypass: false,
-            status: 'online',
-            latency_ms: 60 + Math.round(Math.random() * 90),
-            uptime_pct: 100,
-            is_primary: false,
-            notes: '',
-            raw_link: line,
-            last_checked_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-          });
-        } catch {
-          // ignore
-        }
-      }
+      const parsed = parseSubscriptionText(text, 'Импорт вручную');
+      const imported = parsed.nodes.map((n) => nodeToRow(n, null, 'Импорт вручную'));
       state.profiles = [...imported, ...state.profiles];
       return json({
         imported: imported.length,
         profiles: state.profiles,
-        preview: imported.map((p) => ({
+        preview: imported.slice(0, 40).map((p) => ({
           name: p.name,
           protocol: p.protocol,
           host: p.host,
@@ -288,6 +282,21 @@ async function handle(path: string, method: string, body: any): Promise<Response
     }
 
     if (parts[1] === 'check-all' && method === 'POST') {
+      if (isNativeApp()) {
+        // Реальная проверка: TLS-хендшейк до host:port каждого узла, 8 параллельно.
+        const checked = await mapLimit(state.profiles, 8, async (p) => {
+          const probe = await probeNode(String(p.host), Number(p.port || 443));
+          return {
+            ...p,
+            status: probe.status,
+            latency_ms: probe.latencyMs,
+            notes: probe.reason || '',
+            last_checked_at: new Date().toISOString(),
+          };
+        });
+        state.profiles = checked;
+        return json({ profiles: state.profiles });
+      }
       await sleep(900);
       state.profiles = state.profiles.map((p) => ({
         ...p,
@@ -332,6 +341,24 @@ async function handle(path: string, method: string, body: any): Promise<Response
 
     const id = Number(parts[1]);
     if (parts[2] === 'check' && method === 'POST') {
+      if (isNativeApp()) {
+        const target = state.profiles.find((x) => x.id === id);
+        if (target) {
+          const probe = await probeNode(String(target.host), Number(target.port || 443));
+          state.profiles = state.profiles.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  status: probe.status,
+                  latency_ms: probe.latencyMs,
+                  notes: probe.reason || '',
+                  last_checked_at: new Date().toISOString(),
+                }
+              : p
+          );
+        }
+        return json({ profile: state.profiles.find((p) => p.id === id) });
+      }
       await sleep(420);
       state.profiles = state.profiles.map((p) =>
         p.id === id
@@ -341,6 +368,33 @@ async function handle(path: string, method: string, body: any): Promise<Response
       return json({ profile: state.profiles.find((p) => p.id === id) });
     }
     if (parts[2] === 'ping' && method === 'POST') {
+      if (isNativeApp()) {
+        const target = state.profiles.find((x) => x.id === id);
+        if (!target) return json({ error: 'Узел не найден' }, 404);
+        const samples: number[] = [];
+        let last = await probeNode(String(target.host), Number(target.port || 443));
+        if (last.latencyMs != null) samples.push(last.latencyMs);
+        for (let i = 0; i < 2; i++) {
+          const again = await probeNode(String(target.host), Number(target.port || 443));
+          if (again.latencyMs != null) samples.push(again.latencyMs);
+          last = again;
+        }
+        state.profiles = state.profiles.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                status: last.status,
+                latency_ms: samples.length
+                  ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length)
+                  : null,
+                last_latency_all: samples.length ? Math.max(...samples) : null,
+                notes: last.reason || '',
+                last_checked_at: new Date().toISOString(),
+              }
+            : p
+        );
+        return json({ profile: state.profiles.find((p) => p.id === id), samples });
+      }
       await sleep(520);
       const samples = [40, 52, 47].map((v) => v + Math.round(Math.random() * 30));
       state.profiles = state.profiles.map((p) =>
@@ -373,6 +427,50 @@ async function handle(path: string, method: string, body: any): Promise<Response
     if (parts.length === 1 && method === 'GET') return json({ subscriptions: state.subscriptions });
 
     if (parts.length === 1 && method === 'POST') {
+      const url = String(body?.url || '').trim();
+
+      // В APK запрос к серверу подписки идёт нативным HTTP (без CORS) и парсится
+      // общим модулем — так импортируются все узлы, а не только демо-набор.
+      if (isNativeApp() && /^https?:\/\//i.test(url)) {
+        try {
+          const real = await importRealSubscription(url);
+          const subId = genId();
+          const name = String(body?.name || real.title || 'Моя подписка').trim();
+          const sub = {
+            id: subId,
+            user_id: state.user.id,
+            name,
+            url,
+            format: real.format,
+            provider: '',
+            auto_update: body?.auto_update !== false,
+            update_interval_hours: Number(body?.update_interval_hours || 12),
+            last_synced_at: new Date().toISOString(),
+            last_sync_status: 'ok',
+            last_sync_message: `Импортировано серверов: ${real.nodes.length}`,
+            traffic_used_bytes: real.trafficUsed,
+            traffic_total_bytes: real.trafficTotal,
+            expires_on: real.expiresOn,
+            node_count: real.nodes.length,
+            created_at: new Date().toISOString(),
+          };
+          const nodes = real.nodes.map((n) => nodeToRow(n, subId, name));
+          state.subscriptions = [sub, ...state.subscriptions];
+          state.profiles = [...nodes, ...state.profiles];
+          return json({
+            subscription: sub,
+            profiles: state.profiles,
+            imported: nodes.length,
+            online: 0,
+          }, 201);
+        } catch (err) {
+          return json(
+            { error: err instanceof Error ? err.message : 'Не удалось загрузить подписку' },
+            502
+          );
+        }
+      }
+
       await sleep(1100);
       const demoNodes = [
         { name: '🇳🇱 Амстердам • Reality', proto: 'VLESS + Reality', loc: 'Нидерланды', cc: 'NL', host: 'aeza.net', port: 443, dpi: 'high' },
@@ -438,6 +536,52 @@ async function handle(path: string, method: string, body: any): Promise<Response
 
     const id = Number(parts[1]);
     if (parts[2] === 'sync' && method === 'POST') {
+      const target = state.subscriptions.find((s) => s.id === id);
+
+      if (isNativeApp() && target && /^https?:\/\//i.test(String(target.url))) {
+        try {
+          const real = await importRealSubscription(String(target.url));
+          state.profiles = state.profiles.filter((p) => p.subscription_id !== id);
+          const nodes = real.nodes.map((n) => nodeToRow(n, id, String(target.name)));
+          state.profiles = [...nodes, ...state.profiles];
+          state.subscriptions = state.subscriptions.map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  format: real.format,
+                  last_synced_at: new Date().toISOString(),
+                  last_sync_status: 'ok',
+                  last_sync_message: `Импортировано серверов: ${nodes.length}`,
+                  traffic_used_bytes: real.trafficUsed || s.traffic_used_bytes,
+                  traffic_total_bytes: real.trafficTotal || s.traffic_total_bytes,
+                  expires_on: real.expiresOn || s.expires_on,
+                  node_count: nodes.length,
+                }
+              : s
+          );
+          return json({
+            subscription: state.subscriptions.find((s) => s.id === id),
+            profiles: state.profiles,
+            imported: nodes.length,
+          });
+        } catch (err) {
+          state.subscriptions = state.subscriptions.map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  last_sync_status: 'error',
+                  last_sync_message:
+                    err instanceof Error ? err.message : 'Не удалось обновить подписку',
+                }
+              : s
+          );
+          return json(
+            { error: err instanceof Error ? err.message : 'Не удалось обновить подписку' },
+            502
+          );
+        }
+      }
+
       await sleep(900);
       state.subscriptions = state.subscriptions.map((s) =>
         s.id === id ? { ...s, last_synced_at: new Date().toISOString(), last_sync_status: 'ok', last_sync_message: 'Серверов: ' + s.node_count } : s

@@ -21,6 +21,9 @@ import {
 } from '../types';
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
+import { UpdateCard } from './UpdateCard';
+import { isNativeApp } from '../lib/nativeBridge';
+import { SettingsSheet } from './SettingsSheet';
 
 export type NavTab = 'scanner' | 'sites' | 'vpn' | 'incidents' | 'history';
 
@@ -63,6 +66,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [demoBanner, setDemoBanner] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editName, setEditName] = useState(user.name);
   const [editRegion, setEditRegion] = useState(user.region);
   const [editCarrier, setEditCarrier] = useState(user.carrier);
@@ -247,7 +251,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
                     ? darkMode
-                      ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30 shadow-sm'
+                      ? 'accent-soft accent-text shadow-sm'
                       : 'bg-sky-50 text-sky-700 border border-sky-200 shadow-sm'
                     : darkMode
                     ? 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
@@ -317,7 +321,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
       {/* ==================== MOBILE TOP HEADER ==================== */}
       <header
-        className={`lg:hidden sticky top-0 z-30 px-4 py-3 border-b backdrop-blur-xl flex items-center justify-between ${
+        className={`lg:hidden sticky top-0 z-30 px-4 pb-3 pt-safe border-b backdrop-blur-xl flex items-center justify-between ${
           darkMode
             ? 'bg-slate-950/85 border-slate-800/80'
             : 'bg-white/90 border-slate-200'
@@ -338,7 +342,7 @@ export const Layout: React.FC<LayoutProps> = ({
         <div className="flex items-center gap-1.5">
           <button
             onClick={onRefreshConnection}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border flex items-center gap-1.5 ${
+            className={`px-3 py-2 rounded-full text-[11px] font-semibold border flex items-center gap-1.5 active:scale-95 transition-transform ${
               connection?.vpn_detected
                 ? 'bg-amber-500/15 border-amber-500/35 text-amber-400'
                 : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -353,8 +357,18 @@ export const Layout: React.FC<LayoutProps> = ({
           </button>
 
           <button
+            onClick={() => setSettingsOpen(true)}
+            className={`p-2.5 rounded-xl border active:scale-95 transition-transform ${
+              darkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
+            }`}
+            aria-label="Настройки"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={onToggleTheme}
-            className={`p-1.5 rounded-lg border ${
+            className={`p-2.5 rounded-xl border active:scale-95 transition-transform ${
               darkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
             }`}
             aria-label="Тема"
@@ -364,7 +378,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
           <button
             onClick={onLogout}
-            className={`p-1.5 rounded-lg border ${
+            className={`p-2.5 rounded-xl border active:scale-95 transition-transform ${
               darkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
             }`}
             title="Выйти / Аккаунт"
@@ -376,7 +390,11 @@ export const Layout: React.FC<LayoutProps> = ({
 
       {/* ==================== MAIN CONTENT ==================== */}
       <main className="flex-1 lg:pl-72 pb-24 lg:pb-10">
-        {IS_DEMO_BUILD && demoBanner && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <UpdateCard darkMode={darkMode} showToast={showToast} />
+        </div>
+
+        {IS_DEMO_BUILD && demoBanner && !isNativeApp() && (
           <div className="mb-4 flex items-start gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-[11px] sm:text-xs leading-snug text-amber-200">
             <span className="shrink-0">🧪</span>
             <span className="flex-1">
@@ -397,6 +415,14 @@ export const Layout: React.FC<LayoutProps> = ({
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7">{children}</div>
       </main>
+
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        darkMode={darkMode}
+        onToggleTheme={onToggleTheme}
+        showToast={showToast}
+      />
 
       {/* ==================== MOBILE BOTTOM TAB BAR ==================== */}
       <nav
@@ -424,7 +450,7 @@ export const Layout: React.FC<LayoutProps> = ({
               >
                 <div
                   className={`p-1 rounded-xl ${
-                    item.id === 'scanner' && isActive ? 'bg-sky-500/15' : ''
+                    isActive ? 'accent-soft' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5" />

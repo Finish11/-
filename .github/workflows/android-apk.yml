@@ -1,0 +1,162 @@
+# Собирает Android APK (Capacitor + автономная демо-сборка).
+# Артефакт: Actions → Artifacts → pulsenet-debug-apk.
+# Публичный файл: GitHub Releases, тег android-latest
+#   https://github.com/<owner>/<repo>/releases/download/android-latest/pulsenet-debug.apk
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'vite.demo.config.ts'
+      - 'demo.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/android-assets.mjs'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'vite.demo.config.ts'
+      - 'demo.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Сборка debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Android SDK уже установлен на ubuntu-latest (ANDROID_HOME задан).
+      # Платформу 36 при необходимости достанавливаем через sdkmanager.
+      - name: Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ -n "$SDKMANAGER" ] && [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" > /dev/null || true
+          fi
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+
+      - name: Кэш Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Зависимости
+        run: npm ci --no-audit --no-fund
+
+      - name: Версия из package.json
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          sed -i -E "s/versionName \"[^\"]*\"/versionName \"$VERSION\"/" android/app/build.gradle
+          # versionCode обязан увеличиваться, иначе Android откажет в обновлении
+          sed -i -E "s/versionCode [0-9]+/versionCode $((GITHUB_RUN_NUMBER + 1000))/" android/app/build.gradle
+          grep -n 'versionCode' android/app/build.gradle
+          grep -n 'versionName' android/app/build.gradle
+
+      - name: Демо-сборка и синхронизация с Android
+        run: npm run android:sync
+
+      - name: Сборка APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Переименовать APK
+        run: |
+          mkdir -p apk
+          # Имя стабильное, чтобы ссылка на релиз не менялась между сборками
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk/pulsenet-debug.apk
+          ls -lh apk
+
+      - name: Загрузить APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulsenet-debug-apk
+          path: apk/*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      # Публикуем в Releases — оттуда файл скачивается без входа в GitHub.
+      # На pull_request не публикуем, чтобы ревью не меняло релиз.
+      - name: Опубликовать в Releases
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA_SHORT="${GITHUB_SHA::7}"
+          VERSION="${APP_VERSION:-0.0.0}"
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/pulsenet-debug.apk"
+          NOTES="$(cat <<EOF
+          Версия: ${VERSION}
+
+          Что нового:
+          - постоянный debug-ключ: обновления ставятся поверх, без удаления
+          - определение VPN при запуске по IP и провайдеру
+          - оператор и город из настроек больше не перебиваются данными сети
+          - проверка продолжается при переключении вкладок, итог — в уведомлении
+          - пинг и доступность сервисов прямо в чипах под главной кнопкой
+          - подписка: url-safe base64 и точная причина, если сервер отдал не подписку
+
+          Debug-сборка приложения «ПульсСети» для Android: Capacitor 8 + автономная демо-сборка.
+
+          Коммит: \`${SHA_SHORT}\`
+          Собрано: $(date -u '+%Y-%m-%d %H:%M UTC')
+
+          **Установка:** скачайте \`pulsenet-debug.apk\` на телефон, откройте файл,
+          разрешите установку из этого источника. Android 7.0 и новее.
+
+          **Прямая ссылка:** ${RELEASE_URL}
+
+          Подпись отладочная (debug keystore) — для тестирования и личной установки.
+          Это диагностический инструмент, а не официальный источник данных о блокировках.
+          EOF
+          )"
+          # Пересоздаём релиз, чтобы тег указывал на текущий коммит, а файл был свежим
+          gh release delete android-latest --yes --cleanup-tag > /dev/null 2>&1 || true
+          gh release create android-latest apk/pulsenet-debug.apk \
+            --target "${GITHUB_SHA}" \
+            --title "ПульсСети ${VERSION} для Android (${SHA_SHORT})" \
+            --notes "${NOTES}" \
+            --prerelease

@@ -36,6 +36,12 @@
 | `src/components/AuthView.tsx` | вход, регистрация, демо-вход |
 | `src/lib/scanner.ts` | пробники, правила вердикта, демо-симуляции |
 | `src/lib/api.ts` | `apiFetch` + цепочка токена |
+| `src/lib/quickPicks.ts` | каталог «быстрого выбора»: AI-чаты, мессенджеры, YouTube, игры |
+| `src/lib/subscriptionParser.ts` | общий парсер подписок (сервер + APK), без Node-зависимостей |
+| `src/lib/nativeBridge.ts` | нативный HTTP (CapacitorHttp), TLS-проба узла, mapLimit |
+| `src/lib/appUpdate.ts` | проверка версии на GitHub Releases + плагин ApkUpdater |
+| `src/components/QuickPicks.tsx` | блок быстрого выбора на главном экране |
+| `src/components/UpdateCard.tsx` | карточка обновления: версия, прогресс, установка |
 | `src/types.ts` | общие типы |
 
 ## Демо-слой
@@ -43,6 +49,7 @@
 | Файл | Роль |
 |---|---|
 | `src/demo/localApi.ts` | мок-сервер: перехват `window.fetch` для `/api/*` |
+| `src/demo/realSubscription.ts` | настоящая загрузка подписки в APK (нативный HTTP) |
 | `src/demo/bundle-data.json` | снимок данных для демо (75 сайтов, 5 замеров, 8 инцидентов) |
 
 ## Инфраструктура
@@ -51,12 +58,21 @@
 |---|---|
 | `.github/workflows/ci.yml` | typecheck + build + build:demo на каждый push |
 | `.github/workflows/deploy-demo-pages.yml` | публикация демо на GitHub Pages |
+| `.github/workflows/android-apk.yml` | сборка debug APK на раннере: артефакт + публикация в Releases (тег `android-latest`) |
+| `capacitor.config.ts` | Capacitor: `appId`, `appName`, `webDir: demo-dist`, `server.url` для боевого режима |
+| `android/` | нативный Android-проект (Capacitor): тема, иконки, сплэш, gradle |
+| `android/.../ApkUpdaterPlugin.java` | скачивание APK через DownloadManager + установщик |
+| `scripts/android-assets.mjs` | `demo-dist/demo.html` → `index.html` для Capacitor |
+| `scripts/generate-android-assets.sh` | иконки и сплэш из фирменного стиля (ImageMagick 6) |
 | `Dockerfile`, `docker-compose.yml` | прод-образ и запуск с томом для SQLite |
 | `.env.example` | `PORT`, `NODE_ENV`, `DATA_DIR` |
 
 ## Проверки
 
 `npm run typecheck` · `npm run build` · `npm run build:demo` — все три должны быть зелёными.
+
+Android: `npm run android:sync` (без SDK) → `npm run apk:debug` (нужны JDK 21 и Android SDK).
+APK в CI собирает `.github/workflows/android-apk.yml`.
 
 Проверка API вручную:
 

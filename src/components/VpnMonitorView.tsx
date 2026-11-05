@@ -726,6 +726,14 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                   ? Math.min(100, Math.round((s.traffic_used_bytes / s.traffic_total_bytes) * 100))
                   : 0;
               const expired = s.expires_on ? new Date(s.expires_on).getTime() < Date.now() : false;
+              const daysLeft = s.expires_on
+                ? Math.ceil((new Date(s.expires_on).getTime() - Date.now()) / 864e5)
+                : null;
+              const subNodes = profiles.filter((p) => p.subscription_id === s.id);
+              const subOnline = subNodes.filter((p) => p.status === 'online').length;
+              const subDegraded = subNodes.filter((p) => p.status === 'degraded').length;
+              const subBlocked = subNodes.filter((p) => p.status === 'blocked').length;
+              const checkedCount = subOnline + subDegraded + subBlocked;
               return (
                 <div
                   key={s.id}
@@ -738,8 +746,21 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-bold text-sm truncate">{s.name}</h3>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          {s.node_count} узлов
+                          {s.node_count} {s.node_count === 1 ? 'узел' : s.node_count < 5 ? 'узла' : 'узлов'}
                         </span>
+                        {checkedCount > 0 && (
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              subBlocked === 0
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                : subOnline > subBlocked
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/25'
+                            }`}
+                          >
+                            {subOnline} из {checkedCount} работают
+                          </span>
+                        )}
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-300 border border-slate-500/30 uppercase">
                           {s.format}
                         </span>
@@ -788,12 +809,19 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                   </div>
 
                   {/* Traffic bar */}
+                  {s.traffic_total_bytes === 0 && (
+                    <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <Radio className="w-3 h-3 text-emerald-400" />
+                      Лимит трафика не указан — тариф без ограничения или сервер не отдал заголовок
+                    </div>
+                  )}
                   {s.traffic_total_bytes > 0 && (
                     <div className="mt-3">
                       <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
                         <span>Трафик</span>
                         <span className="font-mono">
                           {formatBytes(s.traffic_used_bytes)} / {formatBytes(s.traffic_total_bytes)}
+                          <span className="text-slate-500"> · {usedPct}%</span>
                         </span>
                       </div>
                       <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -819,8 +847,12 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                         : 'никогда'}
                     </span>
                     {s.expires_on && (
-                      <span>
+                      <span className={expired ? 'text-rose-400' : daysLeft !== null && daysLeft <= 7 ? 'text-amber-400' : ''}>
                         До: {new Date(s.expires_on).toLocaleDateString('ru-RU')}
+                        {daysLeft !== null && !expired && (
+                          <span className="text-slate-500"> · осталось {daysLeft} дн.</span>
+                        )}
+                        {expired && <span> · истекла</span>}
                       </span>
                     )}
                     <span className="inline-flex items-center gap-1">
@@ -828,6 +860,23 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                       Авто: {s.auto_update ? `каждые ${s.update_interval_hours} ч` : 'выкл'}
                     </span>
                   </div>
+
+                  {checkedCount > 0 && (
+                    <div className="mt-2.5 h-1.5 rounded-full bg-slate-800 overflow-hidden flex">
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{ width: `${(subOnline / subNodes.length) * 100}%` }}
+                      />
+                      <div
+                        className="h-full bg-amber-400"
+                        style={{ width: `${(subDegraded / subNodes.length) * 100}%` }}
+                      />
+                      <div
+                        className="h-full bg-rose-500"
+                        style={{ width: `${(subBlocked / subNodes.length) * 100}%` }}
+                      />
+                    </div>
+                  )}
 
                   {s.last_sync_status === 'error' && s.last_sync_message && (
                     <div className="mt-2 flex items-start gap-1.5 text-[11px] text-rose-400">

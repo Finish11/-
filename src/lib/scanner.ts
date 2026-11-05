@@ -1,3 +1,4 @@
+import { isNativeApp } from './nativeBridge';
 import { apiFetch } from './api';
 
 /**
@@ -106,7 +107,7 @@ export async function gatherWebRtcIps(): Promise<string[]> {
 export async function detectCurrentConnection(
   simMode: SimulationMode = 'live'
 ): Promise<ClientConnectionInfo> {
-  if (IS_DEMO_BUILD && simMode === 'live') {
+  if (IS_DEMO_BUILD && simMode === 'live' && !isNativeApp()) {
     simMode = 'sim_whitelist';
   }
   if (simMode === 'sim_vpn') {
@@ -331,7 +332,7 @@ export async function probeSingleSite(
   site: Site,
   simMode: SimulationMode = 'live'
 ): Promise<ScanSiteResult> {
-  if (IS_DEMO_BUILD && simMode === 'live') {
+  if (IS_DEMO_BUILD && simMode === 'live' && !isNativeApp()) {
     // В автономной демо-сборке сети нет — имитируем режим белых списков
     simMode = 'sim_whitelist';
   }

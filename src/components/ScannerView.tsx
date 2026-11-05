@@ -514,13 +514,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       >
         {/* Мягкое свечение за кнопкой */}
         <div
-          className="pointer-events-none absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 w-[22rem] h-[22rem] rounded-full blur-[70px] opacity-60"
+          className="pointer-events-none absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 w-[24rem] h-[24rem] rounded-full"
           style={{
-            background: scanning
-              ? 'rgb(var(--accent) / 0.35)'
-              : showResult
-              ? `color-mix(in srgb, ${meta.accentRgb} 32%, transparent)`
-              : 'rgb(var(--accent) / 0.2)',
+            /* Радиальная заливка вместо blur: дешевле для WebView и не мылит текст */
+            background: `radial-gradient(circle, ${
+              scanning
+                ? 'rgb(var(--accent) / 0.22)'
+                : showResult
+                ? `color-mix(in srgb, ${meta.accentRgb} 20%, transparent)`
+                : 'rgb(var(--accent) / 0.14)'
+            }, transparent 68%)`,
           }}
         />
 
@@ -836,8 +839,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               size="md"
               icon={copiedReport ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               onClick={handleCopyReport}
+              title="Скопировать текст отчёта — вставите в любой чат"
             >
-              {copiedReport ? 'Скопировано' : 'Отчёт в Telegram'}
+              {copiedReport ? 'Скопировано' : 'Скопировать отчёт'}
             </Button>
             {(activeScan.verdict === 'WHITELIST_ACTIVE' ||
               activeScan.verdict === 'TOTAL_JAMMING' ||
@@ -906,12 +910,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 colorScheme: darkMode ? 'dark' : 'light',
               }}
             />
-            {quickNote.trim() && (
-              <Button type="submit" size="sm" variant="primary" loading={savingNote}>
-                Сохранить
-              </Button>
-            )}
+            <Button type="submit" size="sm" variant="primary" loading={savingNote} disabled={!quickNote.trim()}>
+              Сохранить
+            </Button>
           </form>
+          {activeScan.note && (
+            <p className="text-[11px] text-dim mt-1.5">Сейчас: «{activeScan.note}»</p>
+          )}
         </section>
       )}
 

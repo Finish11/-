@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ArrowDownToLine, CheckCircle2, Download, Loader2, Sparkles, TriangleAlert, X } from 'lucide-react';
+import { Button } from './ui/kit';
 import {
   ApkUpdater,
   checkForUpdate,
@@ -10,7 +11,8 @@ import {
 } from '../lib/appUpdate';
 
 interface UpdateCardProps {
-  darkMode: boolean;
+  /** Оставлен для совместимости вызовов: оформление теперь берётся из CSS-переменных. */
+  darkMode?: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 
@@ -34,7 +36,7 @@ function extractHighlights(notes: string): string[] {
  * Карточка обновления: показывает новую версию APK, скачивает её внутри приложения
  * и открывает системный установщик. Работает только в нативной сборке.
  */
-export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) => {
+export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [progress, setProgress] = useState(0);
@@ -155,24 +157,24 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
 
   if (!info || dismissed) return null;
 
-  const card = darkMode
-    ? 'bg-gradient-to-br from-sky-500/15 via-slate-900/70 to-slate-900/70 border-sky-500/30'
-    : 'bg-gradient-to-br from-sky-50 via-white to-white border-sky-200';
-  const chip = darkMode ? 'bg-slate-950/60 border-slate-700/70' : 'bg-white border-slate-200';
   const highlights = extractHighlights(info.notes);
 
   return (
-    <div className={`mb-4 rounded-3xl border p-4 sm:p-5 relative overflow-hidden ${card}`}>
-      <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-sky-500/10 blur-2xl pointer-events-none" />
-
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center shrink-0">
+    <div
+      className="mb-3 rounded-2xl border p-3.5 relative overflow-hidden"
+      style={{ borderColor: 'rgb(var(--accent) / 0.35)', background: 'var(--surface)' }}
+    >
+      <div className="flex items-start gap-2.5">
+        <div
+          className="w-9 h-9 rounded-xl grid place-items-center shrink-0"
+          style={{ background: 'var(--accent-soft)', color: 'rgb(var(--accent))' }}
+        >
           {phase === 'installing' ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <CheckCircle2 className="w-[18px] h-[18px]" style={{ color: 'rgb(var(--success))' }} />
           ) : phase === 'downloading' ? (
-            <Loader2 className="w-5 h-5 text-sky-400 animate-spin" />
+            <Loader2 className="w-[18px] h-[18px] animate-spin" />
           ) : (
-            <Sparkles className="w-5 h-5 text-sky-400" />
+            <Sparkles className="w-[18px] h-[18px]" />
           )}
         </div>
 
@@ -181,12 +183,12 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
             <h3 className="text-sm font-extrabold">
               {phase === 'permission' ? 'Нужно разрешение' : `Доступно обновление ${info.version}`}
             </h3>
-            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md border ${chip} text-slate-400`}>
+            <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded-md text-muted" style={{ background: 'var(--surface-2)' }}>
               сейчас {info.currentVersion} · {info.sizeMb} МБ
             </span>
           </div>
 
-          <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+          <p className="text-[11px] text-dim mt-1 leading-snug">
             {phase === 'permission'
               ? 'Разрешите «Установка неизвестных приложений» для ПульсСети и вернитесь в приложение — установка начнётся сразу.'
               : phase === 'installing'
@@ -199,8 +201,8 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
           {highlights.length > 0 && phase !== 'downloading' && phase !== 'permission' && (
             <ul className="mt-2 space-y-0.5">
               {highlights.map((line, i) => (
-                <li key={i} className="text-[11px] text-slate-400 flex gap-1.5">
-                  <span className="text-sky-400 shrink-0">•</span>
+                <li key={i} className="text-[11px] text-dim flex gap-1.5">
+                  <span className="shrink-0" style={{ color: 'rgb(var(--accent))' }}>•</span>
                   <span className="line-clamp-2">{line}</span>
                 </li>
               ))}
@@ -208,16 +210,19 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
           )}
 
           {(phase === 'downloading' || phase === 'installing') && (
-            <div className="mt-2.5 h-2 rounded-full bg-slate-800/80 overflow-hidden">
+            <div className="mt-2.5 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
               <div
-                className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-500"
-                style={{ width: `${phase === 'installing' ? 100 : progress}%` }}
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${phase === 'installing' ? 100 : progress}%`,
+                  background: 'linear-gradient(90deg, rgb(var(--accent)), rgb(var(--success)))',
+                }}
               />
             </div>
           )}
 
           {phase === 'error' && (
-            <div className="mt-2 flex items-start gap-1.5 text-[11px] text-rose-400">
+            <div className="mt-2 flex items-start gap-1.5 text-[11px]" style={{ color: 'rgb(var(--danger))' }}>
               <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 {error}. Можно{' '}
@@ -231,27 +236,27 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
 
           <div className="flex items-center gap-2 mt-3">
             {(phase === 'ready' || phase === 'error') && (
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Download className="w-3.5 h-3.5" />}
                 onClick={handleUpdate}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-500 text-slate-950 text-xs font-bold active:scale-95 transition-transform"
               >
-                <Download className="w-3.5 h-3.5" />
-                {phase === 'error' ? 'Попробовать снова' : 'Обновить приложение'}
-              </button>
+                {phase === 'error' ? 'Попробовать снова' : 'Обновить'}
+              </Button>
             )}
             {phase === 'permission' && (
-              <button
-                type="button"
+              <Button
+                variant="soft"
+                size="sm"
+                icon={<ArrowDownToLine className="w-3.5 h-3.5" />}
                 onClick={startInstall}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold active:scale-95 transition-transform"
               >
-                <ArrowDownToLine className="w-3.5 h-3.5" />
                 Установить
-              </button>
+              </Button>
             )}
             {phase === 'downloading' && (
-              <span className="text-[11px] text-slate-400 font-mono">
+              <span className="text-[11px] text-muted font-mono">
                 {progress}% · не закрывайте приложение
               </span>
             )}
@@ -259,7 +264,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
               href={RELEASE_PAGE}
               target="_blank"
               rel="noreferrer"
-              className="text-[11px] text-slate-400 hover:text-sky-400 underline decoration-dotted"
+              className="text-[11px] text-muted hover:text-[color:var(--text)] underline decoration-dotted"
             >
               что нового
             </a>
@@ -272,7 +277,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
             stopPolling();
             setDismissed(true);
           }}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-500/10 shrink-0"
+          className="p-1.5 rounded-lg text-muted hover:text-[color:var(--text)] shrink-0"
           aria-label="Скрыть"
         >
           <X className="w-4 h-4" />

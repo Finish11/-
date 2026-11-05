@@ -7,6 +7,7 @@ import seed from './bundle-data.json';
 import { parseSubscriptionText, type ParsedNode } from '../lib/subscriptionParser';
 import { isNativeApp, mapLimit, probeNode } from '../lib/nativeBridge';
 import { importRealSubscription } from './realSubscription';
+import { encodeBase64 } from '../lib/base64';
 
 type Row = Record<string, any>;
 
@@ -122,10 +123,10 @@ async function handle(path: string, method: string, body: any): Promise<Response
       'hysteria2://demo-pass-2026@leaseweb.com:443?sni=leaseweb.com#%F0%9F%87%B3%F0%9F%87%B1%20Амстердам%20•%20Hysteria2',
       'ss://YWVzLTI1Ni1nY206ZGVtby1wYXNzLTIwMjY@ovhcloud.com:8388#%F0%9F%87%B5%F0%9F%87%B1%20Варшава%20•%20Shadowsocks',
       'vmess://' +
-        btoa(
+        encodeBase64(
           JSON.stringify({
             v: '2',
-            ps: '🇹🇷 Стамбул • VMess',
+            ps: 'TR Стамбул • VMess',
             add: 'digitalocean.com',
             port: '443',
             id: '8f3c1a92-1111-4a2b-9c3d-77aa10bb22cc',
@@ -134,12 +135,12 @@ async function handle(path: string, method: string, body: any): Promise<Response
           })
         ),
     ];
-    const body = btoa(unescape(encodeURIComponent(nodes.join('\n'))));
+    const body = encodeBase64(nodes.join('\n'));
     return new Response(body, {
       status: 200,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'profile-title': 'base64:' + btoa(unescape(encodeURIComponent('Демо-подписка ПульсСети'))),
+        'profile-title': 'base64:' + encodeBase64('Демо-подписка ПульсСети'),
         'subscription-userinfo':
           'upload=734003200; download=2415919104; total=53687091200; expire=1798761600',
       },

@@ -1296,10 +1296,26 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
             >
               {PROTOCOLS.map((p) => (
                 <option key={p.value} value={p.value}>
-                  {p.value} — {p.hint}
+                  {p.value}
                 </option>
               ))}
             </select>
+            {(() => {
+              const p = PROTOCOLS.find((x) => x.value === protocol);
+              if (!p) return null;
+              const tone =
+                p.dpi === 'high'
+                  ? 'rgb(var(--success))'
+                  : p.dpi === 'medium'
+                  ? 'rgb(var(--warning))'
+                  : 'rgb(var(--danger))';
+              return (
+                <p className="text-[10.5px] mt-1.5 leading-snug" style={{ color: tone }}>
+                  {p.dpi === 'high' ? 'Хорошо обходит ТСПУ' : p.dpi === 'medium' ? 'Средняя устойчивость' : 'Часто блокируется'}
+                  <span className="text-muted"> — {p.hint}</span>
+                </p>
+              );
+            })()}
           </label>
 
           <div className="grid grid-cols-[1fr_5rem] gap-2">
@@ -1361,12 +1377,12 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               <div className="rounded-2xl bg-white p-3">
                 {qrLoading ? (
                   <div className="w-[200px] h-[200px] grid place-items-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+                    <Loader2 className="w-6 h-6 animate-spin text-muted" />
                   </div>
                 ) : qrValue ? (
                   <QRCodeCanvas value={qrValue} size={200} level="M" includeMargin={false} />
                 ) : (
-                  <div className="w-[200px] h-[200px] grid place-items-center text-[12px] text-slate-500 text-center px-4">
+                  <div className="w-[200px] h-[200px] grid place-items-center text-[12px] text-muted text-center px-4">
                     Ссылка для этого узла недоступна — добавьте узел из подписки
                   </div>
                 )}

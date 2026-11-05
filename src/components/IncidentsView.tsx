@@ -29,7 +29,8 @@ interface IncidentsViewProps {
   setIncidents: React.Dispatch<React.SetStateAction<Incident[]>>;
   prefillFromScan: ScanRecord | null;
   onClearPrefill: () => void;
-  darkMode: boolean;
+  /** Больше не используется: цвета берутся из CSS-переменных. Оставлен для совместимости вызова. */
+  darkMode?: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 

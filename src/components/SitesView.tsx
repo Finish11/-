@@ -20,12 +20,13 @@ import { apiFetch } from '../lib/api';
 import { probeSingleSite } from '../lib/scanner';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
-import { Button, Chip, EmptyState, SectionTitle, StatusIcon } from './ui/kit';
+import { Button, Chip, EmptyState, StatusIcon } from './ui/kit';
 
 interface SitesViewProps {
   sites: Site[];
   setSites: React.Dispatch<React.SetStateAction<Site[]>>;
-  darkMode: boolean;
+  /** Больше не используется: цвета берутся из CSS-переменных. Оставлен для совместимости вызова. */
+  darkMode?: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 

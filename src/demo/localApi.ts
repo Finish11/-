@@ -84,7 +84,7 @@ function nodeToRow(node: ParsedNode, subscriptionId: number | null, groupName: s
 }
 
 async function handle(path: string, method: string, body: any): Promise<Response> {
-  const [rawPath, rawQuery = ''] = path.split('?');
+  const [rawPath] = path.split('?');
   const clean = rawPath.replace(/^\/api/, '');
   const parts = clean.split('/').filter(Boolean); // ['sites', '12']
 

@@ -12,7 +12,6 @@ import {
   Check,
   Send,
   ChevronDown,
-  Sparkles,
   PowerOff,
   Play,
   RefreshCw,
@@ -20,10 +19,8 @@ import {
   Activity,
   Server,
   Eye,
-  RotateCcw,
   Radio,
   Gauge,
-  Download,
 } from 'lucide-react';
 import {
   CATEGORY_META,
@@ -467,8 +464,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     if (siteFilter === 'ok') return r.status === 'ok' || r.status === 'slow';
     return r.category === siteFilter;
   });
-
-  const visibleSites = showAllSites ? filteredResults : filteredResults.slice(0, 12);
 
   const roleGroups = useMemo(() => {
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));

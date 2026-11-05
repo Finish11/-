@@ -1,11 +1,9 @@
 import React from 'react';
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock,
   Globe,
   Loader2,
-  Server,
   ShieldAlert,
   WifiOff,
   XCircle,

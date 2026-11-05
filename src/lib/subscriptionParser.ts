@@ -495,7 +495,6 @@ function extractProxies(yaml: string): YamlProxy[] {
   const proxies: YamlProxy[] = [];
 
   let inProxies = false;
-  let baseIndent = -1;
   let itemIndent = -1;
   let current: { fields: Record<string, string>; lines: string[] } | null = null;
 
@@ -521,7 +520,6 @@ function extractProxies(yaml: string): YamlProxy[] {
     if (top) {
       flush();
       inProxies = top[2] === 'proxies';
-      baseIndent = top[1].length;
       itemIndent = -1;
       continue;
     }

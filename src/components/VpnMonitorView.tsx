@@ -10,11 +10,7 @@ import {
   Star,
   Pencil,
   Trash2,
-  CheckCircle2,
-  Clock,
-  XCircle,
   Loader2,
-  Globe,
   Link2,
   QrCode,
   Download,
@@ -24,8 +20,6 @@ import {
   Search,
   Copy,
   Check,
-  Signal,
-  Radio,
   AlertTriangle,
   Server,
   ArrowUpRight,
@@ -33,7 +27,6 @@ import {
 import { QRCodeCanvas } from 'qrcode.react';
 import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
 import { apiFetch } from '../lib/api';
-import { isNativeApp } from '../lib/nativeBridge';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
@@ -105,22 +98,6 @@ const COUNTRY_BY_NAME: Array<[RegExp, string]> = [
   [/канад|ca-/i, 'CA'],
 ];
 
-const COUNTRY_FLAG = (code: string) => {
-  if (!code || code.length !== 2 || code === 'XX') return '🌐';
-  return String.fromCodePoint(
-    ...code
-      .toUpperCase()
-      .split('')
-      .map((c) => 127397 + c.charCodeAt(0))
-  );
-};
-
-const nodeFlag = (code?: string, ...labels: Array<string | undefined>) => {
-  if (code && code.length === 2 && code !== 'XX') return COUNTRY_FLAG(code);
-  const hay = labels.filter(Boolean).join(' ');
-  const hit = COUNTRY_BY_NAME.find(([re]) => re.test(hay));
-  return hit ? COUNTRY_FLAG(hit[1]) : '🌐';
-};
 
 /** Код страны по названию узла/локации, если панель его не отдала. */
 const guessCode = (...labels: Array<string | undefined>): string => {
@@ -192,7 +169,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   const [subAutoUpdate, setSubAutoUpdate] = useState(true);
   const [subInterval, setSubInterval] = useState(12);
   const [subSaving, setSubSaving] = useState(false);
-  const [subStage, setSubStage] = useState<'idle' | 'working'>('idle');
   const [subError, setSubError] = useState<string | null>(null);
   const [importText, setImportText] = useState('');
   const [importingLinks, setImportingLinks] = useState(false);
@@ -388,7 +364,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     setImportText('');
     setSubTab('url');
     setSubError(null);
-    setSubStage('idle');
     setSubModalOpen(true);
   };
 
@@ -400,7 +375,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     }
     setSubSaving(true);
     setSubError(null);
-    setSubStage('working');
     try {
       const res = await apiFetch<{
         subscription: VpnSubscription;
@@ -428,7 +402,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       showToast('error', 'Подписка не загрузилась — подробности в окне');
     } finally {
       setSubSaving(false);
-      setSubStage('idle');
     }
   };
 

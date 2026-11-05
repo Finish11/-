@@ -10,7 +10,8 @@ interface HistoryViewProps {
   scans: ScanRecord[];
   setScans: React.Dispatch<React.SetStateAction<ScanRecord[]>>;
   onGoToScanner: () => void;
-  darkMode: boolean;
+  /** Больше не используется: цвета берутся из CSS-переменных. Оставлен для совместимости вызова. */
+  darkMode?: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 

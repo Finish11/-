@@ -313,9 +313,13 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                   <span className="text-[10.5px] font-semibold truncate" style={{ color: v.fg }}>
                     {v.label}
                   </span>
-                  <span className="ml-auto text-[10px] font-mono text-muted tabular-nums shrink-0">
-                    {r?.latency_ms != null ? `${r.latency_ms}` : '—'}
-                  </span>
+                  {r?.latency_ms != null ? (
+                    <span className="ml-auto text-[10px] font-mono text-muted tabular-nums shrink-0">
+                      {r.latency_ms} мс
+                    </span>
+                  ) : (
+                    <span className="ml-auto shrink-0" aria-hidden="true" />
+                  )}
                 </div>
 
                 {pick.gameHost && !scanning && (

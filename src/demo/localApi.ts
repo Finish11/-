@@ -469,8 +469,9 @@ async function handle(path: string, method: string, body: any): Promise<Response
           }, 201);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Не удалось загрузить подписку';
+          // APK: любые демо-узлы здесь были бы обманом — только честная ошибка.
+          if (isNativeApp()) return json({ error: message }, 502);
           // Браузерный предпросмотр: честно помечаем подписку как демонстрационную.
-          // APK этот путь не проходит: там честная ошибка и «Ссылки узлов» в помощь.
           const subId = genId();
           const demo = demoNodesFallback(body, state, subId, message);
           state.subscriptions = [demo.sub, ...state.subscriptions];

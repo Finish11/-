@@ -326,17 +326,21 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     }
   };
 
-  const handleCheckAll = async () => {
+  const handleCheckAll = async (options?: { silent?: boolean }) => {
     setCheckingAll(true);
     try {
       const res = await apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles/check-all', {
         method: 'POST',
       });
       setProfiles(res.profiles);
-      const online = res.profiles.filter((p) => p.status === 'online').length;
-      showToast('success', `Проверено ${res.profiles.length} узлов, онлайн ${online}`);
+      if (!options?.silent) {
+        const online = res.profiles.filter((p) => p.status === 'online').length;
+        showToast('success', `Проверено ${res.profiles.length} узлов, онлайн ${online}`);
+      }
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Ошибка массовой проверки');
+      if (!options?.silent) {
+        showToast('error', err instanceof Error ? err.message : 'Ошибка массовой проверки');
+      }
     } finally {
       setCheckingAll(false);
     }
@@ -416,6 +420,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       setProfiles(res.profiles);
       showToast('success', `Подписка загружена: ${res.imported} узлов`);
       setSubModalOpen(false);
+      // Сразу проверяем узлы — иначе список выглядит «мёртвым» с нулями.
+      if (res.imported > 0) void handleCheckAll({ silent: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить подписку';
       setSubError(message);
@@ -586,7 +592,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               size="md"
               loading={checkingAll}
               icon={<RefreshCw className="w-4 h-4" />}
-              onClick={handleCheckAll}
+              onClick={() => void handleCheckAll()}
             >
               Проверить все
             </Button>

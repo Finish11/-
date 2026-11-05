@@ -668,10 +668,10 @@ export function diagnoseScan(
       ? `Нейтральный интернет открыт (${global_ok_pct}% из ${globalItems.length} незаблокированных сайтов), белые списки не активны. Но ${dpiItems.length - Math.round((dpi_ok_pct / 100) * dpiItems.length)} заблокированных РКН сервисов не отвечают — значит работает ТСПУ/DPI.`
       : scenario === 'partial'
       ? interceptedTotal > 0
-        ? `Подмена ответа обнаружена на ${interceptedTotal} сайтах: заглушка или чужой TLS-сертификат не считаются работающим сервисом. Действительно открылись ${reachableTotal} из ${items.length}.`
+        ? `На ${interceptedTotal} сайтах пришла заглушка или чужой TLS-сертификат: они не считаются работающими. Действительно открылись ${reachableTotal} из ${items.length}.`
         : `Работает ${global_ok_pct}% незаблокированных сайтов и ${ru_ok_pct}% белого списка. Часть подсетей (Cloudflare, CDN) лежит — возможны региональные ограничения.`
       : opts.withVpn
-      ? `Через VPN-туннель открываются ${reachableTotal} из ${items.length} сайтов, включая сервисы из группы ограничений РКН (${dpi_ok_pct}%).${interceptedTotal ? ` Подмена ответа всё ещё заметна на ${interceptedTotal} сайтах.` : ''}`
+      ? `Через VPN-туннель открываются ${reachableTotal} из ${items.length} сайтов, включая сервисы из группы ограничений РКН (${dpi_ok_pct}%).${interceptedTotal ? ` Чужой ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
       : `Открываются ${reachableTotal} из ${items.length} сайтов, нейтральные ресурсы доступны на ${global_ok_pct}%. Признаков белых списков и глушения нет.`;
 
   return {

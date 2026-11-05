@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { diagnoseScan, evaluateScanVerdict } from '../src/lib/scanner.ts';
 import { parseSubscriptionText } from '../src/lib/subscriptionParser.ts';
+import { assessSiteContent } from '../src/lib/siteContent.ts';
+import { decodeStatePacket, encodeStatePacket, selectNewestState } from '../src/demo/stateStorage.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
 function site(id: number, role: Site['marker_role'] = 'global_neutral'): Site {
@@ -42,7 +44,7 @@ test('подмена TLS не считается открытым сайтом �
   const diagnosis = diagnoseScan(results, sites, { withVpn: false });
   assert.equal(diagnosis.global_ok_pct, 0);
   assert.equal(diagnosis.scenario, 'partial');
-  assert.match(diagnosis.details, /Подмена ответа/);
+  assert.match(diagnosis.details, /заглушка или чужой TLS-сертификат/);
   const verdict = evaluateScanVerdict(results, false, sites);
   assert.equal(verdict.verdict, 'SEVERE_RESTRICTIONS');
   assert.equal(verdict.ok_sites, 0);
@@ -152,4 +154,76 @@ test('inline Clash с вложенными картами разбирается
   assert.equal(parsed.nodes[0].name, 'DE 01');
   assert.match(parsed.nodes[0].raw_link, /path=%2Fsocket/);
   assert.match(parsed.nodes[0].raw_link, /host=cdn.example/);
+});
+
+test('ChatGPT с признаками настоящего приложения считается открытым', () => {
+  const assessment = assessSiteContent(
+    'https://chatgpt.com/',
+    '<html><head><title>ChatGPT</title><script src="https://cdn.oaistatic.com/app.js"></script></head></html>',
+    200
+  );
+  assert.equal(assessment.own, true);
+  assert.equal(assessment.intercepted, false);
+});
+
+test('проверка Cloudflare не считается работающим ChatGPT и не называется подменой', () => {
+  const assessment = assessSiteContent(
+    'https://chatgpt.com/',
+    '<html><title>Just a moment...</title><div>Verify you are human</div><script>cf-chl</script></html>',
+    403
+  );
+  assert.equal(assessment.own, false);
+  assert.equal(assessment.intercepted, false);
+  assert.match(assessment.reason || '', /проверку или отказ доступа/);
+});
+
+test('HTTP 403 не считается успехом даже при наличии ресурсов ChatGPT', () => {
+  const assessment = assessSiteContent(
+    'https://chatgpt.com/',
+    '<html><script src="https://cdn.oaistatic.com/app.js"></script></html>',
+    403
+  );
+  assert.equal(assessment.own, false);
+  assert.equal(assessment.intercepted, false);
+  assert.match(assessment.reason || '', /HTTP 403/);
+});
+
+test('посторонняя страница с названием ChatGPT не даёт ложный успех', () => {
+  const assessment = assessSiteContent(
+    'https://chatgpt.com/',
+    '<html><head><title>ChatGPT</title></head><body>VPN landing page</body></html>',
+    200
+  );
+  assert.equal(assessment.own, false);
+  assert.equal(assessment.intercepted, true);
+});
+
+test('заглушка оператора помечается как чужой ответ, а не как доступный сайт', () => {
+  const assessment = assessSiteContent(
+    'https://www.youtube.com/',
+    '<html>Доступ к ресурсу ограничен согласно требованиям законодательства</html>',
+    200
+  );
+  assert.equal(assessment.own, false);
+  assert.equal(assessment.intercepted, true);
+});
+
+test('при восстановлении выбирается самая свежая копия подписки', () => {
+  const older = encodeStatePacket({ subscriptions: [{ id: 1 }] }, new Date('2026-11-05T10:00:00Z'));
+  const newer = encodeStatePacket({ subscriptions: [{ id: 1 }, { id: 2 }] }, new Date('2026-11-05T12:00:00Z'));
+  const selected = selectNewestState<{ subscriptions: Array<{ id: number }> }>([
+    older,
+    newer,
+    '{broken json',
+  ]);
+  assert.equal(selected?.state.subscriptions.length, 2);
+  assert.equal(selected?.savedAtMs, new Date('2026-11-05T12:00:00Z').getTime());
+});
+
+test('старый формат состояния 1.5.x остаётся совместимым', () => {
+  const legacy = JSON.stringify({ subscriptions: [{ id: 7 }] });
+  const decoded = decodeStatePacket<{ subscriptions: Array<{ id: number }> }>(legacy);
+  assert.equal(decoded?.savedAtMs, 0);
+  assert.equal(decoded?.state.subscriptions[0].id, 7);
+  assert.equal(selectNewestState(['null', '{bad', legacy])?.savedAtMs, 0);
 });

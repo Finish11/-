@@ -1,5 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core';
 import { isNativeApp } from './nativeBridge';
+import { assessSiteContent } from './siteContent';
 
 /**
  * Проверка доступности сайта «по-настоящему».
@@ -36,38 +37,6 @@ export interface SiteProbeResult {
 const OK_MS = 1500;
 const SLOW_MS = 4000;
 
-/** Слова, которые встречаются только в заглушках провайдера/РКН. */
-const STUB_MARKERS = [
-  'доступ ограничен',
-  'доступ к ресурсу ограничен',
-  'запрещен',
-  'запрещён',
-  'блокиров',
-  'роскомнадзор',
-  'rkn.gov.ru',
-  'eais.rkn',
-  'zapret-info',
-  'данный ресурс',
-  'ресурс недоступен',
-  'site blocked',
-  'access denied by',
-  'согласно требованиям законодательства',
-];
-
-/** Признаки того, что ответил именно сайт, а не посредник. */
-const looksLikeOwnContent = (url: string, text: string): boolean => {
-  const lower = text.toLowerCase();
-  if (STUB_MARKERS.some((m) => lower.includes(m))) return false;
-
-  const isImage = /favicon\.(ico|png|svg)|\.(ico|png|jpg|jpeg|gif|webp)(\?|$)/i.test(url);
-  if (isImage) {
-    // Бинарную картинку нативный HTTP отдаёт как строку: она не должна быть HTML.
-    return text.trim().length > 0 && !/<!doctype|<html|<head/i.test(lower);
-  }
-  // У обычной страницы есть разметка; пустой ответ — подозрительно.
-  return text.trim().length > 0;
-};
-
 /** Разбираем текст ошибки в понятную причину. */
 const classifyError = (message: string): { verdict: ProbeVerdict; reason: string } => {
   const m = message.toLowerCase();
@@ -77,7 +46,7 @@ const classifyError = (message: string): { verdict: ProbeVerdict; reason: string
   if (
     /certificate|ssl|cert|handshake|tls|err_ssl|trust anchor|hostname/.test(m)
   ) {
-    return { verdict: 'intercepted', reason: 'подмена TLS-сертификата — вероятно DPI' };
+    return { verdict: 'intercepted', reason: 'TLS-сертификат не совпадает с сайтом — вероятно DPI' };
   }
   if (/reset|econnreset|connection closed|broken pipe|aborted|unexpected end/.test(m)) {
     return { verdict: 'blocked', reason: 'соединение сброшено (похоже на фильтрацию)' };
@@ -137,17 +106,19 @@ export async function probeSite(
     const text = typeof res.data === 'string' ? res.data : '';
     const finalUrl = (res as unknown as { url?: string }).url || url;
 
-    if (verifyContent && !looksLikeOwnContent(url, text)) {
+    const content = verifyContent ? assessSiteContent(url, text, res.status) : null;
+    if (content && !content.own) {
       return {
-        verdict: 'intercepted',
+        verdict: content.intercepted ? 'intercepted' : 'blocked',
         latencyMs: ms,
         httpStatus: res.status,
-        reason: 'ответила заглушка, а не сам сайт',
+        reason: content.reason || 'сайт не открыл своё содержимое',
         detail: text.replace(/\s+/g, ' ').trim().slice(0, 120),
       };
     }
 
-    // 4xx/5xx от самого сайта — это всё-таки ответ сайта (например, favicon отдаёт 404).
+    // Для остальных ресурсов 4xx/5xx от своего сервера — всё-таки его ответ
+    // (например, favicon отдаёт 404). У ChatGPT правило строже, см. siteContent.
     return {
       verdict: ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked',
       latencyMs: ms,

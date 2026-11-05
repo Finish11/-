@@ -10,6 +10,8 @@ import { importRealSubscription } from './realSubscription';
 import { encodeBase64 } from '../lib/base64';
 import { Preferences } from '@capacitor/preferences';
 import { pingNode } from '../lib/nodePing';
+import { readNativeStateFile, writeNativeStateFile } from '../lib/nativeStateStore';
+import { encodeStatePacket, selectNewestState } from './stateStorage';
 
 type Row = Record<string, any>;
 
@@ -79,31 +81,38 @@ let nextId = 100000;
 const genId = () => nextId++;
 
 /**
- * Автономные данные APK живут в Capacitor Preferences (SharedPreferences), а не
- * только в памяти WebView. Они переживают перезапуск и установку новой APK поверх.
- * localStorage — резерв и способ перенести состояние из ранних сборок.
+ * Автономные данные APK живут не только в памяти WebView. Используются три
+ * независимые копии: Capacitor Preferences, атомарный файл в filesDir и localStorage.
+ * При запуске выбирается самая свежая валидная. Все они переживают обновление APK
+ * поверх; при удалении приложения Android стирает их вместе с остальными данными.
  */
-async function readSavedState(): Promise<string | null> {
-  if (native) {
-    try {
-      const saved = await Preferences.get({ key: STATE_KEY });
-      if (saved.value) return saved.value;
-    } catch {
-      // ниже попробуем localStorage
-    }
-  }
+async function readSavedState(): Promise<{ state: Partial<DemoState>; savedAtMs: number } | null> {
+  let webCopy: string | null = null;
   try {
-    return localStorage.getItem(STATE_KEY);
+    webCopy = localStorage.getItem(STATE_KEY);
   } catch {
-    return null;
+    // Ниже остаются нативные копии.
   }
+  if (!native) return selectNewestState<Partial<DemoState>>([webCopy]);
+
+  // Читаем независимо: даже если Preferences повреждён или плагин не ответил,
+  // атомарный файл и WebView всё равно получат шанс восстановить подписку.
+  const [preferencesResult, fileResult] = await Promise.allSettled([
+    Preferences.get({ key: STATE_KEY }),
+    readNativeStateFile(),
+  ]);
+  const preferencesCopy = preferencesResult.status === 'fulfilled'
+    ? preferencesResult.value.value
+    : null;
+  const fileCopy = fileResult.status === 'fulfilled' ? fileResult.value : null;
+  return selectNewestState<Partial<DemoState>>([fileCopy, preferencesCopy, webCopy]);
 }
 
 async function restoreState(): Promise<void> {
-  const raw = await readSavedState();
-  if (!raw) return;
+  const packet = await readSavedState();
+  if (!packet) return;
   try {
-    const saved = JSON.parse(raw) as Partial<DemoState>;
+    const saved = packet.state;
     if (saved.user && typeof saved.user === 'object') state.user = saved.user;
     if (Array.isArray(saved.sites)) {
       // Новые адреса каталога появляются после обновления, пользовательские
@@ -127,18 +136,30 @@ async function restoreState(): Promise<void> {
 }
 
 async function persistState(): Promise<void> {
-  const raw = JSON.stringify(state);
+  const raw = encodeStatePacket(state);
+  let webSaved = false;
   try {
     localStorage.setItem(STATE_KEY, raw);
+    webSaved = true;
   } catch {
-    // Preferences ниже всё равно сохранит данные в APK.
+    // Ниже есть два независимых нативных хранилища.
   }
-  if (native) {
-    try {
-      await Preferences.set({ key: STATE_KEY, value: raw });
-    } catch {
-      // localStorage остаётся резервом.
-    }
+  if (!native) {
+    if (!webSaved) throw new Error('Не удалось сохранить данные в хранилище браузера');
+    return;
+  }
+
+  // Preferences и файл записываются параллельно. Достаточно одного успешного
+  // постоянного хранилища, но при следующем запуске выберется самая свежая копия.
+  const results = await Promise.allSettled([
+    Preferences.set({ key: STATE_KEY, value: raw }),
+    writeNativeStateFile(raw),
+  ]);
+  const nativeSaved = results.some((result) => result.status === 'fulfilled');
+  if (!nativeSaved && !webSaved) {
+    throw new Error(
+      'Android не разрешил сохранить данные ни в одном хранилище. Освободите место и повторите действие.'
+    );
   }
 }
 

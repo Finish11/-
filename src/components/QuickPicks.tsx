@@ -85,7 +85,7 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean): Visual {
     return {
       bg: 'rgb(var(--warning) / 0.1)',
       fg: 'rgb(var(--warning))',
-      label: 'подмена ответа',
+      label: 'чужой ответ',
       emojiBg: 'transparent',
     };
   }
@@ -93,7 +93,7 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean): Visual {
     return {
       bg: 'rgb(var(--danger) / 0.1)',
       fg: 'rgb(var(--danger))',
-      label: 'недоступен',
+      label: 'не открыт',
       emojiBg: 'transparent',
     };
   }
@@ -108,7 +108,7 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean): Visual {
   return {
     bg: 'rgb(var(--success) / 0.09)',
     fg: 'rgb(var(--success))',
-    label: 'работает',
+    label: 'сайт отвечает',
     emojiBg: 'transparent',
   };
 }

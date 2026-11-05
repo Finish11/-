@@ -41,6 +41,7 @@ import { isNativeApp } from '../lib/nativeBridge';
 import { pingAllNodes } from '../lib/nodePing';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
+import { ExpandableText } from './ui/ExpandableText';
 import {
   Button,
   Chip,
@@ -821,7 +822,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-[13.5px] font-bold truncate">{s.name}</h3>
+                        <ExpandableText text={s.name} className="text-[13.5px] font-bold w-full" />
                         <span
                           className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
                           style={{ background: 'var(--accent-soft)', color: 'rgb(var(--accent))' }}
@@ -984,6 +985,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               Как в подписке
             </Chip>
           </div>
+          <p className="text-[10px] text-muted">Длинное название узла раскрывается нажатием.</p>
         </div>
       )}
 
@@ -1171,9 +1173,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[12.5px] font-semibold truncate">
-                                  {stripLeadingFlag(p.name)}
-                                </span>
+                                <ExpandableText
+                                  text={stripLeadingFlag(p.name)}
+                                  className="text-[12.5px] font-semibold flex-1 leading-snug"
+                                />
                                 {Boolean(p.is_primary) && (
                                   <Star className="w-3 h-3 shrink-0" style={{ color: 'rgb(var(--accent))' }} />
                                 )}

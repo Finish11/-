@@ -75,7 +75,7 @@ const REASON_TEXT: Record<string, string> = {
   rkn: 'заблокирован по реестру — нужен VPN',
   whitelist: 'не в белом списке оператора',
   network: 'сеть не ответила: таймаут или сброс',
-  throttled: 'ответ подменён или замедлен — похоже на DPI',
+  throttled: 'не открыт: пришёл чужой ответ или работает ограничение DPI',
   unknown: 'нет ответа, причина не определена',
 };
 
@@ -159,7 +159,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const realLatestScan = latestScan && !latestScan.demo ? latestScan : null;
   const [activeScan, setActiveScan] = useState<ScanRecord | null>(realLatestScan);
 
-  const [siteFilter, setSiteFilter] = useState<'all' | 'intercepted' | 'ok' | SiteCategory>('all');
+  const [siteFilter, setSiteFilter] = useState<'all' | 'blocked' | 'ok' | SiteCategory>('all');
   const [copiedReport, setCopiedReport] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -486,7 +486,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       `• Ограничиваемые сервисы: ${activeScan.dpi_ok_pct}%`,
       `Средний отклик: ${activeScan.avg_latency_ms} мс`,
       ...(interceptedCount > 0
-        ? [`Подмена ответа (заглушка/чужой сертификат): ${interceptedCount} сайтов`]
+        ? [`Не открылись из-за заглушки или чужого сертификата: ${interceptedCount} сайтов`]
         : []),
       ...(blockedWithReason.length > 0
         ? [
@@ -526,7 +526,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const filteredResults = displayedResults.filter((r) => {
     if (siteFilter === 'all') return true;
-    if (siteFilter === 'intercepted') return Boolean(r.intercepted);
+    if (siteFilter === 'blocked') return r.status === 'blocked' || Boolean(r.intercepted);
     if (siteFilter === 'ok') return !r.intercepted && (r.status === 'ok' || r.status === 'slow');
     return r.category === siteFilter;
   });
@@ -885,10 +885,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 ответили {activeScan.ok_sites + activeScan.slow_sites} из {activeScan.total_sites}
               </span>
               {activeScan.slow_sites > 0 && <span>медленно {activeScan.slow_sites}</span>}
-              <span>не ответили {activeScan.blocked_sites}</span>
+              <span>не открылись {activeScan.blocked_sites}</span>
               {displayedResults.filter((r) => r.intercepted).length > 0 && (
                 <span style={{ color: 'rgb(var(--warning))' }}>
-                  подмена ответа {displayedResults.filter((r) => r.intercepted).length}
+                  чужой ответ {displayedResults.filter((r) => r.intercepted).length}
                 </span>
               )}
               <span>средний отклик {activeScan.avg_latency_ms} мс</span>
@@ -1109,9 +1109,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
               Доступны {displayedResults.filter((r) => !r.intercepted && (r.status === 'ok' || r.status === 'slow')).length}
             </Chip>
-            <Chip active={siteFilter === 'intercepted'} onClick={() => setSiteFilter('intercepted')}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--warning))' }} />
-              Подмена {displayedResults.filter((r) => r.intercepted).length}
+            <Chip active={siteFilter === 'blocked'} onClick={() => setSiteFilter('blocked')}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
+              Не открылись {blockedCount}
             </Chip>
             {(Object.keys(CATEGORY_META) as SiteCategory[])
               .filter((c) => displayedResults.some((r) => r.category === c))
@@ -1153,20 +1153,19 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                           className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
                           style={{ background: 'rgb(var(--warning) / 0.16)', color: 'rgb(var(--warning))' }}
                         >
-                          подмена
+                          чужой ответ
                         </span>
                       )}
                     </div>
-                    <div className="text-[10.5px] font-mono text-muted truncate">
-                      {item.domain}
-                      {item.note ? ` · ${item.note}` : ''}
-                    </div>
-                    {/* Причина отказа — в понятных словах, без домена и «мс» */}
-                    {item.status === 'blocked' && item.block_reason && (
-                      <div className="text-[10px] text-muted mt-0.5 truncate">
+                    <div className="text-[10.5px] font-mono text-muted truncate">{item.domain}</div>
+                    {/* Конкретная причина важнее общей категории: её нельзя обрезать. */}
+                    {item.note ? (
+                      <div className="text-[10px] text-dim mt-0.5 leading-snug break-words">{item.note}</div>
+                    ) : item.status === 'blocked' && item.block_reason ? (
+                      <div className="text-[10px] text-muted mt-0.5 leading-snug">
                         {REASON_TEXT[item.block_reason] || 'нет ответа'}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                   <span
                     className="text-[11.5px] font-mono font-semibold shrink-0"
@@ -1179,7 +1178,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                           : 'rgb(var(--danger))',
                     }}
                   >
-                    {item.latency_ms != null ? `${item.latency_ms} мс` : 'нет ответа'}
+                    {item.latency_ms != null ? `${item.latency_ms} мс` : 'не открыт'}
                   </span>
                 </div>
               );

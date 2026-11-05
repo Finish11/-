@@ -12,6 +12,13 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 
+import androidx.core.util.AtomicFile;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 
@@ -192,6 +199,75 @@ public class ApkUpdaterPlugin extends Plugin {
             ret.put("vpn", false);
             call.resolve(ret);
         }
+    }
+
+    private File stateFile() {
+        return new File(getContext().getFilesDir(), "pulsenet-state-v1.json");
+    }
+
+    /** Читает независимую резервную копию состояния из внутренней памяти приложения. */
+    @PluginMethod
+    public void stateRead(PluginCall call) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                FileInputStream input = null;
+                try {
+                    File file = stateFile();
+                    JSObject ret = new JSObject();
+                    ret.put("exists", file.exists());
+                    if (!file.exists()) {
+                        ret.put("value", "");
+                        call.resolve(ret);
+                        return;
+                    }
+                    input = new FileInputStream(file);
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    ret.put("value", output.toString("UTF-8"));
+                    call.resolve(ret);
+                } catch (Exception e) {
+                    call.reject("Не удалось прочитать резервную копию: " + e.getMessage());
+                } finally {
+                    if (input != null) {
+                        try { input.close(); } catch (Exception ignored) { }
+                    }
+                }
+            }
+        }, "pulsenet-state-read").start();
+    }
+
+    /** Атомарно сохраняет состояние: обрыв записи не портит предыдущую копию. */
+    @PluginMethod
+    public void stateWrite(PluginCall call) {
+        final String value = call.getString("value");
+        if (value == null) {
+            call.reject("Не передано состояние для сохранения");
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                AtomicFile atomic = new AtomicFile(stateFile());
+                FileOutputStream output = null;
+                try {
+                    output = atomic.startWrite();
+                    output.write(value.getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                    atomic.finishWrite(output);
+                    output = null;
+                    JSObject ret = new JSObject();
+                    ret.put("ok", true);
+                    ret.put("bytes", value.getBytes(StandardCharsets.UTF_8).length);
+                    call.resolve(ret);
+                } catch (Exception e) {
+                    if (output != null) atomic.failWrite(output);
+                    call.reject("Не удалось сохранить резервную копию: " + e.getMessage());
+                }
+            }
+        }, "pulsenet-state-write").start();
     }
 
     /**

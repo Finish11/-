@@ -36,6 +36,7 @@ import { apiFetch } from '../lib/api';
 import { isNativeApp } from '../lib/nativeBridge';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { Sheet } from './ui/Sheet';
+import { ConfirmSheet } from './ui/ConfirmSheet';
 import {
   Button,
   Chip,
@@ -198,6 +199,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
 
   // ---------- QR ----------
   const [qrNode, setQrNode] = useState<VpnProfile | null>(null);
+  // Подтверждение удаления: на телефоне один промах не должен сносить узлы
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: 'node'; node: VpnProfile } | { kind: 'sub'; sub: VpnSubscription } | null
+  >(null);
   const [qrValue, setQrValue] = useState<string>('');
   const [qrLoading, setQrLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -754,7 +759,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDeleteSubscription(s)}
+                        onClick={() => setPendingDelete({ kind: 'sub', sub: s })}
                         className="p-2 rounded-lg text-dim hover:text-[rgb(var(--danger))] tap"
                         title="Удалить подписку"
                       >
@@ -990,7 +995,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                             />
                             <IconAction
                               title="Удалить"
-                              onClick={() => handleDelete(p)}
+                              onClick={() => setPendingDelete({ kind: 'node', node: p })}
                               icon={<Trash2 className="w-3.5 h-3.5" />}
                               danger
                             />
@@ -1214,6 +1219,29 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           )}
         </div>
       </Sheet>
+
+
+      {/* ================= ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ================= */}
+      <ConfirmSheet
+        open={pendingDelete !== null}
+        title={pendingDelete?.kind === 'sub' ? 'Удалить подписку?' : 'Удалить узел?'}
+        text={
+          pendingDelete?.kind === 'sub'
+            ? `«${pendingDelete.sub.name}» и все её узлы исчезнут из списка. Ссылку подписки можно будет добавить заново.`
+            : pendingDelete?.kind === 'node'
+            ? `«${stripLeadingFlag(pendingDelete.node.name)}» пропадёт из списка.`
+            : ''
+        }
+        confirmLabel="Удалить"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (!target) return;
+          if (target.kind === 'sub') void handleDeleteSubscription(target.sub);
+          else void handleDelete(target.node);
+        }}
+      />
 
       {/* ================= УЗЕЛ ВРУЧНУЮ ================= */}
       <Sheet

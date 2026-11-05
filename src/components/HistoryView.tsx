@@ -3,6 +3,7 @@ import { History, Bookmark, Pencil, Trash2, Eye, Radar, Check, Search } from 'lu
 import type { ScanRecord } from '../types';
 import { apiFetch } from '../lib/api';
 import { Sheet } from './ui/Sheet';
+import { ConfirmSheet } from './ui/ConfirmSheet';
 import { Button, EmptyState, StatusIcon } from './ui/kit';
 
 interface HistoryViewProps {
@@ -50,6 +51,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<ScanRecord | null>(null);
 
   const inputStyle: React.CSSProperties = {
     background: 'var(--surface-2)',
@@ -321,7 +323,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDelete(scan)}
+                        onClick={() => setPendingDelete(scan)}
                         title="Удалить"
                         className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--danger))]"
                       >
@@ -335,6 +337,22 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           </div>
         </>
       )}
+
+      <ConfirmSheet
+        open={pendingDelete !== null}
+        title="Удалить замер?"
+        text={
+          pendingDelete
+            ? `Запись от ${new Date(pendingDelete.created_at).toLocaleString('ru-RU')} исчезнет из истории и с графика.`
+            : ''
+        }
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void handleDelete(target);
+        }}
+      />
 
       {/* Детали замера */}
       <Sheet

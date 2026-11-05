@@ -20,6 +20,7 @@ import {
 } from '../types';
 import { apiFetch } from '../lib/api';
 import { Sheet } from './ui/Sheet';
+import { ConfirmSheet } from './ui/ConfirmSheet';
 import { Button, Chip, EmptyState } from './ui/kit';
 
 interface IncidentsViewProps {
@@ -72,6 +73,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [ruSitesOk, setRuSitesOk] = useState(true);
   const [foreignSitesOk, setForeignSitesOk] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Incident | null>(null);
 
   const inputStyle: React.CSSProperties = {
     background: 'var(--surface-2)',
@@ -429,7 +431,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDelete(inc)}
+                        onClick={() => setPendingDelete(inc)}
                         title="Удалить"
                         className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--danger))]"
                       >
@@ -443,6 +445,22 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           })}
         </div>
       )}
+
+      <ConfirmSheet
+        open={pendingDelete !== null}
+        title="Удалить отчёт?"
+        text={
+          pendingDelete
+            ? `«${pendingDelete.title}» пропадёт из региональной сводки. Отменить это не получится.`
+            : ''
+        }
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void handleDelete(target);
+        }}
+      />
 
       <Sheet
         open={modalOpen}

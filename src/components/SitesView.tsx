@@ -19,6 +19,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { probeSingleSite } from '../lib/scanner';
 import { Sheet } from './ui/Sheet';
+import { ConfirmSheet } from './ui/ConfirmSheet';
 import { Button, Chip, EmptyState, SectionTitle, StatusIcon } from './ui/kit';
 
 interface SitesViewProps {
@@ -45,6 +46,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
   const [formMarkerRole, setFormMarkerRole] = useState<MarkerRole>('global_neutral');
   const [formDesc, setFormDesc] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Site | null>(null);
 
   const inputStyle: React.CSSProperties = {
     background: 'var(--surface-2)',
@@ -446,7 +448,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDeleteSite(site)}
+                        onClick={() => setPendingDelete(site)}
                         title="Удалить"
                         className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--danger))]"
                       >
@@ -460,6 +462,22 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
           })}
         </div>
       )}
+
+      <ConfirmSheet
+        open={pendingDelete !== null}
+        title="Удалить сайт?"
+        text={
+          pendingDelete
+            ? `«${pendingDelete.name}» (${pendingDelete.domain}) больше не будет участвовать в замерах. Вернуть его можно кнопкой «Вернуть базу» или добавив заново.`
+            : ''
+        }
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void handleDeleteSite(target);
+        }}
+      />
 
       {/* ---------- Модалка сайта ---------- */}
       <Sheet

@@ -120,10 +120,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete apk-build-log --yes --cleanup-tag > /dev/null 2>&1 || true
-          gh release create apk-build-log android/gradle.log \
+          gh release create apk-build-log \
             --target "${GITHUB_SHA}" \
             --title "Диагностика Gradle ${GITHUB_SHA::7}" \
-            --notes "Временный лог неуспешной сборки ${GITHUB_SHA}. После разбора удаляется." \
+            --notes-file android/gradle.log \
             --prerelease
 
       - name: Переименовать APK

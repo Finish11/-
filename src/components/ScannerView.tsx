@@ -73,6 +73,14 @@ interface ScannerViewProps {
 
 type Phase = 'idle' | 'precheck' | 'vpn_prompt' | 'waiting_vpn_off' | 'scanning' | 'done';
 
+const REASON_TEXT: Record<string, string> = {
+  rkn: 'заблокирован по реестру — нужен VPN',
+  whitelist: 'не в белом списке оператора',
+  network: 'сеть не ответила: таймаут или сброс',
+  throttled: 'ответ подменён или замедлен — похоже на DPI',
+  unknown: 'нет ответа, причина не определена',
+};
+
 const VERDICT_META = {
   WHITELIST_ACTIVE: {
     label: 'Белые списки',
@@ -1137,6 +1145,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                       {item.domain}
                       {item.note ? ` · ${item.note}` : ''}
                     </div>
+                    {/* Причина отказа — в понятных словах, без домена и «мс» */}
+                    {item.status === 'blocked' && item.block_reason && (
+                      <div className="text-[10px] text-muted mt-0.5 truncate">
+                        {REASON_TEXT[item.block_reason] || 'нет ответа'}
+                      </div>
+                    )}
                   </div>
                   <span
                     className="text-[11.5px] font-mono font-semibold shrink-0"

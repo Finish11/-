@@ -452,6 +452,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const reportText = useMemo(() => {
     if (!activeScan) return '';
+    const scanResults = activeScan.results || [];
+    const interceptedCount = scanResults.filter((r) => r.intercepted).length;
+    // В отчёт попадают только те отказы, где известна причина, и не больше десяти строк.
+    const blockedWithReason = scanResults
+      .filter((r) => r.status === 'blocked' && r.note)
+      .slice(0, 10)
+      .map((r) => ({ name: r.name, note: r.note as string }));
     const emoji =
       activeScan.verdict === 'WHITELIST_ACTIVE'
         ? '🔴'
@@ -472,6 +479,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       `• Нейтральные сайты: ${activeScan.global_ok_pct}%`,
       `• Заблокированы РКН: ${activeScan.dpi_ok_pct}%`,
       `Средний отклик: ${activeScan.avg_latency_ms} мс`,
+      ...(interceptedCount > 0
+        ? [`Подмена ответа (заглушка/чужой сертификат): ${interceptedCount} сайтов`]
+        : []),
+      ...(blockedWithReason.length > 0
+        ? [
+            'Не открылись:',
+            ...blockedWithReason.map((r) => `  ${r.name} — ${r.note}`),
+          ]
+        : []),
       `Время: ${new Date(activeScan.created_at).toLocaleString('ru-RU')}`,
     ].join('\n');
   }, [activeScan]);

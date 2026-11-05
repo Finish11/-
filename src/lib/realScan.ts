@@ -43,7 +43,30 @@ export async function runRealSiteScan(
 
   // Контрольная проба: без неё «всё недоступно» может означать просто «нет сети».
   // Контрольные адреса проверяются параллельно, а не по 5 секунд каждый.
-  const controlOk = await probeControl(Math.min(timeoutMs, 3500));
+  let controlOk = await probeControl(Math.min(timeoutMs, 3500));
+  const recoveredProbes = new Map<number, Awaited<ReturnType<typeof probeSite>>>();
+
+  if (!controlOk && !abortSignal?.aborted && enabled.length > 0) {
+    // Четыре контрольных адреса тоже могут быть заблокированы, хотя остальная
+    // сеть работает. Прежде чем объявить интернет мёртвым, проверяем по два
+    // представителя каждой группы. Успешные пробы попадут в общий результат.
+    const representatives = [
+      'ru_whitelist',
+      'global_neutral',
+      'dpi_target',
+    ].flatMap((role) => enabled.filter((site) => site.marker_role === role).slice(0, 2));
+    const fallbackSites = representatives.length > 0 ? representatives : enabled.slice(0, 6);
+    const recovery = await mapLimit(fallbackSites, 6, async (site) => ({
+      site,
+      probe: await probeSite(site.probe_url || `https://${site.domain}/favicon.ico`, { timeoutMs }),
+    }));
+    for (const { site, probe } of recovery) {
+      if (probe.verdict !== 'blocked') {
+        controlOk = true;
+        recoveredProbes.set(site.id, probe);
+      }
+    }
+  }
 
   // 32 запроса одновременно: на 75 сайтах не остаётся длинного «хвоста»
   // после первых быстрых ответов, но мобильная сеть не забивается 75 сокетами.
@@ -77,7 +100,7 @@ export async function runRealSiteScan(
       };
     } else {
       const probeUrl = site.probe_url || `https://${site.domain}/favicon.ico`;
-      let probe = await probeSite(probeUrl, { timeoutMs });
+      let probe = recoveredProbes.get(site.id) || await probeSite(probeUrl, { timeoutMs });
 
       // Один таймаут — не приговор: на мобильной сети пакет теряется просто так.
       // Повторяем только таймаут, коротким вторым запросом. DNS/сброс и

@@ -15,6 +15,9 @@ export interface RealSubscription {
   trafficTotal: number;
   expiresOn: string | null;
   rawText: string;
+  sourceCandidates: number;
+  duplicatesRemoved: number;
+  unrecognized: number;
   /** Каким клиентом удалось получить подписку — полезно в диагностике. */
   via?: string;
 }
@@ -185,6 +188,12 @@ export async function importRealSubscription(rawUrl: string): Promise<RealSubscr
     trafficTotal: info.total,
     expiresOn: info.expires_on,
     rawText: text,
+    sourceCandidates: parsed.source_candidates,
+    duplicatesRemoved: parsed.duplicates_removed,
+    unrecognized: Math.max(
+      0,
+      parsed.source_candidates - parsed.nodes.length - parsed.duplicates_removed
+    ),
     via,
   };
 }

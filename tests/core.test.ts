@@ -83,3 +83,73 @@ test('sing-box VLESS сохраняет flow в экспортируемой с�
   assert.equal(parsed.nodes.length, 1);
   assert.match(parsed.nodes[0].raw_link, /flow=xtls-rprx-vision/);
 });
+
+test('статистика импорта отделяет копии от нераспознанных ссылок', () => {
+  const one = 'vless://00000000-0000-4000-8000-000000000001@one.example:443#DE 01';
+  const two = 'trojan://secret@two.example:443#FI 01';
+  const parsed = parseSubscriptionText([
+    one,
+    one,
+    two,
+    'anytls://secret@unknown-one.example:443',
+    'naive://secret@unknown-two.example:443',
+  ].join('\n'));
+  assert.equal(parsed.nodes.length, 2);
+  assert.equal(parsed.source_candidates, 5);
+  assert.equal(parsed.duplicates_removed, 1);
+  assert.equal(parsed.source_candidates - parsed.nodes.length - parsed.duplicates_removed, 2);
+  assert.equal(parsed.nodes[0].name, 'DE 01');
+});
+
+test('Clash сохраняет UUID, Reality и не теряет разные узлы на одном адресе', () => {
+  const config = `proxies:
+  - name: Одинаковый
+    type: vless
+    server: same.example
+    port: 443
+    uuid: 00000000-0000-4000-8000-000000000001
+    network: ws
+    servername: mask.example
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: key-one
+      short-id: ab
+    ws-opts:
+      path: /one
+      headers:
+        Host: cdn.example
+  - name: Одинаковый
+    type: vless
+    server: same.example
+    port: 443
+    uuid: 00000000-0000-4000-8000-000000000002
+    network: ws
+    servername: mask.example
+    reality-opts:
+      public-key: key-two
+      short-id: cd
+    ws-opts:
+      path: /two
+`;
+  const parsed = parseSubscriptionText(config);
+  assert.equal(parsed.format, 'clash');
+  assert.equal(parsed.nodes.length, 2);
+  assert.match(parsed.nodes[0].raw_link, /000000000001/);
+  assert.match(parsed.nodes[0].raw_link, /pbk=key-one/);
+  assert.match(parsed.nodes[0].raw_link, /type=ws/);
+  assert.match(parsed.nodes[0].raw_link, /path=%2Fone/);
+  assert.match(parsed.nodes[0].raw_link, /host=cdn.example/);
+  assert.match(parsed.nodes[1].raw_link, /000000000002/);
+  assert.match(parsed.nodes[1].raw_link, /pbk=key-two/);
+});
+
+test('inline Clash с вложенными картами разбирается без потери WS-параметров', () => {
+  const config = `proxies:
+  - {name: "DE 01", type: vless, server: de.example, port: 443, uuid: 00000000-0000-4000-8000-000000000003, network: ws, tls: true, servername: mask.example, ws-opts: {path: "/socket", headers: {Host: "cdn.example"}}}
+`;
+  const parsed = parseSubscriptionText(config);
+  assert.equal(parsed.nodes.length, 1);
+  assert.equal(parsed.nodes[0].name, 'DE 01');
+  assert.match(parsed.nodes[0].raw_link, /path=%2Fsocket/);
+  assert.match(parsed.nodes[0].raw_link, /host=cdn.example/);
+});

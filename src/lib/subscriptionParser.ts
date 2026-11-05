@@ -38,6 +38,14 @@ export interface ParsedNode {
   group_name: string;
 }
 
+export interface SubscriptionParseResult {
+  nodes: ParsedNode[];
+  format: 'base64' | 'plain' | 'json' | 'clash';
+  /** Сколько записей-кандидатов увидели до разбора и удаления копий. */
+  source_candidates: number;
+  duplicates_removed: number;
+}
+
 export interface SubscriptionPayload {
   nodes: ParsedNode[];
   format: 'base64' | 'plain' | 'json' | 'clash';
@@ -452,6 +460,7 @@ interface YamlProxy {
   type: string;
   server: string;
   port: number;
+  fields: Record<string, string>;
   raw: string;
 }
 
@@ -471,10 +480,15 @@ function parseInlineMap(text: string): Record<string, string> {
   const parts: string[] = [];
   let current = '';
   let quote: string | null = null;
+  let escaped = false;
+  let braceDepth = 0;
+  let bracketDepth = 0;
   for (const ch of body) {
     if (quote) {
       current += ch;
-      if (ch === quote) quote = null;
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = null;
       continue;
     }
     if (ch === '"' || ch === "'") {
@@ -482,7 +496,11 @@ function parseInlineMap(text: string): Record<string, string> {
       current += ch;
       continue;
     }
-    if (ch === ',') {
+    if (ch === '{') braceDepth += 1;
+    else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+    else if (ch === '[') bracketDepth += 1;
+    else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+    if (ch === ',' && braceDepth === 0 && bracketDepth === 0) {
       parts.push(current);
       current = '';
       continue;
@@ -518,6 +536,7 @@ function extractProxies(yaml: string): YamlProxy[] {
         type: (f.type || '').toLowerCase(),
         server: f.server,
         port: Number(f.port) || 443,
+        fields: { ...f },
         raw: current.lines.join('\n'),
       });
     }
@@ -578,27 +597,67 @@ function extractProxies(yaml: string): YamlProxy[] {
   return proxies;
 }
 
+function yamlValue(proxy: YamlProxy, ...keys: string[]): string {
+  for (const key of keys) {
+    const direct = proxy.fields[key];
+    if (direct) return unquote(direct);
+    // Для inline-вложенности {reality-opts: {public-key: ...}} значение
+    // не становится отдельным полем, поэтому читаем его из исходного блока.
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const hit = proxy.raw.match(new RegExp(`${escaped}\\s*:\\s*["']?([^,}\\n"']+)`, 'i'));
+    if (hit?.[1]) return unquote(hit[1]);
+  }
+  return '';
+}
+
 export function parseClashYaml(text: string, groupName: string): ParsedNode[] {
   const nodes: ParsedNode[] = [];
   for (const proxy of extractProxies(text)) {
-    const { type, raw } = proxy;
-    let protocol: string | null = null;
-    if (type === 'vless') protocol = /reality-opts|reality/i.test(raw) ? 'vless-reality' : 'vless';
-    else if (type === 'vmess') protocol = 'vmess';
-    else if (type === 'trojan') protocol = 'trojan';
-    else if (type === 'ss' || type === 'shadowsocks') protocol = 'shadowsocks';
-    else if (type === 'hysteria2' || type === 'hysteria') protocol = 'hysteria2';
-    else if (type === 'tuic') protocol = 'tuic';
-    else if (type === 'wireguard' || type === 'wg') protocol = 'wireguard';
-    else if (type === 'socks5' || type === 'socks') protocol = 'socks';
-    else if (type === 'http') protocol = 'http';
-    // Остальные типы (direct, reject, selector, url-test) — не узлы
-    if (!protocol) continue;
+    const type = proxy.type === 'ss'
+      ? 'shadowsocks'
+      : proxy.type === 'wg'
+      ? 'wireguard'
+      : proxy.type === 'socks5'
+      ? 'socks'
+      : proxy.type;
+    const realityKey = yamlValue(proxy, 'public-key', 'publicKey');
+    const realityShortId = yamlValue(proxy, 'short-id', 'shortId');
+    const hasReality = /reality-opts|\breality\s*:/i.test(proxy.raw) || Boolean(realityKey);
+    const tlsEnabled = hasReality || /\btls\s*:\s*true\b/i.test(proxy.raw);
+    const sni = yamlValue(proxy, 'servername', 'sni', 'server_name');
+    const network = yamlValue(proxy, 'network') || undefined;
+    const transport = network
+      ? {
+          type: network,
+          path: yamlValue(proxy, 'path') || undefined,
+          serviceName: yamlValue(proxy, 'grpc-service-name', 'serviceName', 'service-name') || undefined,
+          headers: { Host: yamlValue(proxy, 'host') || undefined },
+        }
+      : undefined;
 
-    const node = buildNode(protocol, proxy.name, proxy.server, proxy.port, groupName, '', {
-      transport: (proxy as unknown as { network?: string }).network,
-      sni: (proxy as unknown as { servername?: string }).servername,
-    });
+    // Приводим Clash к структуре sing-box и используем общий экспорт share-link.
+    // Раньше raw_link был пустым: терялись UUID, Reality-ключи и WS/gRPC-параметры,
+    // а разные узлы с одним адресом могли схлопнуться при дедупликации.
+    const normalized: Record<string, unknown> = {
+      ...proxy.fields,
+      name: proxy.name,
+      type,
+      server: proxy.server,
+      port: proxy.port,
+      network,
+      transport,
+    };
+    if (tlsEnabled) {
+      normalized.tls = {
+        enabled: true,
+        server_name: sni || undefined,
+        reality: hasReality
+          ? { public_key: realityKey || undefined, short_id: realityShortId || undefined }
+          : undefined,
+      };
+    }
+
+    const node = nodeFromJsonProxy(normalized, groupName);
     if (node) nodes.push(node);
   }
   return nodes;
@@ -646,6 +705,21 @@ function buildRawLink(
   const params = new URLSearchParams();
   if (sni) params.set('sni', sni);
   if (net && net !== 'tcp') params.set('type', net);
+  if (net === 'ws') {
+    const headers = (transport.headers && typeof transport.headers === 'object'
+      ? transport.headers
+      : {}) as Record<string, unknown>;
+    const path = firstString(transport.path);
+    const host = firstString(headers.Host, headers.host, transport.host);
+    if (path) params.set('path', path);
+    if (host) params.set('host', host);
+  }
+  if (net === 'grpc') {
+    const serviceName = firstString(transport.serviceName, transport.service_name);
+    if (serviceName) params.set('serviceName', serviceName);
+  }
+  const fingerprint = firstString(ob['client-fingerprint'], ob.fp);
+  if (fingerprint) params.set('fp', fingerprint);
   if (tlsEnabled) params.set('security', 'tls');
 
   const reality = (tls.reality || ob['reality-opts'] || null) as Record<string, unknown> | null;
@@ -803,6 +877,20 @@ function dedupe(nodes: ParsedNode[]): ParsedNode[] {
   return Array.from(seen.values());
 }
 
+function finishParse(
+  nodes: ParsedNode[],
+  format: SubscriptionParseResult['format'],
+  sourceCandidates = nodes.length
+): SubscriptionParseResult {
+  const unique = dedupe(nodes);
+  return {
+    nodes: unique,
+    format,
+    source_candidates: Math.max(sourceCandidates, nodes.length),
+    duplicates_removed: nodes.length - unique.length,
+  };
+}
+
 /* ============================================================================
    Точка входа
    ========================================================================== */
@@ -814,17 +902,29 @@ function collectLinks(text: string): string[] {
     .filter((l) => /^[a-z][a-z0-9+.-]*:\/\//i.test(l));
 }
 
-function parseLinkList(text: string, groupName: string): ParsedNode[] {
+function parseLinkList(
+  text: string,
+  groupName: string
+): { nodes: ParsedNode[]; candidates: number } {
   const nodes: ParsedNode[] = [];
+  let candidates = 0;
   for (const link of collectLinks(text)) {
-    // В одной строке иногда несколько ссылок через пробел
-    const parts = link.includes(' ') ? link.split(/\s+/) : [link];
+    // Не разбиваем единственную ссылку по пробелам: в fragment бывает имя
+    // «NL 01» без percent-encoding. Несколько ссылок в строке отделяем по
+    // следующему scheme://, а не по каждому пробелу.
+    const starts = [...link.matchAll(/[a-z][a-z0-9+.-]*:\/\//gi)]
+      .map((hit) => hit.index)
+      .filter((index): index is number => typeof index === 'number');
+    const parts = starts.length <= 1
+      ? [link]
+      : starts.map((start, index) => link.slice(start, starts[index + 1]).trim());
     for (const part of parts) {
+      candidates += 1;
       const node = parseShareLink(part, groupName);
       if (node) nodes.push(node);
     }
   }
-  return nodes;
+  return { nodes, candidates };
 }
 
 /** JSON-массив строк-ссылок или объектов со ссылкой. */
@@ -860,9 +960,9 @@ function tryParseJson(body: string, groupName: string): { nodes: ParsedNode[]; o
     const json = JSON.parse(body) as unknown;
     const collected: ParsedNode[] = [];
     deepCollectNodes(json, groupName, collected);
-    if (collected.length > 0) return { nodes: dedupe(collected), ok: true };
+    if (collected.length > 0) return { nodes: collected, ok: true };
     const fromLinks = nodesFromJsonLinkList(json, groupName);
-    if (fromLinks.length > 0) return { nodes: dedupe(fromLinks), ok: true };
+    if (fromLinks.length > 0) return { nodes: fromLinks, ok: true };
     return { nodes: [], ok: true };
   } catch {
     return { nodes: [], ok: false };
@@ -873,29 +973,28 @@ export function parseSubscriptionText(
   text: string,
   groupName = '',
   formatHint?: 'base64' | 'plain' | 'json' | 'clash'
-): { nodes: ParsedNode[]; format: 'base64' | 'plain' | 'json' | 'clash' } {
+): SubscriptionParseResult {
   const trimmed = (text || '').trim();
-  if (!trimmed) return { nodes: [], format: 'plain' };
+  if (!trimmed) return finishParse([], 'plain', 0);
 
   // 1. Clash / mihomo YAML
   if (formatHint === 'clash' || /^\s*proxies\s*:/m.test(trimmed) || /^\s*proxy-groups\s*:/m.test(trimmed)) {
     const nodes = parseClashYaml(trimmed, groupName);
-    if (nodes.length > 0) return { nodes: dedupe(nodes), format: 'clash' };
+    if (nodes.length > 0) return finishParse(nodes, 'clash', extractProxies(trimmed).length);
   }
 
   // 2. JSON
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     const parsed = tryParseJson(trimmed, groupName);
-    if (parsed.nodes.length > 0) return { nodes: parsed.nodes, format: 'json' };
+    if (parsed.nodes.length > 0) return finishParse(parsed.nodes, 'json');
   }
 
   // 3. Открытый список ссылок
-  const plainNodes = parseLinkList(trimmed, groupName);
-  if (plainNodes.length > 0) return { nodes: dedupe(plainNodes), format: 'plain' };
+  const plain = parseLinkList(trimmed, groupName);
+  if (plain.nodes.length > 0) return finishParse(plain.nodes, 'plain', plain.candidates);
 
   // 4. base64 (возможна двойная упаковка — панели иногда кодируют дважды)
   let body = trimmed;
-  let format: 'base64' | 'plain' = 'base64';
   let decodedAny = false;
 
   for (let round = 0; round < 2; round += 1) {
@@ -905,21 +1004,23 @@ export function parseSubscriptionText(
     decodedAny = true;
     body = decoded.trim();
 
-    const linkNodes = parseLinkList(body, groupName);
-    if (linkNodes.length > 0) return { nodes: dedupe(linkNodes), format: 'base64' };
+    const links = parseLinkList(body, groupName);
+    if (links.nodes.length > 0) return finishParse(links.nodes, 'base64', links.candidates);
 
     if (/^\s*proxies\s*:/m.test(body)) {
       const clashNodes = parseClashYaml(body, groupName);
-      if (clashNodes.length > 0) return { nodes: dedupe(clashNodes), format: 'clash' };
+      if (clashNodes.length > 0) {
+        return finishParse(clashNodes, 'clash', extractProxies(body).length);
+      }
     }
 
     if (body.startsWith('{') || body.startsWith('[')) {
       const parsed = tryParseJson(body, groupName);
-      if (parsed.nodes.length > 0) return { nodes: parsed.nodes, format: 'json' };
+      if (parsed.nodes.length > 0) return finishParse(parsed.nodes, 'json');
     }
   }
 
-  return { nodes: [], format: decodedAny ? format : 'plain' };
+  return finishParse([], decodedAny ? 'base64' : 'plain', 0);
 }
 
 export function parseUserInfoHeader(value: string | null): {

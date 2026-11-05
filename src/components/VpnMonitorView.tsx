@@ -521,7 +521,13 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     setImportingLinks(true);
     setSubError(null);
     try {
-      const res = await apiFetch<{ imported: number; profiles: VpnProfile[] }>(
+      const res = await apiFetch<{
+        imported: number;
+        profiles: VpnProfile[];
+        source_candidates?: number;
+        duplicates_removed?: number;
+        unrecognized?: number;
+      }>(
         '/api/vpn-profiles/import',
         {
           method: 'POST',
@@ -529,7 +535,14 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         }
       );
       setProfiles(res.profiles);
-      showToast('success', `Импортировано узлов: ${res.imported}`);
+      const importNotes = [
+        res.duplicates_removed ? `копий удалено: ${res.duplicates_removed}` : '',
+        res.unrecognized ? `не распознано: ${res.unrecognized}` : '',
+      ].filter(Boolean);
+      showToast(
+        res.unrecognized ? 'warning' : 'success',
+        `Импортировано узлов: ${res.imported}${importNotes.length ? ` · ${importNotes.join(' · ')}` : ''}`
+      );
       if (res.imported > 0) setSubModalOpen(false);
       else setSubError('В тексте не нашлось ни одной ссылки на узел. Поддерживаются vless://, vmess://, trojan://, ss://, hysteria2://, tuic://, wg://');
     } catch (err) {

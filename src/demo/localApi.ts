@@ -173,6 +173,27 @@ function nodeToRow(node: ParsedNode, subscriptionId: number | null, groupName: s
   };
 }
 
+function realImportMessage(real: {
+  nodes: ParsedNode[];
+  sourceCandidates: number;
+  duplicatesRemoved: number;
+  unrecognized: number;
+  via?: string;
+}): string {
+  const parts = [`Импортировано серверов: ${real.nodes.length}`];
+  if (real.sourceCandidates > real.nodes.length) {
+    parts.push(`записей в ответе: ${real.sourceCandidates}`);
+  }
+  if (real.duplicatesRemoved > 0) {
+    parts.push(`удалено совпадающих копий: ${real.duplicatesRemoved}`);
+  }
+  if (real.unrecognized > 0) {
+    parts.push(`не распознано: ${real.unrecognized}`);
+  }
+  if (real.via) parts.push(`способ загрузки: ${real.via}`);
+  return parts.join(' · ');
+}
+
 function preserveNodeMeasurements(previous: Row[], fresh: Row[]): Row[] {
   const identity = (p: Row) =>
     String(p.raw_link || '') || [p.name, p.host, p.port, p.protocol].join('|').toLowerCase();
@@ -383,6 +404,12 @@ async function handle(path: string, method: string, body: any): Promise<Response
       state.profiles = [...imported, ...state.profiles];
       return json({
         imported: imported.length,
+        source_candidates: parsed.source_candidates,
+        duplicates_removed: parsed.duplicates_removed,
+        unrecognized: Math.max(
+          0,
+          parsed.source_candidates - parsed.nodes.length - parsed.duplicates_removed
+        ),
         profiles: state.profiles,
         preview: imported.slice(0, 40).map((p) => ({
           name: p.name,
@@ -564,7 +591,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
             update_interval_hours: Number(body?.update_interval_hours || 12),
             last_synced_at: new Date().toISOString(),
             last_sync_status: 'ok',
-            last_sync_message: `Импортировано серверов: ${real.nodes.length}`,
+            last_sync_message: realImportMessage(real),
             traffic_used_bytes: real.trafficUsed,
             traffic_total_bytes: real.trafficTotal,
             expires_on: real.expiresOn,
@@ -683,7 +710,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
                   format: real.format,
                   last_synced_at: new Date().toISOString(),
                   last_sync_status: 'ok',
-                  last_sync_message: `Импортировано серверов: ${nodes.length}`,
+                  last_sync_message: realImportMessage(real),
                   traffic_used_bytes: real.trafficUsed || s.traffic_used_bytes,
                   traffic_total_bytes: real.trafficTotal || s.traffic_total_bytes,
                   expires_on: real.expiresOn || s.expires_on,

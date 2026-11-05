@@ -23,11 +23,21 @@ import {
   AlertTriangle,
   Server,
   ArrowUpRight,
+  Sparkles,
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
-import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
+import type { ClientConnectionInfo, ScanRecord, VpnProfile, VpnSubscription } from '../types';
+import {
+  detectProblem,
+  looksSynthetic,
+  nodeSubtitle,
+  PROBLEM_TEXT,
+  recommendNodes,
+} from '../lib/nodeAdvisor';
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
+import { isNativeApp } from '../lib/nativeBridge';
+import { pingAllNodes } from '../lib/nodePing';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import {
@@ -50,6 +60,8 @@ interface VpnMonitorViewProps {
   connLoading: boolean;
   onRefreshConnection: () => void;
   darkMode: boolean;
+  /** Последний замер — по нему подбираем подходящие узлы */
+  lastScan?: ScanRecord | null;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 
@@ -136,9 +148,33 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   connection,
   connLoading,
   onRefreshConnection,
+  lastScan = null,
   showToast,
 }) => {
+  // Рекомендация узлов под результат последнего замера
+  const problem = useMemo(() => (lastScan ? detectProblem(lastScan) : null), [lastScan]);
+  const recommended = useMemo(
+    () => (lastScan ? recommendNodes(lastScan, profiles) : []),
+    [lastScan, profiles]
+  );
+  const lastCheckedLabel = useMemo(() => {
+    const times = profiles
+      .map((p) => p.last_checked_at)
+      .filter((t): t is string => Boolean(t))
+      .sort()
+      .reverse();
+    if (!times.length) return '';
+    const minutes = Math.floor((Date.now() - new Date(times[0]).getTime()) / 60000);
+    if (minutes < 1) return 'только что';
+    if (minutes < 60) return `${minutes} мин назад`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} ч назад`;
+    return 'давно';
+  }, [profiles]);
+
+  const onlineTotal = profiles.filter((p) => p.status === 'online').length;
   const [checkingAll, setCheckingAll] = useState(false);
+  const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
   const [checkingId, setCheckingId] = useState<number | null>(null);
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -302,8 +338,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     }
   };
 
+  /** Проверка всех узлов без VPN: показываем результат по ходу проверки. */
   const handleCheckAll = async (options?: { silent?: boolean }) => {
     setCheckingAll(true);
+    setCheckProgress({ done: 0, total: profiles.length });
     try {
       const res = await apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles/check-all', {
         method: 'POST',
@@ -313,12 +351,41 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         const online = res.profiles.filter((p) => p.status === 'online').length;
         showToast('success', `Проверено ${res.profiles.length} узлов, онлайн ${online}`);
       }
-    } catch (err) {
+    } catch {
+      // Сервер недоступен — проверяем с телефона, чтобы кнопка не «врала».
+      if (!isNativeApp()) {
+        if (!options?.silent) showToast('error', 'Не удалось проверить узлы: нет связи с сервером');
+        return;
+      }
+      const base = profiles;
+      const results = await pingAllNodes(
+        base.map((p) => ({ host: p.host, port: Number(p.port || 443) })),
+        (done, total, result, index) => {
+          setCheckProgress({ done, total });
+          setProfiles((prev) =>
+            prev.map((p, i) =>
+              i === index
+                ? {
+                    ...p,
+                    status: result.status,
+                    latency_ms: result.latencyMs,
+                    last_checked_at: new Date().toISOString(),
+                  }
+                : p
+            )
+          );
+        }
+      );
+      const online = results.filter((r) => r.status === 'online').length;
       if (!options?.silent) {
-        showToast('error', err instanceof Error ? err.message : 'Ошибка массовой проверки');
+        showToast(
+          'success',
+          `Проверено ${results.length} узлов с телефона, отвечают ${online}`
+        );
       }
     } finally {
       setCheckingAll(false);
+      setCheckProgress(null);
     }
   };
 
@@ -559,17 +626,6 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           <Button variant="outline" size="md" icon={<Plus className="w-4 h-4" />} onClick={openCreate}>
             Узел вручную
           </Button>
-          {profiles.length > 0 && (
-            <Button
-              variant="ghost"
-              size="md"
-              loading={checkingAll}
-              icon={<RefreshCw className="w-4 h-4" />}
-              onClick={() => void handleCheckAll()}
-            >
-              Проверить все
-            </Button>
-          )}
         </div>
       </header>
 
@@ -853,6 +909,69 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         </div>
       )}
 
+      {/* ---------- Какой узел подойдёт ---------- */}
+      {lastScan && problem && problem !== 'no_problem' && recommended.length > 0 && (
+        <section
+          className="rounded-[1.5rem] border p-4 space-y-3"
+          style={{
+            borderColor: 'rgb(var(--accent) / 0.35)',
+            background: 'color-mix(in srgb, rgb(var(--accent)) 7%, var(--surface))',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 mt-0.5 shrink-0" style={{ color: 'rgb(var(--accent))' }} />
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold leading-tight">
+                Лучше всего подойдёт
+              </div>
+              <div className="text-[10.5px] text-muted leading-tight mt-0.5">
+                замер: {PROBLEM_TEXT[problem].title.toLowerCase()}
+              </div>
+              <p className="text-[11.5px] text-dim leading-snug mt-1">
+                {PROBLEM_TEXT[problem].hint} Выбор — по протоколу и последней проверке узлов, туннель
+                не включается.
+              </p>
+
+              {looksSynthetic(profiles) && (
+                <p
+                  className="text-[10.5px] leading-snug mt-1.5 px-2 py-1.5 rounded-lg"
+                  style={{ background: 'rgb(var(--warning) / 0.1)', color: 'rgb(var(--warning))' }}
+                >
+                  В подписке у всех узлов одинаковые хост и пинг — похоже на пример провайдера.
+                  Порядок верный по протоколам, но реальную скорость такие данные не показывают.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {recommended.map((rec) => (
+              <button
+                key={rec.profile.id}
+                type="button"
+                onClick={() => setQrNode(rec.profile)}
+                className="w-full text-left rounded-xl px-3 py-2 tap flex items-center gap-2.5"
+                style={{ background: 'var(--surface)' }}
+              >
+                <CountryBadge code={rec.profile.country_code} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12.5px] font-semibold truncate">
+                    {rec.profile.name}
+                  </span>
+                  <span className="block text-[10.5px] text-dim truncate">{nodeSubtitle(rec.profile)}</span>
+                  <span className="block text-[10.5px] text-muted truncate">{rec.why}</span>
+                </span>
+                <span
+                  className="text-[12px] font-mono font-bold shrink-0"
+                  style={{ color: 'rgb(var(--accent))' }}
+                >
+                  {rec.score}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ---------- Список узлов ---------- */}
       {profiles.length === 0 ? (
         <div
@@ -872,6 +991,34 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         </div>
       ) : (
         <div className="space-y-2.5">
+          {/* Одна кнопка на весь список: проверить пинг всех узлов сразу, без VPN */}
+          <div
+            className="rounded-2xl border px-3 py-2.5 flex items-center gap-2.5"
+            style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-bold leading-tight">
+                Пинг всех узлов
+                {lastCheckedLabel && (
+                  <span className="text-[10.5px] font-normal text-muted"> · {lastCheckedLabel}</span>
+                )}
+              </div>
+              <div className="text-[10.5px] text-muted leading-snug mt-0.5">
+                {checkingAll && checkProgress
+                  ? `Проверяем: ${checkProgress.done} из ${checkProgress.total}`
+                  : `${onlineTotal} из ${profiles.length} отвечают`}
+              </div>
+            </div>
+            <Button
+              variant="soft"
+              size="sm"
+              loading={checkingAll}
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              onClick={() => void handleCheckAll()}
+            >
+              Проверить
+            </Button>
+          </div>
           {grouped.map(([groupName, nodes]) => {
             const isCollapsed = collapsed[groupName];
             const onlineCount = nodes.filter((n) => n.status === 'online').length;

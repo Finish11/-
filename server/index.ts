@@ -103,6 +103,9 @@ async function startServer() {
       foreign_sites_ok: Boolean(r.foreign_sites_ok),
       user_upvoted: Boolean(r.user_upvoted),
       is_owner: r.user_id === userId,
+      // В этой базе отчёты только настоящие — флаг остаётся false и в
+      // интерфейсе не появляется пометка «пример».
+      demo: false,
     }));
 
     const subRows = db

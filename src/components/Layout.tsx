@@ -332,8 +332,8 @@ export const Layout: React.FC<LayoutProps> = ({
               icon={<Info className="w-3.5 h-3.5" />}
               onClose={() => setDemoBanner(false)}
             >
-              <strong className="font-bold">Демо.</strong> Ответы имитируются — реальные замеры
-              только в приложении для Android.
+              <strong className="font-bold">Веб-предпросмотр.</strong> Браузер не может читать
+              содержимое сайтов — статусы здесь оценочные. Точные замеры — в приложении для Android.
             </Notice>
           </div>
         )}

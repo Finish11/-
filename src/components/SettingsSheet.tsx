@@ -303,16 +303,14 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
             onChange={(v) => update({ probeMode: v })}
             options={[
               { value: 'auto', label: 'Авто' },
-              { value: 'real', label: 'Реальные', icon: <Zap className="w-3.5 h-3.5" /> },
-              { value: 'demo', label: 'Демо' },
+              { value: 'real', label: 'Точные', icon: <Zap className="w-3.5 h-3.5" /> },
             ]}
           />
-          {settings.probeMode === 'demo' && (
-            <Notice tone="warn">
-              Демо-режим подставляет имитацию вместо реальных запросов. Вердикт в нём ничего не
-              говорит о вашей сети.
-            </Notice>
-          )}
+          <p className="text-[10.5px] text-muted leading-relaxed">
+            Имитации в замерах нет: приложение всегда проверяет вашу сеть по-настоящему. Если
+            содержимое страницы недоступно (например, в веб-предпросмотре), результат помечается как
+            оценка.
+          </p>
         </section>
 
         {/* ---------- О приложении ---------- */}

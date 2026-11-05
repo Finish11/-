@@ -25,7 +25,11 @@ const state: DemoState = {
   sites: JSON.parse(JSON.stringify((seed as any).sites)),
   scans: JSON.parse(JSON.stringify((seed as any).scans)),
   profiles: JSON.parse(JSON.stringify((seed as any).profiles)),
-  incidents: JSON.parse(JSON.stringify((seed as any).incidents)),
+  // Синтетические отчёты из примерных данных помечаем: их нельзя выдавать
+  // за реальные сообщения пользователей.
+  incidents: JSON.parse(JSON.stringify((seed as any).incidents)).map(
+    (inc: Record<string, unknown>) => ({ ...inc, demo: true })
+  ),
   subscriptions: JSON.parse(JSON.stringify((seed as any).subscriptions)),
 };
 

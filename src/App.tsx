@@ -298,6 +298,7 @@ export function App() {
                 onQuickReportIncident={handleQuickReportIncident}
                 onNavigateSites={() => setActiveTab('sites')}
                 onNavigateVpn={() => setActiveTab('vpn')}
+                hasNodes={vpnProfiles.length > 0}
                 onSitesChanged={loadWorkspaceData}
                 darkMode={darkMode}
                 showToast={showToast}
@@ -324,6 +325,7 @@ export function App() {
                 onRefreshConnection={refreshConnection}
                 darkMode={darkMode}
                 showToast={showToast}
+                lastScan={scans[0] ?? null}
               />
             )}
 

@@ -21,6 +21,8 @@ import {
   Eye,
   Radio,
   Gauge,
+  Sparkles,
+  ChevronRight,
 } from 'lucide-react';
 import {
   CATEGORY_META,
@@ -63,6 +65,8 @@ interface ScannerViewProps {
   onQuickReportIncident: (scan: ScanRecord) => void;
   onNavigateSites: () => void;
   onNavigateVpn: () => void;
+  /** Есть ли у пользователя свои узлы — иначе советовать нечего */
+  hasNodes?: boolean;
   onSitesChanged: () => void;
   darkMode: boolean;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
@@ -133,6 +137,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   onQuickReportIncident,
   onNavigateSites,
   onNavigateVpn,
+  hasNodes = false,
   onSitesChanged,
   darkMode,
   showToast,
@@ -153,6 +158,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [quickNote, setQuickNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [showAllSites, setShowAllSites] = useState(false);
+  // Результат контрольной пробы: false — сеть мертва целиком, сайты не виноваты
+  const [netControlOk, setNetControlOk] = useState(true);
+  // Грубая ли оценка (в браузере нет доступа к содержимому страниц)
+  const [scanApproximate, setScanApproximate] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const vpnWatchTimerRef = useRef<number | null>(null);
@@ -299,13 +308,27 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       setLiveResults([...partial]);
     };
 
-    const useRealProbes = isNativeApp() && appSettings.probeMode !== 'demo';
+    // Достоверность важнее наглядности: настоящие запросы выполняем всегда,
+    // когда это возможно. Имитация остаётся только для веб-предпросмотра,
+    // где у браузера нет доступа к содержимому страниц.
+    const useRealProbes = isNativeApp();
 
-    const results = useRealProbes
-      ? await runRealSiteScan(sites, progressCb, ctrl.signal)
-      : await runMultiSiteScan(sites, effectiveSimMode, progressCb, ctrl.signal);
+    let results: ScanSiteResult[];
+    let controlOk = true;
+    let approximate = false;
+    if (useRealProbes) {
+      const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal);
+      results = outcome.results;
+      controlOk = outcome.controlOk;
+      approximate = outcome.approximate;
+    } else {
+      results = await runMultiSiteScan(sites, effectiveSimMode, progressCb, ctrl.signal);
+      approximate = true;
+    }
 
     if (ctrl.signal.aborted) return;
+    setNetControlOk(controlOk);
+    setScanApproximate(approximate);
 
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
@@ -326,8 +349,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         ? `VPN • ${conn.country_name}${conn.city ? `, ${conn.city}` : ''}`
         : `${appSettings.operator || conn.isp || user.carrier} • ${appSettings.city || conn.city || user.region}`;
 
+    const accuracyNote = !controlOk
+      ? 'Сеть не ответила на контрольный запрос — вероятно, интернета нет совсем. Результаты по сайтам в этом замере недостоверны.'
+      : approximate
+      ? 'Оценка: в веб-версии нет доступа к содержимому страниц. Точные данные — в приложении для Android.'
+      : '';
+
     const payload = {
       ...evaluated,
+      note: accuracyNote,
       vpn_detected: conn.vpn_detected && vpnMode === 'with_vpn',
       vpn_mode: vpnMode,
       ip_address: conn.ip,
@@ -337,7 +367,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       isp: conn.isp,
       asn: conn.asn,
       carrier_label: carrierLabel,
-      note: '',
       results,
     };
 
@@ -687,22 +716,23 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           )}
 
           {/* ---------- Чипы сети ---------- */}
-          <div className="mt-4 chip-rail w-full justify-center px-1">
-            <Chip active>
-              <Radio className="w-3 h-3" />
+          <div className="mt-4 flex flex-nowrap items-center justify-center gap-1.5 px-1 whitespace-nowrap overflow-hidden">
+            <Chip active className="h-7 px-2.5 text-[11px] shrink-0 gap-1">
+              <Radio className="w-3 h-3 shrink-0" />
               {connectionLabel(netCtx?.kind || 'unknown')}
+              {(appSettings.operator || netCtx?.operator) && (
+                <span className="text-dim font-medium">
+                  · {appSettings.operator || netCtx?.operator}
+                </span>
+              )}
             </Chip>
-            {(appSettings.operator || netCtx?.operator) && (
-              <Chip>
-                <Gauge className="w-3 h-3" />
-                {appSettings.operator || netCtx?.operator}
+            {(appSettings.city || netCtx?.city || user.region) && (
+              <Chip className="h-7 px-2.5 text-[11px] shrink-0">
+                {appSettings.city || netCtx?.city || user.region}
               </Chip>
             )}
-            {(appSettings.city || netCtx?.city || user.region) && (
-              <Chip>{appSettings.city || netCtx?.city || user.region}</Chip>
-            )}
-            {detectedConn?.ip && detectedConn.ip !== '—' && (
-              <Chip>
+            {detectedConn?.ip && detectedConn.ip !== '—' && detectedConn.ip.length <= 15 && (
+              <Chip className="h-7 px-2.5 shrink-0" title={detectedConn.ip}>
                 <span className="font-mono text-[11px]">{detectedConn.ip}</span>
               </Chip>
             )}
@@ -771,6 +801,30 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <Conclusion groups={roleGroups} withVpn={activeScan.vpn_detected} />
             </div>
           </div>
+
+          {/* Совет: узел под найденную проблему */}
+          {hasNodes && activeScan.verdict !== 'OPEN_INTERNET' && (
+            <button
+              type="button"
+              onClick={onNavigateVpn}
+              className="w-full text-left rounded-2xl border px-3 py-2.5 flex items-center gap-2.5 tap"
+              style={{
+                borderColor: 'rgb(var(--accent) / 0.35)',
+                background: 'color-mix(in srgb, rgb(var(--accent)) 7%, var(--surface))',
+              }}
+            >
+              <Sparkles className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--accent))' }} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12.5px] font-bold leading-tight">
+                  Подобрать узел под этот замер
+                </span>
+                <span className="block text-[10.5px] text-dim leading-tight mt-0.5">
+                  Покажем 3 сервера из вашей подписки — без включения VPN
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 shrink-0 text-muted" />
+            </button>
+          )}
 
           {/* Метрики */}
           <div className="grid grid-cols-2 gap-2.5">
@@ -991,8 +1045,21 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                     <XCircle className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--danger))' }} />
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] font-semibold truncate">{item.name}</div>
-                    <div className="text-[10.5px] font-mono text-muted truncate">{item.domain}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[12.5px] font-semibold truncate">{item.name}</span>
+                      {item.intercepted && (
+                        <span
+                          className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
+                          style={{ background: 'rgb(var(--warning) / 0.16)', color: 'rgb(var(--warning))' }}
+                        >
+                          подмена
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10.5px] font-mono text-muted truncate">
+                      {item.domain}
+                      {item.note ? ` · ${item.note}` : ''}
+                    </div>
                   </div>
                   <span
                     className="text-[11.5px] font-mono font-semibold shrink-0"

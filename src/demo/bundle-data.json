@@ -5,7 +5,7 @@
   "name": "Алексей Морозов",
   "region": "Москва",
   "carrier": "МТС",
-  "created_at": "2026-10-28T14:14:15.376Z"
+  "demo": true, "created_at": "2026-10-28T14:14:15.376Z"
  },
  "sites": [
   {
@@ -21,7 +21,7 @@
    "last_latency_ms": 28,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Портал Госуслуг — с первого дня в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -38,7 +38,7 @@
    "last_latency_ms": 37,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Поиск и инфраструктура Яндекса (весь блок сервисов в белом списке)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -55,7 +55,7 @@
    "last_latency_ms": 46,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Онлайн-кинотеатр Яндекса — в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -72,7 +72,7 @@
    "last_latency_ms": 55,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Соцсеть VK — в белом списке с 5 сентября 2025",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -89,7 +89,7 @@
    "last_latency_ms": 64,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Соцсеть OK — в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -106,7 +106,7 @@
    "last_latency_ms": 73,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Почта и сервисы VK — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -123,7 +123,7 @@
    "last_latency_ms": 36,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Национальный мессенджер MAX — добавлен 19 сентября 2025",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -140,7 +140,7 @@
    "last_latency_ms": 45,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Контент-платформа Дзен — в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -157,7 +157,7 @@
    "last_latency_ms": 54,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Российский видеохостинг — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -174,7 +174,7 @@
    "last_latency_ms": 63,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Маркетплейс Ozon — в перечне (CDN отдаёт глобальный сертификат)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -191,7 +191,7 @@
    "last_latency_ms": 72,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Маркетплейс Wildberries — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -208,7 +208,7 @@
    "last_latency_ms": 35,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Доска объявлений Avito — в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -225,7 +225,7 @@
    "last_latency_ms": 44,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Карты и навигатор 2ГИС — в белом списке (2-й этап)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -242,7 +242,7 @@
    "last_latency_ms": 53,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Поиск работы hh.ru — в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -259,7 +259,7 @@
    "last_latency_ms": 62,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Погодный сервис Gismeteo — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -276,7 +276,7 @@
    "last_latency_ms": 71,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Гос. информагентство — СМИ в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -293,7 +293,7 @@
    "last_latency_ms": 34,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Информагентство ТАСС — в перечне Минцифры",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -310,7 +310,7 @@
    "last_latency_ms": 43,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Издание Lenta.ru — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -327,7 +327,7 @@
    "last_latency_ms": 52,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Авиакомпания Аэрофлот — в перечне (транспорт)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -344,7 +344,7 @@
    "last_latency_ms": 61,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Билеты Туту.ру — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -361,7 +361,7 @@
    "last_latency_ms": 70,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Банк России — в перечне с 3-го обновления (05.12.2025)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -378,7 +378,7 @@
    "last_latency_ms": 33,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Онлайн-банк Сбер — в перечне Минцифры (глобальный TLS-сертификат, в отличие от sberbank.ru)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -395,7 +395,7 @@
    "last_latency_ms": 42,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Доставка Самокат — в белом списке (ритейл и доставка)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -412,7 +412,7 @@
    "last_latency_ms": 51,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Онлайн-кинотеатр Иви — в белом списке",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -429,7 +429,7 @@
    "last_latency_ms": 2190,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Поиск Google — не заблокирован, работает без VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -446,7 +446,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Google Translate — один из немногих сервисов Google без ограничений",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -463,7 +463,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Русская Википедия — открывается без VPN (ключевой маркер шатдауна)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -480,7 +480,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Хостинг кода GitHub — нейтральный маркер",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -497,7 +497,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "База знаний разработчиков — доступна без VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -514,7 +514,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "CDN Cloudflare — сайт открывается, часть ECH-подсетей фильтруется",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -531,7 +531,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Публичный DNS 1.1.1.1 — работает, но не спасает от ТСПУ",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -548,7 +548,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "CDN веб-библиотек на Fastly",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -565,7 +565,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Пакетный реестр JS — доступен без VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -582,7 +582,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Реестр контейнеров Docker",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -599,7 +599,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Сервисы Firefox и DoH",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -616,7 +616,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Веб-архив Wayback Machine — открывается",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -633,7 +633,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Сайт Apple — работает; App Store ограничен только по оплате",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -650,7 +650,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Сайт Microsoft и облако — без блокировки",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -667,7 +667,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Облако AWS — сайт доступен (часть IP-пулов шейпится)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -684,7 +684,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Поиск Microsoft Bing",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -701,7 +701,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Видеоконференции Zoom — технически не заблокированы",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -718,7 +718,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Маркетплейс AliExpress — не заблокирован",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -735,7 +735,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "WhatsApp удалён из НСДИ 12.02.2026 — звонили с авг. 2025, блокировка с 28.11.2025",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "12.02.2026"
   },
@@ -752,7 +752,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Discord заблокирован РКН полностью с 8 октября 2024",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "08.10.2024"
   },
@@ -769,7 +769,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Signal заблокирован с 9 августа 2024, удалён из сторов",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "09.08.2024"
   },
@@ -786,7 +786,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Viber заблокирован технически с 13 декабря 2024",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "13.12.2024"
   },
@@ -803,7 +803,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Telegram под «последовательными ограничениями» с 10.02.2026: звонки и медиа сбоят, трафик замедлен",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "restricted",
    "blocked_since": "10.02.2026"
   },
@@ -820,7 +820,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Snapchat ограничен предписанием РКН в декабре 2025",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "12.2025"
   },
@@ -837,7 +837,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Meta признана экстремистской, заблокирована с 2022",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "03.2022"
   },
@@ -854,7 +854,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Instagram заблокирован с марта 2022",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "03.2022"
   },
@@ -871,7 +871,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "X/Twitter замедлен с 2022 и заблокирован",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "04.2022"
   },
@@ -888,7 +888,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "LinkedIn заблокирован с 2016 года (первый в списке)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "11.2016"
   },
@@ -905,7 +905,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "YouTube удалён из НСДИ 10.02.2026 — без VPN не открывается",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "10.02.2026"
   },
@@ -922,7 +922,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Кэш-серверы видеопотока — главная цель ТСПУ",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "2024"
   },
@@ -939,7 +939,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Twitch не заблокирован, но ТСПУ шейпит видео и режет качество до 720p",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "restricted",
    "blocked_since": null
   },
@@ -956,7 +956,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "TikTok ограничен: нет загрузки контента и прямых эфиров",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "restricted",
    "blocked_since": null
   },
@@ -973,7 +973,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Netflix ушёл из РФ в марте 2022 — нужен VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "03.2022"
   },
@@ -990,7 +990,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Spotify закрылся в РФ 11 апреля 2022",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "04.2022"
   },
@@ -1007,7 +1007,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "SoundCloud заблокирован Генпрокуратурой 2 октября 2022",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "10.2022"
   },
@@ -1024,7 +1024,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Patreon заблокирован в РФ",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "2022"
   },
@@ -1041,7 +1041,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Reddit доступен, но отдельные разделы в реестре РКН и периодически шейпятся",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "restricted",
    "blocked_since": null
   },
@@ -1058,7 +1058,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Google News заблокирован Генпрокуратурой 23 марта 2022",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "23.03.2022"
   },
@@ -1075,7 +1075,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Roblox заблокирован 3 декабря 2025",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": "03.12.2025"
   },
@@ -1092,7 +1092,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Магазин Steam — работает, ограничения только для Community Hub",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -1109,7 +1109,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Магазин Epic Games — доступен без VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -1126,7 +1126,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Магазин GOG — работает (ограничены только платежи)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -1143,7 +1143,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Экосистема Xbox — сайт доступен",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -1160,7 +1160,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Магазин приложений iOS — работает (оплата только через баланс)",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -1177,7 +1177,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Магазин приложений Android — каталог открывается",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "ok",
    "blocked_since": null
   },
@@ -1194,7 +1194,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "OpenAI закрыл доступ из РФ и блокирует IP — нужен VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": null
   },
@@ -1211,7 +1211,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Proton Mail/VPN блокируются ТСПУ в РФ",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": null
   },
@@ -1228,7 +1228,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Сеть Tor — мосты и сайт под блокировкой в РФ",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": null
   },
@@ -1245,7 +1245,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Шведский VPN — сайт блокируется ТСПУ",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": null
   },
@@ -1262,7 +1262,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Ookla Speedtest — заблокирован, замеры идут только через VPN",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": null
   },
@@ -1279,7 +1279,7 @@
    "last_latency_ms": null,
    "last_checked_at": "2026-11-04T12:52:02.198Z",
    "description": "Notion ограничен: часть подсетей AWS в реестре РКН",
-   "created_at": "2026-11-04T15:03:52.833Z",
+   "demo": true, "created_at": "2026-11-04T15:03:52.833Z",
    "accessibility": "blocked",
    "blocked_since": null
   }
@@ -1310,7 +1310,7 @@
    "carrier_label": "МТС 4G LTE • Краснодар",
    "note": "Вечером перестали открываться все зарубежные сайты.",
    "pinned": true,
-   "created_at": "2026-11-04T12:52:02.198Z",
+   "demo": true, "created_at": "2026-11-04T12:52:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -1939,7 +1939,7 @@
    "carrier_label": "Ростелеком GPON • Дом",
    "note": "Обычный домашний интернет без VPN.",
    "pinned": false,
-   "created_at": "2026-11-03T20:04:02.198Z",
+   "demo": true, "created_at": "2026-11-03T20:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -2568,7 +2568,7 @@
    "carrier_label": "VLESS Reality • Amsterdam",
    "note": "Проверка через каскадный туннель.",
    "pinned": false,
-   "created_at": "2026-11-03T09:04:02.198Z",
+   "demo": true, "created_at": "2026-11-03T09:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -3197,7 +3197,7 @@
    "carrier_label": "МегаФон EDGE/LTE • Трасса М-4",
    "note": "Полное отключение мобильной передачи данных ночью.",
    "pinned": true,
-   "created_at": "2026-11-02T22:04:02.198Z",
+   "demo": true, "created_at": "2026-11-02T22:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -3826,7 +3826,7 @@
    "carrier_label": "T2 4G • Санкт-Петербург",
    "note": "Отвалились сайты за Cloudflare.",
    "pinned": false,
-   "created_at": "2026-11-01T19:04:02.198Z",
+   "demo": true, "created_at": "2026-11-01T19:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -4450,7 +4450,7 @@
    "is_primary": true,
    "notes": "Маскировка под TLS 1.3 (SNI microsoft.com). Отлично обходит обычный ТСПУ, но недоступен при жёстких белых списках без RU-каскада.",
    "last_checked_at": "2026-11-04T15:04:45.298Z",
-   "created_at": "2026-10-29T18:14:15.376Z",
+   "demo": true, "created_at": "2026-10-29T18:14:15.376Z",
    "subscription_id": null,
    "group_name": "",
    "raw_link": "",
@@ -4474,7 +4474,7 @@
    "is_primary": false,
    "notes": "Входная нода находится в российской подсети из белого списка и перенаправляет трафик в Финляндию. Спасает при региональных шатдаунах!",
    "last_checked_at": "2026-11-04T13:56:15.376Z",
-   "created_at": "2026-10-30T14:14:15.376Z",
+   "demo": true, "created_at": "2026-10-30T14:14:15.376Z",
    "subscription_id": null,
    "group_name": "",
    "raw_link": "",
@@ -4498,7 +4498,7 @@
    "is_primary": false,
    "notes": "Модифицированный WireGuard с мусорными пакетами (Jc/Jmin/Jmax) против сигнатурного анализа DPI.",
    "last_checked_at": "2026-11-04T13:08:15.376Z",
-   "created_at": "2026-10-31T14:14:15.376Z",
+   "demo": true, "created_at": "2026-10-31T14:14:15.376Z",
    "subscription_id": null,
    "group_name": "",
    "raw_link": "",
@@ -4522,7 +4522,7 @@
    "is_primary": false,
    "notes": "Высокая скорость для YouTube 4K по UDP/QUIC, однако мобильные операторы вечером шейпят UDP-поток.",
    "last_checked_at": "2026-11-04T12:44:15.376Z",
-   "created_at": "2026-11-01T06:14:15.376Z",
+   "demo": true, "created_at": "2026-11-01T06:14:15.376Z",
    "subscription_id": null,
    "group_name": "",
    "raw_link": "",
@@ -4546,7 +4546,7 @@
    "is_primary": false,
    "notes": "Чистый протокол WireGuard без обфускации — хендшейк блокируется ТСПУ на МТС, МегаФон и Т2.",
    "last_checked_at": "2026-11-04T12:14:15.376Z",
-   "created_at": "2026-10-28T22:14:15.376Z",
+   "demo": true, "created_at": "2026-10-28T22:14:15.376Z",
    "subscription_id": null,
    "group_name": "",
    "raw_link": "",
@@ -4568,7 +4568,7 @@
    "upvotes": 84,
    "ru_sites_ok": true,
    "foreign_sites_ok": false,
-   "created_at": "2026-11-04T12:26:15.376Z",
+   "demo": true, "created_at": "2026-11-04T12:26:15.376Z",
    "user_upvoted": false,
    "is_owner": true
   },
@@ -4586,7 +4586,7 @@
    "upvotes": 61,
    "ru_sites_ok": false,
    "foreign_sites_ok": false,
-   "created_at": "2026-11-04T10:50:15.376Z",
+   "demo": true, "created_at": "2026-11-04T10:50:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   },
@@ -4604,7 +4604,7 @@
    "upvotes": 112,
    "ru_sites_ok": true,
    "foreign_sites_ok": false,
-   "created_at": "2026-11-04T09:08:15.376Z",
+   "demo": true, "created_at": "2026-11-04T09:08:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   },
@@ -4622,7 +4622,7 @@
    "upvotes": 47,
    "ru_sites_ok": false,
    "foreign_sites_ok": false,
-   "created_at": "2026-11-04T07:32:15.376Z",
+   "demo": true, "created_at": "2026-11-04T07:32:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   },
@@ -4640,7 +4640,7 @@
    "upvotes": 39,
    "ru_sites_ok": true,
    "foreign_sites_ok": false,
-   "created_at": "2026-11-04T05:02:15.376Z",
+   "demo": true, "created_at": "2026-11-04T05:02:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   },
@@ -4658,7 +4658,7 @@
    "upvotes": 53,
    "ru_sites_ok": true,
    "foreign_sites_ok": false,
-   "created_at": "2026-11-04T02:44:15.376Z",
+   "demo": true, "created_at": "2026-11-04T02:44:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   },
@@ -4676,7 +4676,7 @@
    "upvotes": 28,
    "ru_sites_ok": true,
    "foreign_sites_ok": true,
-   "created_at": "2026-11-03T23:14:15.376Z",
+   "demo": true, "created_at": "2026-11-03T23:14:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   },
@@ -4694,7 +4694,7 @@
    "upvotes": 19,
    "ru_sites_ok": true,
    "foreign_sites_ok": true,
-   "created_at": "2026-11-03T16:14:15.376Z",
+   "demo": true, "created_at": "2026-11-03T16:14:15.376Z",
    "user_upvoted": false,
    "is_owner": false
   }

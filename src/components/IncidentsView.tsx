@@ -10,6 +10,10 @@ import {
   Trash2,
   Check,
   RotateCcw,
+  Star,
+  Search,
+  X,
+  Info,
 } from 'lucide-react';
 import {
   RUSSIAN_CARRIERS,
@@ -22,6 +26,14 @@ import { apiFetch } from '../lib/api';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { Button, Chip, EmptyState } from './ui/kit';
+import {
+  loadFavorites,
+  placeKey,
+  placeSummary,
+  saveFavorites,
+  searchPlaces,
+  type Place,
+} from '../lib/places';
 
 interface IncidentsViewProps {
   user: User;
@@ -76,6 +88,30 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Incident | null>(null);
 
+  // Избранные места: без аккаунта, без сервера, только на этом телефоне
+  const [favorites, setFavorites] = useState<Place[]>(() => loadFavorites());
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placePickerOpen, setPlacePickerOpen] = useState(false);
+
+  const addPlace = (place: Place) => {
+    setFavorites((prev) => {
+      if (prev.some((p) => p.id === place.id)) return prev;
+      const next = [place, ...prev].slice(0, 12);
+      saveFavorites(next);
+      return next;
+    });
+    setPlaceQuery('');
+    showToast('success', `«${place.name}» в избранном`);
+  };
+
+  const removePlace = (place: Place) => {
+    setFavorites((prev) => {
+      const next = prev.filter((p) => p.id !== place.id);
+      saveFavorites(next);
+      return next;
+    });
+  };
+
   const inputStyle: React.CSSProperties = {
     background: 'var(--surface-2)',
     border: '1px solid var(--line)',
@@ -115,9 +151,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     }
   }, [prefillFromScan, user.region, user.carrier, onClearPrefill]);
 
-  const openCreate = () => {
+  const openCreate = (prefillRegion?: string) => {
     setEditing(null);
-    setRegion(user.region || 'Москва и МО');
+    setRegion(prefillRegion || user.region || 'Москва и МО');
     setCarrier(user.carrier || 'МТС');
     setIncidentType('whitelist');
     setSeverity('critical');
@@ -251,14 +287,88 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         <h1 className="text-[22px] font-black tracking-tight">Карта сбоев</h1>
         <p className="text-[12.5px] text-dim leading-snug">
           Регионы, где глушат мобильный интернет или включили белые списки. Отметки ставят такие же
-          пользователи, как вы.
+          пользователи, как вы — каждая подписана автором и временем.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button variant="primary" size="md" icon={<Plus className="w-4 h-4" />} onClick={openCreate}>
+          <Button
+            variant="primary"
+            size="md"
+            icon={<Plus className="w-4 h-4" />}
+            onClick={() => openCreate()}
+          >
             Сообщить о сбое
           </Button>
         </div>
       </header>
+
+      {/* ---------- Избранные места ---------- */}
+      <section
+        className="rounded-[1.5rem] border p-3.5"
+        style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+      >
+        <div className="flex items-center gap-2">
+          <Star className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--accent))' }} />
+          <h2 className="text-[13px] font-bold flex-1">Избранные места</h2>
+          <button
+            type="button"
+            onClick={() => setPlacePickerOpen(true)}
+            className="text-[11.5px] font-semibold px-2 py-1 rounded-lg tap"
+            style={{ background: 'var(--accent-soft)', color: 'rgb(var(--accent))' }}
+          >
+            + Добавить
+          </button>
+        </div>
+
+        {favorites.length === 0 ? (
+          <p className="text-[11.5px] text-dim leading-snug mt-2">
+            Добавьте город или деревню — приложение покажет, что известно о сбоях именно там
+            (например, Жижица под Куньей).
+          </p>
+        ) : (
+          <div className="space-y-1.5 mt-2.5">
+            {favorites.map((place) => {
+              const sum = placeSummary(place, incidents);
+              return (
+                <div
+                  key={place.id}
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2"
+                  style={{ background: 'var(--surface-2)' }}
+                >
+                  <MapPin className="w-3.5 h-3.5 shrink-0 text-muted" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] font-semibold truncate">{place.name}</div>
+                    <div className="text-[10.5px] text-dim leading-tight">
+                      {place.region}
+                      {sum.total > 0
+                        ? ` · отчётов ${sum.total}${sum.active ? `, активных ${sum.active}` : ''}`
+                        : ' · отчётов нет'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegionFilter(place.region);
+                      setStatusFilter('all');
+                    }}
+                    className="text-[11px] font-semibold px-2 py-1 rounded-lg tap shrink-0"
+                    style={{ color: 'rgb(var(--accent))' }}
+                  >
+                    Показать
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removePlace(place)}
+                    aria-label={`Убрать ${place.name} из избранного`}
+                    className="p-1 rounded-lg text-muted tap shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-3 gap-1.5">
         {[
@@ -320,15 +430,37 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         </div>
       </section>
 
+      {incidents.some((i) => i.demo) && (
+        <div
+          className="rounded-xl border px-3 py-2 flex items-start gap-1.5"
+          style={{ borderColor: 'rgb(var(--warning) / 0.35)', background: 'rgb(var(--warning) / 0.08)' }}
+        >
+          <Info className="w-3.5 h-3.5 shrink-0 mt-px" style={{ color: 'rgb(var(--warning))' }} />
+          <p className="text-[11px] leading-snug text-dim">
+            Часть отметок — <b className="text-[color:var(--text)]">примеры из демо-набора</b>, а не
+            живые сообщения пользователей. Они помечены значком «пример». Ваши собственные отчёты
+            реальны и сохраняются в вашем аккаунте.
+          </p>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div className="rounded-[1.5rem] border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
           <EmptyState
             icon={<AlertOctagon className="w-5 h-5" />}
-            title="Сообщений нет"
-            text="Если у вас ограничения или белые списки — добавьте первый отчёт по своему региону."
+            title={regionFilter === 'all' ? 'Сообщений нет' : `По региону «${regionFilter}» отчётов нет`}
+            text={
+              regionFilter === 'all'
+                ? 'Если у вас ограничения или белые списки — добавьте первый отчёт по своему региону.'
+                : 'Это значит, что сбоев там пока никто не отмечал — а не то, что всё точно работает. Если у вас сейчас что-то не открывается, добавьте отчёт: регион уже подставим.'
+            }
             action={
-              <Button variant="soft" size="md" onClick={openCreate}>
-                Добавить отчёт
+              <Button
+                variant="soft"
+                size="md"
+                onClick={() => openCreate(regionFilter === 'all' ? undefined : regionFilter)}
+              >
+                {regionFilter === 'all' ? 'Добавить отчёт' : 'Сообщить о сбое здесь'}
               </Button>
             }
           />
@@ -363,6 +495,14 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     <Radio className="w-3 h-3" />
                     {inc.carrier}
                   </span>
+                  {inc.demo && !resolved && (
+                    <span
+                      className="text-[9.5px] font-bold px-1.5 py-0.5 rounded ml-auto"
+                      style={{ background: 'rgb(var(--warning) / 0.16)', color: 'rgb(var(--warning))' }}
+                    >
+                      пример
+                    </span>
+                  )}
                   {resolved && (
                     <span
                       className="text-[9.5px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 ml-auto"
@@ -462,6 +602,89 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           if (target) void handleDelete(target);
         }}
       />
+
+      <Sheet
+        open={placePickerOpen}
+        onClose={() => {
+          setPlacePickerOpen(false);
+          setPlaceQuery('');
+        }}
+        title="Добавить место"
+        subtitle="Найдите город или деревню по названию"
+        size="md"
+        footer={
+          <Button variant="ghost" size="md" block onClick={() => setPlacePickerOpen(false)}>
+            Закрыть
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div
+            className="flex items-center gap-2 rounded-xl border px-3"
+            style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+          >
+            <Search className="w-3.5 h-3.5 text-muted shrink-0" />
+            <input
+              type="text"
+              value={placeQuery}
+              onChange={(e) => setPlaceQuery(e.target.value)}
+              placeholder="Например: Жижица"
+              className="flex-1 bg-transparent outline-none py-2 text-[12.5px]"
+              style={{ color: 'var(--text)' }}
+            />
+            {placeQuery && (
+              <button
+                type="button"
+                onClick={() => setPlaceQuery('')}
+                aria-label="Очистить"
+                className="p-1 text-muted"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            {searchPlaces(placeQuery).map((place) => {
+              const added = favorites.some((f) => f.id === place.id);
+              return (
+                <button
+                  key={place.id}
+                  type="button"
+                  disabled={added}
+                  onClick={() => addPlace(place)}
+                  className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left tap disabled:opacity-50"
+                  style={{ background: 'var(--surface-2)' }}
+                >
+                  <MapPin className="w-3.5 h-3.5 shrink-0 text-muted" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12.5px] font-semibold truncate">{place.name}</span>
+                    <span className="block text-[10.5px] text-dim truncate">{place.region}</span>
+                  </span>
+                  <span
+                    className="text-[11px] font-semibold shrink-0"
+                    style={{ color: added ? 'var(--text-muted)' : 'rgb(var(--accent))' }}
+                  >
+                    {added ? 'уже есть' : 'добавить'}
+                  </span>
+                </button>
+              );
+            })}
+            {searchPlaces(placeQuery).length === 0 && (
+              <p className="text-[11.5px] text-dim leading-snug px-1">
+                Такого места в списке нет. Впишите его в отчёте о сбое — оно появится в сводке по
+                региону, и его можно будет добавить в избранное.
+              </p>
+            )}
+          </div>
+
+          <p className="text-[10.5px] text-muted leading-snug flex gap-1.5">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+            Список мест небольшой и составлен вручную. Координаты есть только у тех точек, где они
+            действительно известны — карта по пустым данным не рисуется.
+          </p>
+        </div>
+      </Sheet>
 
       <Sheet
         open={modalOpen}

@@ -66,6 +66,12 @@ export interface ScanSiteResult {
   marker_role: MarkerRole | string;
   status: 'ok' | 'slow' | 'blocked';
   latency_ms: number | null;
+  /** Почему не открылось — показываем в детальном списке */
+  block_reason?: SiteBlockReason;
+  /** Ответила заглушка/подмена TLS, а не сам сайт */
+  intercepted?: boolean;
+  /** Короткое пояснение для интерфейса */
+  note?: string;
 }
 
 export interface ScanRecord {
@@ -159,6 +165,11 @@ export interface Incident {
   user_upvoted: boolean;
   is_owner: boolean;
   created_at: string;
+  /**
+   * Отметка, добавленная приложением для примера (демо-сборка), а не живой
+   * отчёт пользователя. Такие записи показываем с явной пометкой.
+   */
+  demo?: boolean;
 }
 
 export interface ClientConnectionInfo {

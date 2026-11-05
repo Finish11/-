@@ -1,13 +1,29 @@
 import type { ScanSiteResult, Site } from '../types';
-import { mapLimit, measureUrl } from './nativeBridge';
+import { mapLimit } from './nativeBridge';
+import { probeControl, probeSite, type ProbeVerdict } from './siteProbe';
 
 /**
- * Настоящий замер: приложение само запрашивает probe_url каждого сайта
- * и считает время ответа. В APK запросы идут нативным HTTP-стеком, поэтому
- * не упираются в CORS. Пороговые значения — как в серверных пробах.
+ * Настоящий замер сайтов с телефона.
+ *
+ * Ключевое отличие от прежней версии: мы больше не считаем успехом «хоть
+ * какой-то ответ». У заблокированного сайта провайдер часто отвечает сам
+ * (заглушка, подмена TLS, сброс) — такой результат помечается как
+ * «перехвачено», а не «доступен».
+ *
+ * Перед замером выполняется контрольная проба нейтрального хоста: если сеть
+ * мертва целиком, все сайты получают «сеть недоступна» и вердикт не врёт.
  */
-const OK_MS = 1500;
-const SLOW_MS = 4000;
+
+export type RealScanOutcome = {
+  results: ScanSiteResult[];
+  /** Контрольная проба: есть ли вообще выход в интернет */
+  controlOk: boolean;
+  /** Данные грубые (браузер без доступа к содержимому) */
+  approximate: boolean;
+};
+
+const statusFromVerdict = (v: ProbeVerdict): ScanSiteResult['status'] =>
+  v === 'ok' || v === 'slow' ? v : 'blocked';
 
 export async function runRealSiteScan(
   sites: Site[],
@@ -18,42 +34,72 @@ export async function runRealSiteScan(
     partial: ScanSiteResult[]
   ) => void,
   abortSignal?: AbortSignal,
-  timeoutMs = 6000
-): Promise<ScanSiteResult[]> {
+  timeoutMs = 8000
+): Promise<RealScanOutcome> {
   const enabled = sites.filter((s) => Boolean(s.enabled));
   const total = enabled.length;
   let done = 0;
   const acc: ScanSiteResult[] = [];
 
-  const results = await mapLimit(enabled, 16, async (site) => {
+  // Контрольная проба: без неё «всё недоступно» может означать просто «нет сети».
+  const controlOk = await probeControl(5000);
+
+  const results = await mapLimit(enabled, 12, async (site) => {
     if (abortSignal?.aborted) {
-      return {
+      const aborted: ScanSiteResult = {
         site_id: site.id,
         name: site.name,
         domain: site.domain,
         category: site.category,
         marker_role: site.marker_role,
-        status: 'blocked' as const,
+        status: 'blocked',
         latency_ms: null,
       };
+      return aborted;
     }
 
-    const probeUrl = site.probe_url || `https://${site.domain}/favicon.ico`;
-    const measured = await measureUrl(probeUrl, timeoutMs);
-    const ms = measured.latencyMs;
+    let result: ScanSiteResult;
 
-    const status: ScanSiteResult['status'] =
-      ms == null ? 'blocked' : ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked';
+    if (!controlOk) {
+      // Сети нет вообще — не обвиняем сайты и не выдумываем причины.
+      result = {
+        site_id: site.id,
+        name: site.name,
+        domain: site.domain,
+        category: site.category,
+        marker_role: site.marker_role,
+        status: 'blocked',
+        latency_ms: null,
+        block_reason: 'network',
+      };
+    } else {
+      const probeUrl = site.probe_url || `https://${site.domain}/favicon.ico`;
+      const probe = await probeSite(probeUrl, { timeoutMs });
 
-    const result: ScanSiteResult = {
-      site_id: site.id,
-      name: site.name,
-      domain: site.domain,
-      category: site.category,
-      marker_role: site.marker_role,
-      status,
-      latency_ms: ms,
-    };
+      result = {
+        site_id: site.id,
+        name: site.name,
+        domain: site.domain,
+        category: site.category,
+        marker_role: site.marker_role,
+        status: statusFromVerdict(probe.verdict),
+        latency_ms: probe.verdict === 'ok' || probe.verdict === 'slow' ? probe.latencyMs : null,
+        block_reason:
+          probe.verdict === 'ok' || probe.verdict === 'slow'
+            ? undefined
+            : probe.verdict === 'intercepted'
+            ? 'throttled'
+            : 'network',
+      };
+
+      // Причина отказа видна в детальном списке — так понятно, что именно случилось.
+      if (probe.verdict !== 'ok' && probe.verdict !== 'slow' && probe.reason) {
+        (result as ScanSiteResult & { note?: string }).note = probe.reason;
+      }
+      if (probe.verdict === 'intercepted') {
+        (result as ScanSiteResult & { intercepted?: boolean }).intercepted = true;
+      }
+    }
 
     acc.push(result);
     done += 1;
@@ -61,5 +107,5 @@ export async function runRealSiteScan(
     return result;
   });
 
-  return results;
+  return { results, controlOk, approximate: false };
 }

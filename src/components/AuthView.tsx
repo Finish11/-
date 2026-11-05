@@ -127,7 +127,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthenticated, showToast }
         {IS_DEMO_BUILD && (
           <div className="mt-4">
             <Notice tone="warn">
-              Демо-режим: вход работает офлайн, проверки имитируются.
+              Веб-предпросмотр: вход офлайн, проверки — оценка. Точные замеры — в приложении для Android.
             </Notice>
           </div>
         )}

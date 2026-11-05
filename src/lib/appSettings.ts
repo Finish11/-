@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * компонентами через событие.
  */
 export type NetworkType = 'auto' | 'wifi' | 'cellular';
-export type ProbeMode = 'auto' | 'real' | 'demo';
+export type ProbeMode = 'auto' | 'real';
 /** Тема оформления: тёмная, светлая или как в системе. */
 export type ThemeMode = 'dark' | 'light' | 'system';
 
@@ -16,7 +16,7 @@ export interface AppSettings {
   /** Город: '' — определять автоматически */
   city: string;
   networkType: NetworkType;
-  /** real — настоящие пробы (в APK), demo — симуляция, auto — как получится */
+  /** auto — настоящие пробы, когда доступны; real — принудительно настоящие */
   probeMode: ProbeMode;
   /** Акцентный цвет интерфейса */
   accent: AccentTheme;
@@ -119,8 +119,10 @@ export function readSettings(): AppSettings {
       applyTheme(DEFAULT_SETTINGS.theme);
       return DEFAULT_SETTINGS;
     }
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    const parsed = JSON.parse(raw) as Partial<AppSettings> & { probeMode?: string };
     const merged = { ...DEFAULT_SETTINGS, ...parsed };
+    // Старое значение 'demo' больше не существует: имитации в замерах нет.
+    if (merged.probeMode !== 'real') merged.probeMode = 'auto';
     applyAccent(merged.accent);
     applyTheme(merged.theme);
     applyMotion(merged.calmMotion);

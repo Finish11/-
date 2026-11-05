@@ -25,6 +25,10 @@ export interface ParsedNode {
   protocol: string;
   host: string;
   port: number;
+  /** Транспорт из ссылки: tcp / ws / grpc / h2 / quic — нужен для дедупликации */
+  transport?: string;
+  /** SNI/маскировочный домен — часть «личности» узла */
+  sni?: string;
   country_code: string;
   location: string;
   provider: string;
@@ -312,7 +316,8 @@ function buildNode(
   host: string,
   port: number,
   groupName: string,
-  rawLink: string
+  rawLink: string,
+  extra: { transport?: string; sni?: string } = {}
 ): ParsedNode | null {
   if (!host || !port) return null;
   const meta = protocolMeta(protocol);
@@ -323,6 +328,8 @@ function buildNode(
     protocol: meta.label,
     host,
     port,
+    transport: (extra.transport || '').toLowerCase() || undefined,
+    sni: (extra.sni || '').toLowerCase() || undefined,
     country_code: country.code,
     location: country.name,
     provider: '',
@@ -373,7 +380,10 @@ export function parseShareLink(link: string, groupName = ''): ParsedNode | null 
       const host = url.hostname.replace(/^\[|\]$/g, '');
       const port = Number(url.port || (scheme === 'wireguard' ? 51820 : 443));
       const fallbackLabel = `${host}:${port}`;
-      return buildNode(proto, label || fallbackLabel, host, port, groupName, trimmed);
+      return buildNode(proto, label || fallbackLabel, host, port, groupName, trimmed, {
+        transport: params.get('type') || params.get('net') || undefined,
+        sni: params.get('sni') || params.get('host') || undefined,
+      });
     }
 
     if (scheme === 'ss') {
@@ -408,9 +418,10 @@ export function parseShareLink(link: string, groupName = ''): ParsedNode | null 
       const host = String(json.add || json.address || '');
       const port = Number(json.port || 443);
       const label = String(json.ps || json.remark || json.name || `${host}:${port}`);
-      const tls = String(json.tls || '').toLowerCase();
-      const proto = tls ? 'vmess' : 'vmess';
-      return buildNode(proto, label, host, port, groupName, trimmed);
+      return buildNode('vmess', label, host, port, groupName, trimmed, {
+        transport: String(json.net || '') || undefined,
+        sni: (json.sni as string) || (json.host as string) || undefined,
+      });
     }
 
     if (scheme === 'socks' || scheme === 'socks5' || scheme === 'http' || scheme === 'https') {
@@ -584,7 +595,10 @@ export function parseClashYaml(text: string, groupName: string): ParsedNode[] {
     // Остальные типы (direct, reject, selector, url-test) — не узлы
     if (!protocol) continue;
 
-    const node = buildNode(protocol, proxy.name, proxy.server, proxy.port, groupName, '');
+    const node = buildNode(protocol, proxy.name, proxy.server, proxy.port, groupName, '', {
+      transport: (proxy as unknown as { network?: string }).network,
+      sni: (proxy as unknown as { servername?: string }).servername,
+    });
     if (node) nodes.push(node);
   }
   return nodes;
@@ -759,11 +773,22 @@ function deepCollectNodes(value: unknown, groupName: string, out: ParsedNode[], 
 }
 
 function dedupe(nodes: ParsedNode[]): ParsedNode[] {
+  // Раньше ключ был host:port:protocol — и панели, которые держат по несколько
+  // узлов на одном адресе (разные SNI/Reality-ключи/транспорты или просто
+  // «RU-каскад 1..5» на одном хосте), теряли половину списка: у пользователя
+  // было 79 серверов, а приложение показывало 66.
+  // Теперь одинаковыми считаются только реально одинаковые записи.
   const seen = new Map<string, ParsedNode>();
-  for (const n of nodes) {
-    const key = `${n.host}:${n.port}:${n.protocol}`;
-    const prev = seen.get(key);
-    if (!prev || prev.name.length > n.name.length) seen.set(key, n);
+  for (const node of nodes) {
+    const signature = [
+      node.host.toLowerCase(),
+      node.port,
+      node.protocol,
+      (node.transport || '').toLowerCase(),
+      (node.sni || '').toLowerCase(),
+      node.name.trim().toLowerCase(),
+    ].join('|');
+    if (!seen.has(signature)) seen.set(signature, node);
   }
   return Array.from(seen.values());
 }

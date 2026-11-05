@@ -55,6 +55,9 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           if (!alive || !found) return;
           setInfo(found);
           setPhase('ready');
+          // Обновление не спрашивает разрешения: сразу качаем APK,
+          // пользователю останется только подтвердить установку в системе.
+          void beginDownload(found);
         })
         .catch(() => undefined);
     }, 800);
@@ -104,16 +107,15 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     return () => remove?.();
   }, [phase]);
 
-  const handleUpdate = async () => {
-    if (!info) return;
+  const beginDownload = async (target: UpdateInfo) => {
     setPhase('downloading');
     setProgress(0);
     setError('');
 
     try {
       const { downloadId: id } = await ApkUpdater.download({
-        url: info.downloadUrl,
-        fileName: `pulsenet-${info.version}.apk`,
+        url: target.downloadUrl,
+        fileName: `pulsenet-${target.version}.apk`,
       });
       downloadId.current = id;
 
@@ -221,7 +223,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
             </div>
           )}
 
-          {phase === 'error' && (
+          {(phase === 'idle' || phase === 'error') && (
             <div className="mt-2 flex items-start gap-1.5 text-[11px]" style={{ color: 'rgb(var(--danger))' }}>
               <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
@@ -235,14 +237,14 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           )}
 
           <div className="flex items-center gap-2 mt-3">
-            {(phase === 'ready' || phase === 'error') && (
+            {phase === 'error' && (
               <Button
                 variant="primary"
                 size="sm"
                 icon={<Download className="w-3.5 h-3.5" />}
-                onClick={handleUpdate}
+                onClick={() => info && void beginDownload(info)}
               >
-                {phase === 'error' ? 'Попробовать снова' : 'Обновить'}
+                {phase === 'error' ? 'Попробовать снова' : 'Скачать сейчас'}
               </Button>
             )}
             {phase === 'permission' && (

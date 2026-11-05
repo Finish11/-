@@ -244,6 +244,36 @@ html.light .glass {
   scroll-snap-align: start;
   flex: none;
 }
+/* Мягкий намёк на продолжение вместо «обрезанного» чипа у края */
+.chip-rail {
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 26px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 26px), transparent 100%);
+}
+.chip-rail.is-end {
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+/* Карточки списков: без «двойного» шума — плотная сетка строк */
+.list-dense > * + * {
+  margin-top: 0.375rem;
+}
+
+/* Тап-обратная связь для строчных действий */
+.row-action {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  color: var(--text-muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.row-action:hover,
+.row-action:active {
+  color: var(--text);
+  background: var(--surface-2);
+}
 
 /* ============================================================================
    АНИМАЦИИ

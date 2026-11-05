@@ -187,6 +187,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   );
 
   const enabledSitesCount = sites.filter((s) => Boolean(s.enabled)).length;
+  // Результат, которому больше 30 минут, помечаем как устаревший: за это время
+  // сеть могла измениться, и выдавать старый вердикт за текущий нельзя.
+  const staleScan = Boolean(
+    activeScan && Date.now() - new Date(activeScan.created_at).getTime() > 30 * 60 * 1000
+  );
 
   const stopVpnWatch = () => {
     if (vpnWatchTimerRef.current) {
@@ -663,6 +668,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             <div className="mt-4 w-full max-w-sm space-y-1">
               <h2 className="text-[15.5px] font-extrabold leading-snug">{activeScan.verdict_title}</h2>
               <p className="text-[12px] text-dim leading-snug line-clamp-2">{activeScan.verdict_summary}</p>
+              <p className="text-[10.5px] text-muted pt-0.5">
+                {relativeScanTime(activeScan.created_at)}
+                {staleScan && (
+                  <>
+                    {' · '}
+                    <span style={{ color: 'rgb(var(--warning))' }}>сеть могла измениться</span>
+                  </>
+                )}
+              </p>
             </div>
           ) : (
             <div className="mt-4 space-y-1">
@@ -1200,6 +1214,19 @@ const Conclusion: React.FC<{
       .
     </span>
   );
+};
+
+/** «Только что», «12 минут назад», «вчера в 19:04» — коротко и по-русски. */
+const relativeScanTime = (iso: string): string => {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return '';
+  const diffMin = Math.round((Date.now() - ts) / 60000);
+  if (diffMin < 1) return 'Замер только что';
+  if (diffMin < 60) return `Замер ${diffMin} мин назад`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `Замер ${diffH} ч назад`;
+  const d = new Date(ts);
+  return `Замер ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}, ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
 const Metric: React.FC<{

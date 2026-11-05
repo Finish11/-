@@ -384,32 +384,34 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                 <div className="flex items-start gap-2.5">
                   <span
                     className="w-1 self-stretch rounded-full shrink-0 my-1"
+                    title={
+                      role === 'whitelist' ? 'Белый список РФ' : role === 'rkn' ? 'Заблокирован РКН' : 'Нейтральный'
+                    }
                     style={{ background: roleColor, opacity: 0.7 }}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[13px] font-bold truncate">{site.name}</span>
                       <span
-                        className="text-[9.5px] font-bold px-1.5 py-0.5 rounded"
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded font-mono"
+                        title={CATEGORY_META[site.category]?.label}
                         style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                       >
                         {CATEGORY_META[site.category]?.shortLabel || 'свой'}
                       </span>
                     </div>
-                    <div className="text-[10.5px] font-mono text-muted truncate mt-0.5">{site.domain}</div>
-                    <div className="flex items-center gap-1.5 mt-1.5 text-[11px]">
-                      <StatusIcon status={site.last_status} className="w-3.5 h-3.5" />
-                      <span className="text-dim">
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10.5px] font-mono text-muted truncate">{site.domain}</span>
+                      <span className="text-muted text-[9px]">·</span>
+                      <StatusIcon status={site.last_status} className="w-3 h-3 shrink-0" />
+                      <span className="text-[10.5px] text-dim shrink-0">
                         {site.last_status === 'ok'
-                          ? `доступен · ${site.last_latency_ms} мс`
+                          ? `${site.last_latency_ms} мс`
                           : site.last_status === 'slow'
                           ? `медленно · ${site.last_latency_ms} мс`
                           : site.last_status === 'blocked'
                           ? 'недоступен'
                           : 'не проверялся'}
-                      </span>
-                      <span className="ml-auto text-[9.5px] font-bold" style={{ color: roleColor }}>
-                        {role === 'whitelist' ? 'белый список' : role === 'rkn' ? 'РКН' : 'нейтральный'}
                       </span>
                     </div>
                   </div>

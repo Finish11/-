@@ -88,6 +88,9 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           sed -i -E "s/versionName \"[^\"]*\"/versionName \"$VERSION\"/" android/app/build.gradle
+          # versionCode обязан увеличиваться, иначе Android откажет в обновлении
+          sed -i -E "s/versionCode [0-9]+/versionCode $((GITHUB_RUN_NUMBER + 1000))/" android/app/build.gradle
+          grep -n 'versionCode' android/app/build.gradle
           grep -n 'versionName' android/app/build.gradle
 
       - name: Демо-сборка и синхронизация с Android

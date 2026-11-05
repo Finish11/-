@@ -22,6 +22,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { UpdateCard } from './UpdateCard';
+import { isNativeApp } from '../lib/nativeBridge';
 import { SettingsSheet } from './SettingsSheet';
 
 export type NavTab = 'scanner' | 'sites' | 'vpn' | 'incidents' | 'history';
@@ -393,7 +394,7 @@ export const Layout: React.FC<LayoutProps> = ({
           <UpdateCard darkMode={darkMode} showToast={showToast} />
         </div>
 
-        {IS_DEMO_BUILD && demoBanner && (
+        {IS_DEMO_BUILD && demoBanner && !isNativeApp() && (
           <div className="mb-4 flex items-start gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-[11px] sm:text-xs leading-snug text-amber-200">
             <span className="shrink-0">🧪</span>
             <span className="flex-1">

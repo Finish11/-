@@ -131,8 +131,15 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ darkMode, showToast }) =
           }
         } catch {
           stopPolling();
+          // DownloadManager на части прошивок не отдаёт статус — не оставляем
+          // пользователя в тупике, а открываем прямую ссылку на APK.
           setPhase('error');
-          setError('Не удалось отследить загрузку');
+          setError('Система не отдала статус загрузки — открываем прямую ссылку на APK в браузере.');
+          try {
+            window.open(info.downloadUrl, '_system');
+          } catch {
+            // ссылка есть в карточке ниже
+          }
         }
       }, 800);
     } catch (err) {

@@ -170,23 +170,15 @@ public class ApkUpdaterPlugin extends Plugin {
 
             if (kind.equals("unknown") && caps != null
                 && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    // Публичный API Android 12+: список физических сетей находится
-                    // в capabilities VPN. У ConnectivityManager такого метода нет.
-                    for (Network network : caps.getUnderlyingNetworks()) {
-                        kind = transportKind(manager.getNetworkCapabilities(network));
-                        if (!kind.equals("unknown")) break;
-                    }
-                } else {
-                    // До Android 12 выбираем среди подключённых сетей не-VPN
-                    // транспорт. Сам активный VPN пропускаем.
-                    for (Network network : manager.getAllNetworks()) {
-                        if (network.equals(active)) continue;
-                        NetworkCapabilities underlying = manager.getNetworkCapabilities(network);
-                        if (underlying == null || underlying.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
-                        kind = transportKind(underlying);
-                        if (!kind.equals("unknown")) break;
-                    }
+                // Публичного getUnderlyingNetworks() у приложения нет: это системный
+                // API. Среди доступных подключённых сетей выбираем не-VPN транспорт.
+                // Если Android скрывает его, возвращаем unknown, а не выдумываем Wi-Fi.
+                for (Network network : manager.getAllNetworks()) {
+                    if (network.equals(active)) continue;
+                    NetworkCapabilities underlying = manager.getNetworkCapabilities(network);
+                    if (underlying == null || underlying.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+                    kind = transportKind(underlying);
+                    if (!kind.equals("unknown")) break;
                 }
             }
 

@@ -314,12 +314,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
 
     const okCount = results.filter((r) => r.status === 'ok' || r.status === 'slow').length;
-    void notifyScanResult(
-      `Проверка готова: ${evaluated.verdict_title}`,
-      `${okCount} из ${results.length} доступны · ${
-        appSettings.operator || netCtx?.operator || user.carrier
-      }${netCtx?.city ? `, ${netCtx.city}` : ''}`
-    );
+    // Уведомление нужно только тем, кто ушёл с экрана во время замера.
+    if (document.visibilityState === 'hidden') {
+      void notifyScanResult(
+        `${evaluated.verdict_title} · ${okCount} из ${results.length} доступны`,
+        `Ответы уже в приложении: ${
+          appSettings.operator || netCtx?.operator || user.carrier
+        }${netCtx?.city ? `, ${netCtx.city}` : ''}`
+      );
+    }
 
     const carrierLabel =
       vpnMode === 'with_vpn'

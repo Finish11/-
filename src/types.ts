@@ -101,6 +101,12 @@ export interface ScanRecord {
   pinned: boolean;
   results: ScanSiteResult[];
   created_at: string;
+  /**
+   * Замер из примерного набора демо-сборки, а не реальная проверка сети.
+   * Такие записи показываем только как «пример», чтобы не выдавать их
+   * за измерение пользователя.
+   */
+  demo?: boolean;
 }
 
 export interface VpnProfile {

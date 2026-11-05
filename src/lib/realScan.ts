@@ -1,5 +1,5 @@
 import type { ScanSiteResult, Site } from '../types';
-import { mapLimit } from './nativeBridge';
+import { isNativeApp, mapLimit } from './nativeBridge';
 import { probeControl, probeSite, type ProbeVerdict } from './siteProbe';
 
 /**
@@ -107,5 +107,12 @@ export async function runRealSiteScan(
     return result;
   });
 
-  return { results, controlOk, approximate: false };
+  // Если хоть один сайт ответил — сеть точно жива, даже когда контрольные
+  // адреса заблокированы (так бывает при белых списках).
+  const anyAnswered = results.some((r) => r.status !== 'blocked');
+  const networkAlive = controlOk || anyAnswered;
+
+  // В браузере мы видим только сам факт ответа (CORS не даёт прочитать страницу),
+  // поэтому результат честно помечается как оценочный — но не выдуманный.
+  return { results, controlOk: networkAlive, approximate: !isNativeApp() };
 }

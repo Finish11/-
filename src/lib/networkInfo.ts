@@ -73,20 +73,32 @@ interface IpGeo {
   success?: boolean;
 }
 
+/**
+ * Гео-данные по IP. Основной сервис отдаёт и провайдера, и город; если он
+ * недоступен (бывает при фильтрации), берём хотя бы IP — тогда в интерфейсе
+ * не висит вечное «определяем сеть».
+ */
 async function detectGeo(): Promise<IpGeo | null> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 6000);
-  try {
-    const res = await fetch('https://ipwho.is/', { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = (await res.json()) as IpGeo;
-    if (data.success === false) return null;
-    return data;
-  } catch {
-    clearTimeout(timer);
-    return null;
-  }
+  const withTimeout = async <T,>(url: string): Promise<T | null> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+      if (!res.ok) return null;
+      return (await res.json()) as T;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const primary = await withTimeout<IpGeo>('https://ipwho.is/');
+  if (primary && primary.success !== false && primary.ip) return primary;
+
+  const fallback = await withTimeout<{ ip?: string }>('https://api.ipify.org?format=json');
+  if (fallback?.ip) return { ip: fallback.ip };
+  return null;
 }
 
 /**

@@ -6,7 +6,6 @@ import {
   markExplicitLogout,
   setStoredToken,
 } from './lib/api';
-import { detectCurrentConnection } from './lib/scanner';
 import { isNativeApp } from './lib/nativeBridge';
 import { detectNetworkContext } from './lib/networkInfo';
 import type {
@@ -86,8 +85,24 @@ export function App() {
           vpn_reasons: ctx.vpnReason ? [ctx.vpnReason] : [],
         });
       } else {
-        const info = await detectCurrentConnection('live');
-        setConnection(info);
+        // В браузере тоже берём настоящую сеть, а не подставной профиль.
+        const ctx = await detectNetworkContext();
+        setConnection({
+          ip: ctx.ip,
+          country_code: ctx.countryCode || 'RU',
+          country_name: ctx.countryCode === 'RU' ? 'Россия' : ctx.countryCode || 'Россия',
+          region: ctx.region,
+          city: ctx.city,
+          isp: ctx.isp || ctx.operator,
+          org: ctx.isp,
+          asn: '',
+          is_hosting: /hetzner|digitalocean|ovh|vultr|aeza|selectel|timeweb|cloudflare/i.test(ctx.isp),
+          is_proxy: ctx.vpnLikely,
+          is_mobile: ctx.kind === 'cellular',
+          vpn_detected: ctx.vpnLikely,
+          vpn_confidence: ctx.vpnLikely ? 'medium' : 'none',
+          vpn_reasons: ctx.vpnReason ? [ctx.vpnReason] : [],
+        });
       }
     } finally {
       setConnLoading(false);

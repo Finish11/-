@@ -13,7 +13,6 @@ import {
   Sparkles,
   Sun,
   Wifi,
-  Zap,
 } from 'lucide-react';
 import {
   CITIES,
@@ -22,7 +21,6 @@ import {
   useSettings,
   type AccentTheme,
   type NetworkType,
-  type ProbeMode,
   type ThemeMode,
 } from '../lib/appSettings';
 import {
@@ -298,18 +296,10 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
           <SectionTitle hint="В приложении для Android доступны настоящие пробы с телефона">
             Замеры
           </SectionTitle>
-          <Segmented<ProbeMode>
-            value={settings.probeMode}
-            onChange={(v) => update({ probeMode: v })}
-            options={[
-              { value: 'auto', label: 'Авто' },
-              { value: 'real', label: 'Точные', icon: <Zap className="w-3.5 h-3.5" /> },
-            ]}
-          />
-          <p className="text-[10.5px] text-muted leading-relaxed">
-            Имитации в замерах нет: приложение всегда проверяет вашу сеть по-настоящему. Если
-            содержимое страницы недоступно (например, в веб-предпросмотре), результат помечается как
-            оценка.
+          <p className="text-[11px] text-dim leading-relaxed">
+            Выбирать режим не нужно: имитаций в замерах нет, приложение всегда проверяет вашу сеть
+            по-настоящему. Если содержимое страницы недоступно (например, в веб-предпросмотре),
+            результат честно помечается как оценка.
           </p>
         </section>
 

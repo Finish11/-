@@ -35,7 +35,6 @@ import {
   type User,
 } from '../types';
 import {
-  detectCurrentConnection,
   evaluateScanVerdict,
   IS_DEMO_BUILD,
   runMultiSiteScan,
@@ -150,7 +149,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [detectedConn, setDetectedConn] = useState<ClientConnectionInfo | null>(connection);
   const [progress, setProgress] = useState({ done: 0, total: 0, currentDomain: '' });
   const [liveResults, setLiveResults] = useState<ScanSiteResult[]>([]);
-  const [activeScan, setActiveScan] = useState<ScanRecord | null>(latestScan);
+  // Примерные замеры из демо-набора не показываем как свои: только реальные.
+  const realLatestScan = latestScan && !latestScan.demo ? latestScan : null;
+  const [activeScan, setActiveScan] = useState<ScanRecord | null>(realLatestScan);
 
   const [siteFilter, setSiteFilter] = useState<'all' | 'blocked' | 'ok' | SiteCategory>('all');
   const [copiedReport, setCopiedReport] = useState(false);
@@ -181,8 +182,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   }, [connection, phase]);
 
   useEffect(() => {
-    if (!activeScan && latestScan) setActiveScan(latestScan);
-  }, [latestScan, activeScan]);
+    if (!activeScan && realLatestScan) setActiveScan(realLatestScan);
+  }, [realLatestScan, activeScan]);
 
   useEffect(
     () => () => {
@@ -219,9 +220,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
     let conn: ClientConnectionInfo;
     try {
-      conn = isNativeApp()
-        ? (toClientConnection(await detectNetworkContext()) as ClientConnectionInfo)
-        : await detectCurrentConnection(simMode);
+      // Сеть определяем настоящую и в браузере, и в APK: подставной профиль
+      // оператора раньше давал ложные подписи в отчёте.
+      conn = toClientConnection(await detectNetworkContext()) as ClientConnectionInfo;
     } catch {
       conn = {
         ip: '—',
@@ -252,16 +253,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       return;
     }
 
-    await executeSiteScan(conn, simMode === 'live' ? 'direct' : 'simulated', simMode);
+    await executeSiteScan(conn, 'direct', simMode);
   };
 
   const handleWaitForVpnOff = () => {
     setPhase('waiting_vpn_off');
     stopVpnWatch();
-    if (simMode === 'sim_vpn') setSimMode('live');
 
     vpnWatchTimerRef.current = window.setInterval(async () => {
-      const fresh = await detectCurrentConnection('live');
+      const fresh = toClientConnection(await detectNetworkContext()) as ClientConnectionInfo;
       setDetectedConn(fresh);
       onConnectionDetected(fresh);
       if (!fresh.vpn_detected) {
@@ -275,11 +275,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const handleConfirmTurnedOffNow = async () => {
     stopVpnWatch();
     setPhase('precheck');
-    const nextMode = simMode === 'sim_vpn' ? 'sim_whitelist' : simMode;
-    const fresh = await detectCurrentConnection(simMode === 'sim_vpn' ? 'live' : nextMode);
+    const fresh = toClientConnection(await detectNetworkContext()) as ClientConnectionInfo;
     setDetectedConn(fresh);
     onConnectionDetected(fresh);
-    await executeSiteScan(fresh, 'vpn_turned_off', simMode === 'sim_vpn' ? 'live' : nextMode);
+    await executeSiteScan(fresh, 'vpn_turned_off', simMode);
   };
 
   const handleProceedWithVpn = async () => {
@@ -311,24 +310,30 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Достоверность важнее наглядности: настоящие запросы выполняем всегда,
     // когда это возможно. Имитация остаётся только для веб-предпросмотра,
     // где у браузера нет доступа к содержимому страниц.
-    const useRealProbes = isNativeApp();
-
-    let results: ScanSiteResult[];
-    let controlOk = true;
-    let approximate = false;
-    if (useRealProbes) {
-      const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal);
-      results = outcome.results;
-      controlOk = outcome.controlOk;
-      approximate = outcome.approximate;
-    } else {
-      results = await runMultiSiteScan(sites, effectiveSimMode, progressCb, ctrl.signal);
-      approximate = true;
-    }
+    // Замеры всегда настоящие: сетевые запросы идут и в браузере, и в APK.
+    // Отличается только глубина проверки — в браузере недоступно содержимое
+    // страниц, поэтому результат помечается как оценочный.
+    const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal);
+    const results: ScanSiteResult[] = outcome.results;
+    const controlOk = outcome.controlOk;
+    const approximate = outcome.approximate;
 
     if (ctrl.signal.aborted) return;
     setNetControlOk(controlOk);
     setScanApproximate(approximate);
+
+    // Сеть мертва целиком: честно говорим об этом, а не рисуем вердикт
+    // «глушение» по нулям, которые ничего не значат.
+    if (!controlOk) {
+      setLiveResults(results);
+      setProgress({ done: results.length, total: results.length, currentDomain: '' });
+      setPhase('idle');
+      showToast(
+        'warning',
+        'Интернет не отвечает совсем. Проверьте Wi-Fi или мобильные данные — так замер ничего не покажет.'
+      );
+      return;
+    }
 
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
@@ -528,11 +533,14 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const progressPct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const showResult = Boolean(activeScan) && phase !== 'scanning';
 
-  const connectionLine = detectedConn
-    ? `${appSettings.operator || netCtx?.operator || detectedConn.isp || 'сеть'} · ${
-        appSettings.city || netCtx?.city || detectedConn.city || user.region
-      }`
-    : `готов проверить ${enabledSitesCount} сайтов`;
+  // Ничего не выдумываем: если оператор и город не определены, так и пишем.
+  const connOperator = appSettings.operator || netCtx?.operator || detectedConn?.isp || '';
+  const connCity = appSettings.city || netCtx?.city || detectedConn?.city || user.region || '';
+  const connectionLine =
+    connOperator || connCity
+      ? [connOperator, connCity].filter(Boolean).join(' · ')
+      : `готов проверить ${enabledSitesCount} сайтов`;
+  const netKnown = Boolean(detectedConn?.ip && detectedConn.ip !== '—');
 
   return (
     <div className="space-y-4">
@@ -585,7 +593,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               className="inline-flex items-center gap-2 h-8 px-3 rounded-full border text-[11.5px] font-medium max-w-full"
               style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
             >
-              <SignalBadge vpn={Boolean(detectedConn?.vpn_detected)} loading={phase === 'precheck'} />
+              <SignalBadge
+                vpn={Boolean(detectedConn?.vpn_detected)}
+                known={netKnown}
+                loading={phase === 'precheck'}
+              />
               <span className="truncate text-dim">{connectionLine}</span>
             </div>
           )}
@@ -1180,20 +1192,27 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
 /* ------------------------------- подкомпоненты ------------------------------- */
 
-const SignalBadge: React.FC<{ vpn: boolean; loading: boolean }> = ({ vpn, loading }) => (
-  <span className="flex items-center gap-1.5">
-    <span
-      className="w-1.5 h-1.5 rounded-full"
-      style={{ background: vpn ? 'rgb(var(--warning))' : 'rgb(var(--success))' }}
-    />
-    <span
-      className="text-[10.5px] font-bold uppercase tracking-wider"
-      style={{ color: vpn ? 'rgb(var(--warning))' : 'rgb(var(--success))' }}
-    >
-      {loading ? '…' : vpn ? 'VPN' : 'без VPN'}
+const SignalBadge: React.FC<{ vpn: boolean; known: boolean; loading: boolean }> = ({
+  vpn,
+  known,
+  loading,
+}) => {
+  // Если сеть не определена — не утверждаем ни «VPN», ни «без VPN».
+  const color = !known
+    ? 'var(--text-muted)'
+    : vpn
+    ? 'rgb(var(--warning))'
+    : 'rgb(var(--success))';
+  const label = loading ? '…' : !known ? 'сеть?' : vpn ? 'VPN' : 'без VPN';
+  return (
+    <span className="flex items-center gap-1.5 shrink-0">
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+      <span className="text-[10.5px] font-bold uppercase tracking-wider" style={{ color }}>
+        {label}
+      </span>
     </span>
-  </span>
-);
+  );
+};
 
 const RowKV: React.FC<{ k: string; v: string; mono?: boolean }> = ({ k, v, mono }) => (
   <div className="flex justify-between gap-3">

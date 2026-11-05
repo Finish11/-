@@ -125,6 +125,21 @@ export const Layout: React.FC<LayoutProps> = ({
   };
 
   const vpnOn = Boolean(connection?.vpn_detected);
+  // Пока сеть не определена, «БЕЗ VPN» — это утверждение без основания.
+  const netKnown = Boolean(connection?.ip && connection.ip !== '—');
+  const vpnLabel = connLoading
+    ? 'Проверяем…'
+    : !netKnown
+    ? 'Сеть?'
+    : vpnOn
+    ? 'VPN'
+    : 'БЕЗ VPN';
+  // VPN определяется эвристикой (дата-центр + гео), поэтому не «выключен», а «похоже, выключен».
+  const vpnHint = !netKnown
+    ? 'Не удалось определить сеть. Нажмите, чтобы попробовать снова'
+    : vpnOn
+    ? 'Похоже, включён VPN: внешний адрес в дата-центре'
+    : 'Похоже, VPN выключен. Нажмите, чтобы проверить снова';
 
   const fieldStyle: React.CSSProperties = {
     background: 'var(--surface-2)',
@@ -282,11 +297,16 @@ export const Layout: React.FC<LayoutProps> = ({
             <div className="font-extrabold text-[14.5px] leading-none tracking-tight">ПульсСети</div>
             <div className="text-[10.5px] text-muted mt-1 truncate flex items-center gap-1">
               {connection?.ip ? (
-                <>
-                  <span className="font-mono">{connection.country_code} · {connection.ip.slice(0, 15)}</span>
-                </>
-              ) : (
+                <span className="font-mono truncate">
+                  {connection.country_code} · {connection.ip.slice(0, 15)}
+                </span>
+              ) : connLoading ? (
                 'определяем сеть…'
+              ) : (
+                <span className="truncate">
+                  {[connection?.isp, connection?.city].filter(Boolean).join(' · ') ||
+                    'сеть не определена'}
+                </span>
               )}
             </div>
           </div>
@@ -295,17 +315,36 @@ export const Layout: React.FC<LayoutProps> = ({
             onClick={onRefreshConnection}
             disabled={connLoading}
             className="h-8 px-2.5 rounded-full text-[10.5px] font-bold border inline-flex items-center gap-1.5 tap shrink-0"
+            title={vpnHint}
             style={{
-              background: vpnOn ? 'rgb(var(--warning) / 0.12)' : 'rgb(var(--success) / 0.1)',
-              borderColor: vpnOn ? 'rgb(var(--warning) / 0.32)' : 'rgb(var(--success) / 0.28)',
-              color: vpnOn ? 'rgb(var(--warning))' : 'rgb(var(--success))',
+              background: !netKnown
+                ? 'var(--surface-2)'
+                : vpnOn
+                ? 'rgb(var(--warning) / 0.12)'
+                : 'rgb(var(--success) / 0.1)',
+              borderColor: !netKnown
+                ? 'var(--line)'
+                : vpnOn
+                ? 'rgb(var(--warning) / 0.32)'
+                : 'rgb(var(--success) / 0.28)',
+              color: !netKnown
+                ? 'var(--text-dim)'
+                : vpnOn
+                ? 'rgb(var(--warning))'
+                : 'rgb(var(--success))',
             }}
           >
             <span
               className="w-1.5 h-1.5 rounded-full"
-              style={{ background: vpnOn ? 'rgb(var(--warning))' : 'rgb(var(--success))' }}
+              style={{
+                background: !netKnown
+                  ? 'var(--text-muted)'
+                  : vpnOn
+                  ? 'rgb(var(--warning))'
+                  : 'rgb(var(--success))',
+              }}
             />
-            {connLoading ? 'IP…' : vpnOn ? 'VPN' : 'БЕЗ VPN'}
+            {vpnLabel}
           </button>
 
           <button

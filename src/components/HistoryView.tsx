@@ -118,9 +118,13 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     }
   };
 
-  const chartPoints = [...scans].reverse().slice(-10);
+  // В историю попадают только настоящие замеры: примеры из демо-набора
+  // не должны выглядеть как ваши измерения.
+  const realScans = scans.filter((s) => !s.demo);
 
-  const visible = scans.filter((s) => {
+  const chartPoints = [...realScans].reverse().slice(-10);
+
+  const visible = realScans.filter((s) => {
     if (!query.trim()) return true;
     const q = query.trim().toLowerCase();
     return (
@@ -131,8 +135,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     );
   });
 
-  const avgGlobal = scans.length
-    ? Math.round(scans.reduce((a, s) => a + s.global_ok_pct, 0) / scans.length)
+  const avgGlobal = realScans.length
+    ? Math.round(realScans.reduce((a, s) => a + s.global_ok_pct, 0) / realScans.length)
     : 0;
 
   return (
@@ -150,7 +154,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
         </div>
       </header>
 
-      {scans.length === 0 ? (
+      {realScans.length === 0 ? (
         <div className="rounded-[1.5rem] border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
           <EmptyState
             icon={<History className="w-5 h-5" />}

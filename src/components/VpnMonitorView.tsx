@@ -152,10 +152,11 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   showToast,
 }) => {
   // Рекомендация узлов под результат последнего замера
-  const problem = useMemo(() => (lastScan ? detectProblem(lastScan) : null), [lastScan]);
+  const realScan = lastScan && !lastScan.demo ? lastScan : null;
+  const problem = useMemo(() => (realScan ? detectProblem(realScan) : null), [realScan]);
   const recommended = useMemo(
-    () => (lastScan ? recommendNodes(lastScan, profiles) : []),
-    [lastScan, profiles]
+    () => (realScan ? recommendNodes(realScan, profiles) : []),
+    [realScan, profiles]
   );
   const lastCheckedLabel = useMemo(() => {
     const times = profiles
@@ -910,7 +911,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       )}
 
       {/* ---------- Какой узел подойдёт ---------- */}
-      {lastScan && problem && problem !== 'no_problem' && recommended.length > 0 && (
+      {realScan && problem && problem !== 'no_problem' && recommended.length > 0 && (
         <section
           className="rounded-[1.5rem] border p-4 space-y-3"
           style={{

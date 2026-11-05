@@ -166,9 +166,13 @@ export async function probeSite(
  * Если и он не отвечает — сеть мертва целиком, и осуждать сайты нельзя.
  */
 export async function probeControl(timeoutMs = 5000): Promise<boolean> {
+  // Порядок важен: сначала нейтральные зарубежные адреса, затем российские —
+  // при белых списках зарубежные не ответят, а Рунет работает.
   const targets = [
     'https://www.gstatic.com/generate_204',
     'https://cp.cloudflare.com/generate_204',
+    'https://ya.ru/favicon.ico',
+    'https://www.rbc.ru/favicon.ico',
   ];
   for (const url of targets) {
     const res = await probeSite(url, { timeoutMs, verifyContent: false });

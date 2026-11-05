@@ -1310,7 +1310,7 @@
    "carrier_label": "МТС 4G LTE • Краснодар",
    "note": "Вечером перестали открываться все зарубежные сайты.",
    "pinned": true,
-   "demo": true, "created_at": "2026-11-04T12:52:02.198Z",
+   "demo": true, "demo": true, "created_at": "2026-11-04T12:52:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -1939,7 +1939,7 @@
    "carrier_label": "Ростелеком GPON • Дом",
    "note": "Обычный домашний интернет без VPN.",
    "pinned": false,
-   "demo": true, "created_at": "2026-11-03T20:04:02.198Z",
+   "demo": true, "demo": true, "created_at": "2026-11-03T20:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -2568,7 +2568,7 @@
    "carrier_label": "VLESS Reality • Amsterdam",
    "note": "Проверка через каскадный туннель.",
    "pinned": false,
-   "demo": true, "created_at": "2026-11-03T09:04:02.198Z",
+   "demo": true, "demo": true, "created_at": "2026-11-03T09:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -3197,7 +3197,7 @@
    "carrier_label": "МегаФон EDGE/LTE • Трасса М-4",
    "note": "Полное отключение мобильной передачи данных ночью.",
    "pinned": true,
-   "demo": true, "created_at": "2026-11-02T22:04:02.198Z",
+   "demo": true, "demo": true, "created_at": "2026-11-02T22:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",
@@ -3826,7 +3826,7 @@
    "carrier_label": "T2 4G • Санкт-Петербург",
    "note": "Отвалились сайты за Cloudflare.",
    "pinned": false,
-   "demo": true, "created_at": "2026-11-01T19:04:02.198Z",
+   "demo": true, "demo": true, "created_at": "2026-11-01T19:04:02.198Z",
    "results": [
     {
      "name": "Госуслуги",

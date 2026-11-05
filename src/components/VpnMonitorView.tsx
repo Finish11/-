@@ -315,6 +315,41 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     }
   };
 
+  /**
+   * Проверка одного узла. Если сервер недоступен, в APK проверяем сами —
+   * иначе кнопка «проверить» у рекомендованного узла просто ругалась бы.
+   */
+  const checkNodeLocally = async (p: VpnProfile): Promise<boolean> => {
+    if (!isNativeApp()) return false;
+    setCheckingId(p.id);
+    try {
+      const res = await pingAllNodes([{ host: p.host, port: Number(p.port || 443) }], () => undefined);
+      const r = res[0];
+      setProfiles((prev) =>
+        prev.map((item) =>
+          item.id === p.id
+            ? {
+                ...item,
+                status: r.status,
+                latency_ms: r.latencyMs,
+                notes: r.reason || '',
+                last_checked_at: new Date().toISOString(),
+              }
+            : item
+        )
+      );
+      showToast(
+        r.status === 'online' ? 'success' : r.status === 'degraded' ? 'warning' : 'error',
+        `${stripLeadingFlag(p.name)}: ${
+          r.latencyMs != null ? `${r.latencyMs} мс` : r.reason || 'нет ответа'
+        }`
+      );
+      return true;
+    } finally {
+      setCheckingId(null);
+    }
+  };
+
   const handleCheckOne = async (p: VpnProfile) => {
     setCheckingId(p.id);
     try {
@@ -333,7 +368,11 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         }`
       );
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Ошибка проверки узла');
+      setCheckingId(null);
+      const doneLocally = await checkNodeLocally(p);
+      if (!doneLocally) {
+        showToast('error', err instanceof Error ? err.message : 'Ошибка проверки узла');
+      }
     } finally {
       setCheckingId(null);
     }
@@ -966,6 +1005,30 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                   style={{ color: 'rgb(var(--accent))' }}
                 >
                   {rec.score}
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleCheckOne(rec.profile);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      void handleCheckOne(rec.profile);
+                    }
+                  }}
+                  className="shrink-0 w-7 h-7 rounded-lg grid place-items-center tap"
+                  style={{ background: 'var(--surface-2)', color: 'rgb(var(--accent))' }}
+                  title="Проверить пинг этого узла"
+                  aria-label={`Проверить пинг ${rec.profile.name}`}
+                >
+                  {checkingId === rec.profile.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="w-3.5 h-3.5" />
+                  )}
                 </span>
               </button>
             ))}

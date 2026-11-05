@@ -91,6 +91,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   // Избранные места: без аккаунта, без сервера, только на этом телефоне
   const [favorites, setFavorites] = useState<Place[]>(() => loadFavorites());
   const [placeQuery, setPlaceQuery] = useState('');
+  const [customName, setCustomName] = useState('');
   const [placePickerOpen, setPlacePickerOpen] = useState(false);
 
   const addPlace = (place: Place) => {
@@ -671,10 +672,42 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               );
             })}
             {searchPlaces(placeQuery).length === 0 && (
-              <p className="text-[11.5px] text-dim leading-snug px-1">
-                Такого места в списке нет. Впишите его в отчёте о сбое — оно появится в сводке по
-                региону, и его можно будет добавить в избранное.
-              </p>
+              <div className="space-y-2">
+                <p className="text-[11.5px] text-dim leading-snug px-1">
+                  Такого места в списке нет — но его можно добавить вручную.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder={placeQuery || 'Название места'}
+                    className="flex-1 px-3 py-2 rounded-xl text-[12.5px] outline-none"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text)' }}
+                  />
+                  <Button
+                    variant="soft"
+                    size="sm"
+                    onClick={() => {
+                      const raw = (customName || placeQuery).trim();
+                      if (raw.length < 2) return;
+                      // Первая буква заглавная — иначе в списке висит «заозерье».
+                      const name = raw.charAt(0).toUpperCase() + raw.slice(1);
+                      addPlace({
+                        id: placeKey(name, user.region || 'Мой регион'),
+                        name,
+                        region: user.region || 'Мой регион',
+                      });
+                      setCustomName('');
+                    }}
+                  >
+                    Добавить
+                  </Button>
+                </div>
+                <p className="text-[10.5px] text-muted leading-snug px-1">
+                  Регион возьмём из вашего профиля — его можно поменять в настройках.
+                </p>
+              </div>
             )}
           </div>
 

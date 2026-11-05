@@ -163,6 +163,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [netControlOk, setNetControlOk] = useState(true);
   // Грубая ли оценка (в браузере нет доступа к содержимому страниц)
   const [scanApproximate, setScanApproximate] = useState(false);
+  // Сеть не ответила совсем: показываем это на экране, а не только тостом
+  const [networkDead, setNetworkDead] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const vpnWatchTimerRef = useRef<number | null>(null);
@@ -325,15 +327,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Сеть мертва целиком: честно говорим об этом, а не рисуем вердикт
     // «глушение» по нулям, которые ничего не значат.
     if (!controlOk) {
+      setNetworkDead(true);
       setLiveResults(results);
       setProgress({ done: results.length, total: results.length, currentDomain: '' });
       setPhase('idle');
-      showToast(
-        'warning',
-        'Интернет не отвечает совсем. Проверьте Wi-Fi или мобильные данные — так замер ничего не покажет.'
-      );
       return;
     }
+    setNetworkDead(false);
 
     const sitesMap = new Map<number, Site>(sites.map((site) => [site.id, site]));
     const evaluated = evaluateScanVerdict(results, vpnMode === 'with_vpn', sitesMap);
@@ -727,6 +727,40 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </div>
           )}
 
+          {/* ---------- Сеть не отвечает ---------- */}
+          {networkDead && phase === 'idle' && (
+            <div
+              className="mt-4 rounded-2xl border p-3 text-left"
+              style={{
+                borderColor: 'rgb(var(--warning) / 0.4)',
+                background: 'rgb(var(--warning) / 0.1)',
+              }}
+            >
+              <div className="flex items-start gap-2">
+                <WifiOff className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'rgb(var(--warning))' }} />
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-bold">Интернет не отвечает</div>
+                  <p className="text-[11px] text-dim leading-snug mt-1">
+                    Ни один контрольный адрес не ответил. Проверьте Wi-Fi или мобильные данные —
+                    пока связи нет, вердикт ставить нельзя: получилось бы «всё заблокировано» без
+                    причины.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNetworkDead(false);
+                      void handleStartCheck();
+                    }}
+                    className="mt-2 h-8 px-3 rounded-full text-[11.5px] font-bold tap"
+                    style={{ background: 'var(--surface-2)', color: 'rgb(var(--accent))' }}
+                  >
+                    Проверить снова
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ---------- Чипы сети ---------- */}
           <div className="mt-4 flex flex-nowrap items-center justify-center gap-1.5 px-1 whitespace-nowrap overflow-hidden">
             <Chip active className="h-7 px-2.5 text-[11px] shrink-0 gap-1">
@@ -811,6 +845,21 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             >
               <span className="font-bold">Вывод. </span>
               <Conclusion groups={roleGroups} withVpn={activeScan.vpn_detected} />
+            </div>
+
+            {/* Как считали: короткие цифры, чтобы вердикт можно было проверить */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
+              <span>
+                ответили {activeScan.ok_sites + activeScan.slow_sites} из {activeScan.total_sites}
+              </span>
+              {activeScan.slow_sites > 0 && <span>медленно {activeScan.slow_sites}</span>}
+              <span>не ответили {activeScan.blocked_sites}</span>
+              {displayedResults.filter((r) => r.intercepted).length > 0 && (
+                <span style={{ color: 'rgb(var(--warning))' }}>
+                  подмена ответа {displayedResults.filter((r) => r.intercepted).length}
+                </span>
+              )}
+              <span>средний отклик {activeScan.avg_latency_ms} мс</span>
             </div>
           </div>
 

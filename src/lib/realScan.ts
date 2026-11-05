@@ -74,7 +74,18 @@ export async function runRealSiteScan(
       };
     } else {
       const probeUrl = site.probe_url || `https://${site.domain}/favicon.ico`;
-      const probe = await probeSite(probeUrl, { timeoutMs });
+      let probe = await probeSite(probeUrl, { timeoutMs });
+
+      // Один таймаут — не приговор: на мобильной сети пакет теряется просто так.
+      // Повторяем только «нет ответа» (сеть/сброс), но не «подмену» — её
+      // повтор подтверждает, а не снимает.
+      let retried = false;
+      if (probe.verdict === 'blocked') {
+        retried = true;
+        const second = await probeSite(probeUrl, { timeoutMs });
+        // Оставляем лучший результат: если со второго раза открылось — значит работает.
+        if (second.verdict !== 'blocked') probe = second;
+      }
 
       result = {
         site_id: site.id,
@@ -94,7 +105,9 @@ export async function runRealSiteScan(
 
       // Причина отказа видна в детальном списке — так понятно, что именно случилось.
       if (probe.verdict !== 'ok' && probe.verdict !== 'slow' && probe.reason) {
-        (result as ScanSiteResult & { note?: string }).note = probe.reason;
+        (result as ScanSiteResult & { note?: string }).note = retried
+          ? `${probe.reason} · проверено дважды`
+          : probe.reason;
       }
       if (probe.verdict === 'intercepted') {
         (result as ScanSiteResult & { intercepted?: boolean }).intercepted = true;

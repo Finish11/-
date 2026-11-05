@@ -190,6 +190,8 @@ export interface ClientConnectionInfo {
   is_hosting: boolean;
   is_proxy: boolean;
   is_mobile: boolean;
+  /** Физический транспорт Android: не путаем LTE и Wi-Fi под VPN. */
+  connection_kind?: 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
   vpn_detected: boolean;
   vpn_confidence: 'high' | 'medium' | 'none';
   vpn_reasons: string[];

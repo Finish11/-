@@ -22,7 +22,7 @@ export interface NodePingResult {
   attempts: number;
 }
 
-const PORT_TIMEOUT = 6000;
+const PORT_TIMEOUT = 4000;
 
 export async function pingNode(host: string, port: number): Promise<NodePingResult> {
   if (!host) {
@@ -45,7 +45,12 @@ export async function pingNode(host: string, port: number): Promise<NodePingResu
       // Сокет был, но подключиться не удалось — повторяем один раз.
       const again = await tcpConnect(host, port);
       if (again.latencyMs != null) {
-        return { status: 'online', latencyMs: again.latencyMs, reason: '', attempts: 2 };
+        return {
+          status: again.latencyMs > 900 ? 'degraded' : 'online',
+          latencyMs: again.latencyMs,
+          reason: again.latencyMs > 900 ? 'очень медленно' : '',
+          attempts: 2,
+        };
       }
       return {
         status: 'blocked',
@@ -98,8 +103,8 @@ function classifyConnectError(message: string): string {
 }
 
 /**
- * Проверка всех узлов: 6 одновременно, чтобы не забить сеть и не рвать
- * соединения. Прогресс отдаём в интерфейс — список обновляется по ходу.
+ * Проверка всех узлов: 12 одновременно, прогресс виден по ходу. Для 79 узлов
+ * это заметно быстрее старых шести потоков, но не создаёт 79 сокетов сразу.
  */
 export async function pingAllNodes<T extends { host: string; port: number }>(
   nodes: T[],
@@ -107,7 +112,7 @@ export async function pingAllNodes<T extends { host: string; port: number }>(
 ): Promise<NodePingResult[]> {
   const total = nodes.length;
   let done = 0;
-  return mapLimit(nodes, 6, async (node, index) => {
+  return mapLimit(nodes, 12, async (node, index) => {
     const result = await pingNode(node.host, node.port);
     done += 1;
     onProgress(done, total, result, index);

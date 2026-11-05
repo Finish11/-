@@ -14,6 +14,7 @@ import {
   Search,
   X,
   Info,
+  Share2,
 } from 'lucide-react';
 import {
   RUSSIAN_CARRIERS,
@@ -23,6 +24,8 @@ import {
   type User,
 } from '../types';
 import { apiFetch } from '../lib/api';
+import { shareText } from '../lib/shareText';
+import { isNativeApp } from '../lib/nativeBridge';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { Button, Chip, EmptyState } from './ui/kit';
@@ -206,7 +209,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           }),
         });
         setIncidents((prev) => [res.incident, ...prev]);
-        showToast('success', 'Отчёт опубликован в сводке');
+        showToast('success', isNativeApp() ? 'Отчёт сохранён на устройстве' : 'Отчёт опубликован в сводке');
       }
       setModalOpen(false);
     } catch (err) {
@@ -260,6 +263,24 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     }
   };
 
+  const handleShare = async (inc: Incident) => {
+    const text = [
+      `ПульсСети — ${TYPE_LABEL[inc.incident_type]}`,
+      inc.title,
+      `${inc.region} · ${inc.carrier}`,
+      inc.description,
+      `Сайты РФ открываются: ${inc.ru_sites_ok ? 'да' : 'нет'}. Зарубежные: ${inc.foreign_sites_ok ? 'да' : 'нет'}.`,
+      `${inc.author_name}, ${new Date(inc.created_at).toLocaleString('ru-RU')}`,
+      inc.demo ? 'Пример из демо-набора, не измерение пользователя.' : 'Отчёт создан пользователем приложения.',
+    ].filter(Boolean).join('\n');
+    try {
+      const outcome = await shareText(`Сбой: ${inc.region}`, text);
+      if (outcome === 'copied') showToast('success', 'Отчёт скопирован — можно опубликовать на любом сайте');
+    } catch {
+      showToast('error', 'Не удалось поделиться отчётом');
+    }
+  };
+
   const activeList = incidents.filter((i) => i.status === 'active');
   const whitelistRegionsCount = new Set(
     activeList.filter((i) => i.incident_type === 'whitelist').map((i) => i.region)
@@ -287,8 +308,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       <header className="space-y-2">
         <h1 className="text-[22px] font-black tracking-tight">Карта сбоев</h1>
         <p className="text-[12.5px] text-dim leading-snug">
-          Регионы, где глушат мобильный интернет или включили белые списки. Отметки ставят такие же
-          пользователи, как вы — каждая подписана автором и временем.
+          {isNativeApp()
+            ? 'Ваши реальные отчёты с автором и временем сохраняются на этом устройстве. Через «Поделиться» их можно отправить в чат или опубликовать на сайте.'
+            : 'Регионы, где глушат мобильный интернет или включили белые списки. Отметки ставят такие же пользователи, как вы — каждая подписана автором и временем.'}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button
@@ -544,14 +566,24 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t" style={{ borderColor: 'var(--line)' }}>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2.5 border-t" style={{ borderColor: 'var(--line)' }}>
+                  {!isNativeApp() && (
+                    <Button
+                      variant={inc.user_upvoted ? 'soft' : 'outline'}
+                      size="sm"
+                      icon={<ThumbsUp className="w-3.5 h-3.5" />}
+                      onClick={() => handleToggleUpvote(inc)}
+                    >
+                      У меня так же · {inc.upvotes}
+                    </Button>
+                  )}
                   <Button
-                    variant={inc.user_upvoted ? 'soft' : 'outline'}
+                    variant="ghost"
                     size="sm"
-                    icon={<ThumbsUp className="w-3.5 h-3.5" />}
-                    onClick={() => handleToggleUpvote(inc)}
+                    icon={<Share2 className="w-3.5 h-3.5" />}
+                    onClick={() => void handleShare(inc)}
                   >
-                    У меня так же · {inc.upvotes}
+                    Поделиться
                   </Button>
                   {inc.is_owner && (
                     <div className="ml-auto flex items-center gap-0.5">
@@ -740,7 +772,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                 (document.getElementById('incident-form') as HTMLFormElement | null)?.requestSubmit()
               }
             >
-              {editing ? 'Сохранить' : 'Опубликовать'}
+              {editing ? 'Сохранить' : isNativeApp() ? 'Сохранить отчёт' : 'Опубликовать'}
             </Button>
           </>
         }

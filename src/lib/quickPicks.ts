@@ -37,10 +37,11 @@ export const QUICK_PICKS: QuickPick[] = [
     domain: 'chatgpt.com',
     probeUrl: 'https://chatgpt.com/favicon.ico',
     emoji: '🤖',
-    hint: 'AI-чат OpenAI — часто режется по IP',
+    hint: 'AI-чат OpenAI — у части операторов открывается без VPN',
     category: 'dev_ai_vpn',
     role: 'dpi_target',
     tone: 'emerald',
+    caveat: 'Проверяем открытие сайта chatgpt.com, а не вход, API и отправку сообщений.',
   },
   {
     id: 'claude',

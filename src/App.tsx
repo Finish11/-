@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Radar, Loader2 } from 'lucide-react';
+import { Network } from '@capacitor/network';
+import type { PluginListenerHandle } from '@capacitor/core';
 import {
   apiFetch,
   hasExplicitLogout,
@@ -7,7 +9,7 @@ import {
   setStoredToken,
 } from './lib/api';
 import { isNativeApp } from './lib/nativeBridge';
-import { detectNetworkContext } from './lib/networkInfo';
+import { detectNetworkContext, toClientConnection } from './lib/networkInfo';
 import type {
   ClientConnectionInfo,
   Incident,
@@ -64,50 +66,31 @@ export function App() {
   const refreshConnection = useCallback(async () => {
     setConnLoading(true);
     try {
-      // В APK определяем сеть по-настоящему: тип подключения, IP, оператор, город
-      // и признак VPN. В браузере остаётся серверная/демо-инспекция.
-      if (isNativeApp()) {
-        const ctx = await detectNetworkContext();
-        setConnection({
-          ip: ctx.ip,
-          country_code: ctx.countryCode || 'RU',
-          country_name: ctx.countryCode === 'RU' ? 'Россия' : ctx.countryCode || 'Россия',
-          region: ctx.region,
-          city: ctx.city,
-          isp: ctx.isp || ctx.operator,
-          org: ctx.isp,
-          asn: '',
-          is_hosting: /hetzner|digitalocean|ovh|vultr|aeza|selectel|timeweb|cloudflare/i.test(ctx.isp),
-          is_proxy: ctx.vpnLikely,
-          is_mobile: ctx.kind === 'cellular',
-          vpn_detected: ctx.vpnLikely,
-          vpn_confidence: ctx.vpnLikely ? 'medium' : 'none',
-          vpn_reasons: ctx.vpnReason ? [ctx.vpnReason] : [],
-        });
-      } else {
-        // В браузере тоже берём настоящую сеть, а не подставной профиль.
-        const ctx = await detectNetworkContext();
-        setConnection({
-          ip: ctx.ip,
-          country_code: ctx.countryCode || 'RU',
-          country_name: ctx.countryCode === 'RU' ? 'Россия' : ctx.countryCode || 'Россия',
-          region: ctx.region,
-          city: ctx.city,
-          isp: ctx.isp || ctx.operator,
-          org: ctx.isp,
-          asn: '',
-          is_hosting: /hetzner|digitalocean|ovh|vultr|aeza|selectel|timeweb|cloudflare/i.test(ctx.isp),
-          is_proxy: ctx.vpnLikely,
-          is_mobile: ctx.kind === 'cellular',
-          vpn_detected: ctx.vpnLikely,
-          vpn_confidence: ctx.vpnLikely ? 'medium' : 'none',
-          vpn_reasons: ctx.vpnReason ? [ctx.vpnReason] : [],
-        });
-      }
+      // Один путь для APK и браузера: никакого подставного профиля сети.
+      const ctx = await detectNetworkContext();
+      setConnection(toClientConnection(ctx));
     } finally {
       setConnLoading(false);
     }
   }, []);
+
+  // При переключении Wi-Fi ↔ LTE обновляем подпись сразу, а не только перед
+  // следующим замером. Это особенно заметно при включённом VPN.
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    let listener: PluginListenerHandle | undefined;
+    let disposed = false;
+    void Network.addListener('networkStatusChange', () => {
+      void refreshConnection();
+    }).then((handle) => {
+      if (disposed) void handle.remove();
+      else listener = handle;
+    });
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove();
+    };
+  }, [refreshConnection]);
 
   const applyBootstrap = useCallback(
     (payload: AuthBootstrapPayload) => {
@@ -281,7 +264,7 @@ export function App() {
         onLogout={handleLogout}
         counts={{
           sites: sites.filter((s) => Boolean(s.enabled)).length,
-          vpnOnline: vpnProfiles.filter((p) => p.status === 'online').length,
+          vpnOnline: vpnProfiles.filter((p) => p.status === 'online' || p.status === 'degraded').length,
           vpnTotal: vpnProfiles.length,
           activeIncidents: incidents.filter((i) => i.status === 'active').length,
           scans: scans.length,

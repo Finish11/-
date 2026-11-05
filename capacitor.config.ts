@@ -3,9 +3,10 @@ import type { CapacitorConfig } from '@capacitor/cli';
 /**
  * Конфигурация Capacitor для Android-сборки (APK).
  *
- * Внутри APK лежит автономная демо-сборка (`npm run build:demo` → `demo-dist/`):
- * один HTML-файл с inlined JS/CSS и мок-API (`src/demo/localApi.ts`), поэтому
- * приложение работает без сети и без бэкенда.
+ * Внутри APK лежит автономная сборка (`npm run build:demo` → `demo-dist/`):
+ * один HTML-файл с inlined JS/CSS и локальным API (`src/demo/localApi.ts`).
+ * В Android пользовательские данные хранятся в Capacitor Preferences, а все
+ * сетевые замеры выполняются по-настоящему; демо-замеры там отключены.
  *
  * Если понадобится подключить APK к реальному серверу (Express + SQLite),
  * раскомментируйте блок `server.url` и укажите HTTPS-адрес деплоя — WebView

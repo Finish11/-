@@ -1,4 +1,5 @@
 import { Network } from '@capacitor/network';
+import { registerPlugin } from '@capacitor/core';
 import { isNativeApp } from './nativeBridge';
 import { readSettings } from './appSettings';
 
@@ -44,6 +45,19 @@ async function detectKind(): Promise<ConnectionKind> {
   if (settings.networkType !== 'auto') return settings.networkType;
 
   if (isNativeApp()) {
+    try {
+      // Наш нативный мост смотрит транспорт и underlying networks VPN.
+      // Стандартный Network.getStatus() на части прошивок под VPN возвращает wifi
+      // даже тогда, когда фактически работает LTE.
+      const plugin = registerPlugin<{
+        networkKind(): Promise<{ connected: boolean; kind: ConnectionKind; vpn: boolean }>;
+      }>('ApkUpdater');
+      const native = await plugin.networkKind();
+      if (!native.connected) return 'none';
+      if (['wifi', 'cellular', 'ethernet'].includes(native.kind)) return native.kind;
+    } catch {
+      // Старая APK без networkKind — ниже есть штатный Capacitor Network.
+    }
     try {
       const status = await Network.getStatus();
       const type = String(status.connectionType || 'unknown');
@@ -180,6 +194,7 @@ export function toClientConnection(ctx: NetworkContext): {
   isp: string;
   org: string;
   asn: string;
+  connection_kind?: ConnectionKind;
   is_hosting: boolean;
   is_proxy: boolean;
   is_mobile: boolean;
@@ -196,6 +211,7 @@ export function toClientConnection(ctx: NetworkContext): {
     isp: ctx.isp || ctx.operator,
     org: ctx.isp,
     asn: '',
+    connection_kind: ctx.kind,
     is_hosting: /hetzner|digitalocean|ovh|vultr|aeza|selectel|timeweb|cloudflare/i.test(ctx.isp),
     is_proxy: ctx.vpnLikely,
     is_mobile: ctx.kind === 'cellular',

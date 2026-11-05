@@ -34,7 +34,7 @@ export async function runRealSiteScan(
     partial: ScanSiteResult[]
   ) => void,
   abortSignal?: AbortSignal,
-  timeoutMs = 8000
+  timeoutMs = 4500
 ): Promise<RealScanOutcome> {
   const enabled = sites.filter((s) => Boolean(s.enabled));
   const total = enabled.length;
@@ -42,9 +42,12 @@ export async function runRealSiteScan(
   const acc: ScanSiteResult[] = [];
 
   // Контрольная проба: без неё «всё недоступно» может означать просто «нет сети».
-  const controlOk = await probeControl(5000);
+  // Контрольные адреса проверяются параллельно, а не по 5 секунд каждый.
+  const controlOk = await probeControl(Math.min(timeoutMs, 3500));
 
-  const results = await mapLimit(enabled, 12, async (site) => {
+  // 32 запроса одновременно: на 75 сайтах не остаётся длинного «хвоста»
+  // после первых быстрых ответов, но мобильная сеть не забивается 75 сокетами.
+  const results = await mapLimit(enabled, Math.min(32, enabled.length), async (site) => {
     if (abortSignal?.aborted) {
       const aborted: ScanSiteResult = {
         site_id: site.id,
@@ -77,12 +80,12 @@ export async function runRealSiteScan(
       let probe = await probeSite(probeUrl, { timeoutMs });
 
       // Один таймаут — не приговор: на мобильной сети пакет теряется просто так.
-      // Повторяем только «нет ответа» (сеть/сброс), но не «подмену» — её
-      // повтор подтверждает, а не снимает.
+      // Повторяем только таймаут, коротким вторым запросом. DNS/сброс и
+      // подмену не повторяем: это уже определённый ответ, а не случайная потеря.
       let retried = false;
-      if (probe.verdict === 'blocked') {
+      if (probe.verdict === 'blocked' && /таймаут/i.test(probe.reason || '')) {
         retried = true;
-        const second = await probeSite(probeUrl, { timeoutMs });
+        const second = await probeSite(probeUrl, { timeoutMs: Math.min(timeoutMs, 2500) });
         // Оставляем лучший результат: если со второго раза открылось — значит работает.
         if (second.verdict !== 'blocked') probe = second;
       }
@@ -122,7 +125,7 @@ export async function runRealSiteScan(
 
   // Если хоть один сайт ответил — сеть точно жива, даже когда контрольные
   // адреса заблокированы (так бывает при белых списках).
-  const anyAnswered = results.some((r) => r.status !== 'blocked');
+  const anyAnswered = results.some((r) => r.status !== 'blocked' || r.intercepted);
   const networkAlive = controlOk || anyAnswered;
 
   // В браузере мы видим только сам факт ответа (CORS не даёт прочитать страницу),

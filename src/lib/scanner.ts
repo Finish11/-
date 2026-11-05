@@ -563,8 +563,10 @@ export function diagnoseScan(
   sitesById: Map<number, Site>,
   opts: { withVpn: boolean }
 ): ScanDiagnosis {
-  const reachable = (r: { status: 'ok' | 'slow' | 'blocked' }) =>
-    r.status === 'ok' || r.status === 'slow';
+  // Подменённый ответ никогда не считается доступностью — даже если в старой
+  // сохранённой записи статус по ошибке остался ok/slow.
+  const reachable = (r: { status: 'ok' | 'slow' | 'blocked'; intercepted?: boolean }) =>
+    !r.intercepted && (r.status === 'ok' || r.status === 'slow');
 
   const items: Array<SiteDiagnosisItem & { base: 'ru_whitelist' | 'global_neutral' | 'dpi_target' }> =
     results.map((r) => {
@@ -572,7 +574,9 @@ export function diagnoseScan(
       const base = site ? classifyBase(site) : (r.marker_role as 'ru_whitelist' | 'global_neutral' | 'dpi_target');
       let block_reason: SiteBlockReason | undefined;
       if (!reachable(r)) {
-        if (base === 'dpi_target' && site?.accessibility !== 'ok') {
+        if (r.intercepted || r.block_reason === 'throttled') {
+          block_reason = 'throttled';
+        } else if (base === 'dpi_target' && site?.accessibility !== 'ok') {
           block_reason = 'rkn';
         } else if (base === 'ru_whitelist') {
           block_reason = 'network';
@@ -586,14 +590,16 @@ export function diagnoseScan(
         name: r.name,
         domain: r.domain,
         marker_role: base,
-        status: r.status,
-        latency_ms: r.latency_ms,
+        status: r.intercepted ? 'blocked' : r.status,
+        latency_ms: r.intercepted ? null : r.latency_ms,
         block_reason,
         note:
           base === 'ru_whitelist'
             ? 'Белый список РФ'
             : base === 'dpi_target'
-            ? 'Заблокирован РКН'
+            ? reachable(r)
+              ? 'Ограничивается не везде — сейчас отвечает напрямую'
+              : 'Сервис из группы ограничений РКН'
             : 'Нейтральный сайт',
         base,
       };
@@ -603,7 +609,7 @@ export function diagnoseScan(
   const globalItems = items.filter((i) => i.base === 'global_neutral');
   const dpiItems = items.filter((i) => i.base === 'dpi_target');
 
-  const pct = (arr: Array<{ status: 'ok' | 'slow' | 'blocked' }>) =>
+  const pct = (arr: Array<{ status: 'ok' | 'slow' | 'blocked'; intercepted?: boolean }>) =>
     arr.length === 0 ? 100 : Math.round((arr.filter((x) => reachable(x)).length / arr.length) * 100);
 
   const ru_ok_pct = pct(ruItems);
@@ -629,8 +635,12 @@ export function diagnoseScan(
     .slice(0, 8)
     .map(({ base, ...rest }) => rest);
 
+  const reachableTotal = items.filter((i) => reachable(i)).length;
+  const interceptedTotal = results.filter((r) => r.intercepted).length;
+
   let scenario: ScanDiagnosis['scenario'] = 'open';
-  if (opts.withVpn) scenario = 'open';
+  if (results.length > 0 && reachableTotal === 0) scenario = 'partial';
+  else if (opts.withVpn) scenario = 'open';
   else if (jamming_pattern) scenario = 'jamming';
   else if (whitelist_pattern) scenario = 'whitelist';
   else if (dpi_pattern) scenario = 'dpi';
@@ -657,10 +667,12 @@ export function diagnoseScan(
       : scenario === 'dpi'
       ? `Нейтральный интернет открыт (${global_ok_pct}% из ${globalItems.length} незаблокированных сайтов), белые списки не активны. Но ${dpiItems.length - Math.round((dpi_ok_pct / 100) * dpiItems.length)} заблокированных РКН сервисов не отвечают — значит работает ТСПУ/DPI.`
       : scenario === 'partial'
-      ? `Работает ${global_ok_pct}% незаблокированных сайтов и ${ru_ok_pct}% белого списка. Часть подсетей (Cloudflare, CDN) лежит — возможны региональные ограничения.`
+      ? interceptedTotal > 0
+        ? `Подмена ответа обнаружена на ${interceptedTotal} сайтах: заглушка или чужой TLS-сертификат не считаются работающим сервисом. Действительно открылись ${reachableTotal} из ${items.length}.`
+        : `Работает ${global_ok_pct}% незаблокированных сайтов и ${ru_ok_pct}% белого списка. Часть подсетей (Cloudflare, CDN) лежит — возможны региональные ограничения.`
       : opts.withVpn
-      ? `Через VPN-туннель открываются ${items.filter(reachable).length} из ${items.length} сайтов, включая заблокированные РКН (${dpi_ok_pct}%). Блокировка обойдена.`
-      : `Открываются ${items.filter(reachable).length} из ${items.length} сайтов, включая все нейтральные (${global_ok_pct}%). Признаков белых списков, глушения и новых блокировок нет.`;
+      ? `Через VPN-туннель открываются ${reachableTotal} из ${items.length} сайтов, включая сервисы из группы ограничений РКН (${dpi_ok_pct}%).${interceptedTotal ? ` Подмена ответа всё ещё заметна на ${interceptedTotal} сайтах.` : ''}`
+      : `Открываются ${reachableTotal} из ${items.length} сайтов, нейтральные ресурсы доступны на ${global_ok_pct}%. Признаков белых списков и глушения нет.`;
 
   return {
     ru_ok_pct,
@@ -715,10 +727,11 @@ export function evaluateScanVerdict(
   const d = diagnoseScan(results, map, { withVpn });
 
   const total_sites = results.length;
-  const ok_sites = results.filter((r) => r.status === 'ok').length;
-  const slow_sites = results.filter((r) => r.status === 'slow').length;
-  const blocked_sites = results.filter((r) => r.status === 'blocked').length;
+  const ok_sites = results.filter((r) => r.status === 'ok' && !r.intercepted).length;
+  const slow_sites = results.filter((r) => r.status === 'slow' && !r.intercepted).length;
+  const blocked_sites = results.filter((r) => r.status === 'blocked' || r.intercepted).length;
   const latencies = results
+    .filter((r) => !r.intercepted)
     .map((r) => r.latency_ms)
     .filter((ms): ms is number => typeof ms === 'number');
   const avg_latency_ms =

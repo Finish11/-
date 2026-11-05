@@ -658,12 +658,14 @@ function buildRawLink(
     }
     if (sid) params.set('sid', sid);
   }
+  if (protocol === 'vless') {
+    const flow = firstString(ob.flow);
+    if (flow) params.set('flow', flow);
+  }
   const qs = params.toString();
 
   if (protocol === 'vless') {
     const uuid = firstString(ob.uuid, ob.id, ob.password);
-    const flow = firstString(ob.flow);
-    if (flow) params.set('flow', flow);
     return `vless://${uuid}@${server}:${port}${qs ? `?${qs}` : ''}#${encodeURIComponent(tag)}`;
   }
   if (protocol === 'trojan') {
@@ -719,12 +721,17 @@ function nodeFromJsonProxy(ob: Record<string, unknown>, groupName: string): Pars
   const hasReality = Boolean(tls.reality || ob['reality-opts']);
   const country = detectCountry(tag);
   const meta = protocolMeta(hasReality && protocol === 'vless' ? 'vless-reality' : protocol);
+  const transport = (ob.transport && typeof ob.transport === 'object'
+    ? ob.transport
+    : {}) as Record<string, unknown>;
 
   return {
     name: tag,
     protocol: hasReality && protocol === 'vless' ? 'VLESS + Reality' : meta.label,
     host: server,
     port,
+    transport: firstString(transport.type, ob.network) || undefined,
+    sni: firstString(tls.server_name, tls.server, ob.servername, ob.sni).toLowerCase() || undefined,
     country_code: country.code,
     location: country.name,
     provider: firstString(ob.provider, ob.group),
@@ -787,6 +794,9 @@ function dedupe(nodes: ParsedNode[]): ParsedNode[] {
       (node.transport || '').toLowerCase(),
       (node.sni || '').toLowerCase(),
       node.name.trim().toLowerCase(),
+      // UUID, Reality-ключи и пароли тоже являются частью узла. Без raw_link
+      // пять разных конфигов с одинаковым именем/хостом молча схлопывались в один.
+      node.raw_link || '',
     ].join('|');
     if (!seen.has(signature)) seen.set(signature, node);
   }

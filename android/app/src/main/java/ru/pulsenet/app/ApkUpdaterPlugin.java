@@ -5,6 +5,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
@@ -141,6 +144,51 @@ public class ApkUpdaterPlugin extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Не удалось открыть установщик: " + e.getMessage());
+        }
+    }
+
+    private String transportKind(NetworkCapabilities caps) {
+        if (caps == null) return "unknown";
+        // Проверяем реальный транспорт до TRANSPORT_VPN: иначе мобильный
+        // интернет под туннелем ошибочно подписывается как Wi-Fi.
+        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return "cellular";
+        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return "wifi";
+        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return "ethernet";
+        return "unknown";
+    }
+
+    /** Физический транспорт активного соединения, включая underlying networks VPN. */
+    @PluginMethod
+    public void networkKind(PluginCall call) {
+        JSObject ret = new JSObject();
+        try {
+            ConnectivityManager manager = (ConnectivityManager) getContext()
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network active = manager == null ? null : manager.getActiveNetwork();
+            NetworkCapabilities caps = active == null ? null : manager.getNetworkCapabilities(active);
+            String kind = transportKind(caps);
+
+            if (kind.equals("unknown") && caps != null
+                && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                Network[] underlying = manager.getUnderlyingNetworks(active);
+                if (underlying != null) {
+                    for (Network network : underlying) {
+                        kind = transportKind(manager.getNetworkCapabilities(network));
+                        if (!kind.equals("unknown")) break;
+                    }
+                }
+            }
+
+            ret.put("connected", caps != null);
+            ret.put("kind", kind);
+            ret.put("vpn", caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("connected", false);
+            ret.put("kind", "unknown");
+            ret.put("vpn", false);
+            call.resolve(ret);
         }
     }
 

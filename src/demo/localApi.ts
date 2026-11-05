@@ -5,9 +5,11 @@
  */
 import seed from './bundle-data.json';
 import { parseSubscriptionText, type ParsedNode } from '../lib/subscriptionParser';
-import { isNativeApp, mapLimit, probeNode } from '../lib/nativeBridge';
+import { isNativeApp, mapLimit } from '../lib/nativeBridge';
 import { importRealSubscription } from './realSubscription';
 import { encodeBase64 } from '../lib/base64';
+import { Preferences } from '@capacitor/preferences';
+import { pingNode } from '../lib/nodePing';
 
 type Row = Record<string, any>;
 
@@ -20,20 +22,39 @@ interface DemoState {
   subscriptions: Row[];
 }
 
+const native = isNativeApp();
+const catalogSites = (): Row[] =>
+  JSON.parse(JSON.stringify((seed as any).sites)).map((site: Row) =>
+    native
+      ? {
+          ...site,
+          demo: undefined,
+          last_status: 'unknown',
+          last_latency_ms: null,
+          last_checked_at: null,
+        }
+      : site
+  );
+
+// В APK нет выдуманной истории, фиктивных VPN-узлов и чужих отчётов. Каталог
+// сайтов — только список адресов для настоящих проб, его старые статусы стёрты.
 const state: DemoState = {
-  user: (seed as any).user,
-  sites: JSON.parse(JSON.stringify((seed as any).sites)),
-  scans: JSON.parse(JSON.stringify((seed as any).scans)),
-  profiles: JSON.parse(JSON.stringify((seed as any).profiles)),
-  // Синтетические отчёты из примерных данных помечаем: их нельзя выдавать
-  // за реальные сообщения пользователей.
-  incidents: JSON.parse(JSON.stringify((seed as any).incidents)).map(
-    (inc: Record<string, unknown>) => ({ ...inc, demo: true })
-  ),
-  subscriptions: JSON.parse(JSON.stringify((seed as any).subscriptions)),
+  user: native
+    ? { ...(seed as any).user, email: '', name: 'Пользователь', carrier: '', demo: undefined }
+    : (seed as any).user,
+  sites: catalogSites(),
+  scans: native ? [] : JSON.parse(JSON.stringify((seed as any).scans)),
+  profiles: native ? [] : JSON.parse(JSON.stringify((seed as any).profiles)),
+  incidents: native
+    ? []
+    : JSON.parse(JSON.stringify((seed as any).incidents)).map(
+        (inc: Record<string, unknown>) => ({ ...inc, demo: true })
+      ),
+  subscriptions: native ? [] : JSON.parse(JSON.stringify((seed as any).subscriptions)),
 };
 
 const TOKEN = 'demo-local-token';
+const STATE_KEY = 'pulsenet_android_state_v1';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -57,6 +78,71 @@ function bootstrap() {
 let nextId = 100000;
 const genId = () => nextId++;
 
+/**
+ * Автономные данные APK живут в Capacitor Preferences (SharedPreferences), а не
+ * только в памяти WebView. Они переживают перезапуск и установку новой APK поверх.
+ * localStorage — резерв и способ перенести состояние из ранних сборок.
+ */
+async function readSavedState(): Promise<string | null> {
+  if (native) {
+    try {
+      const saved = await Preferences.get({ key: STATE_KEY });
+      if (saved.value) return saved.value;
+    } catch {
+      // ниже попробуем localStorage
+    }
+  }
+  try {
+    return localStorage.getItem(STATE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function restoreState(): Promise<void> {
+  const raw = await readSavedState();
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw) as Partial<DemoState>;
+    if (saved.user && typeof saved.user === 'object') state.user = saved.user;
+    if (Array.isArray(saved.sites)) {
+      // Новые адреса каталога появляются после обновления, пользовательские
+      // включения, свои сайты и результаты при этом не сбрасываются.
+      const existing = new Set(saved.sites.map((s) => Number(s.id)));
+      state.sites = [...saved.sites, ...catalogSites().filter((s) => !existing.has(Number(s.id)))];
+    }
+    if (Array.isArray(saved.scans)) state.scans = saved.scans;
+    if (Array.isArray(saved.profiles)) state.profiles = saved.profiles;
+    if (Array.isArray(saved.incidents)) state.incidents = saved.incidents;
+    if (Array.isArray(saved.subscriptions)) state.subscriptions = saved.subscriptions;
+
+    const ids = [state.sites, state.scans, state.profiles, state.incidents, state.subscriptions]
+      .flat()
+      .map((row) => Number(row.id))
+      .filter(Number.isFinite);
+    nextId = Math.max(100000, ...ids.map((id) => id + 1));
+  } catch {
+    // Битое значение не мешает запуску: остаётся чистый каталог.
+  }
+}
+
+async function persistState(): Promise<void> {
+  const raw = JSON.stringify(state);
+  try {
+    localStorage.setItem(STATE_KEY, raw);
+  } catch {
+    // Preferences ниже всё равно сохранит данные в APK.
+  }
+  if (native) {
+    try {
+      await Preferences.set({ key: STATE_KEY, value: raw });
+    } catch {
+      // localStorage остаётся резервом.
+    }
+  }
+}
+
+const stateReady = restoreState();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** ParsedNode (общий парсер) → запись профиля в локальном сторе. */
@@ -87,7 +173,29 @@ function nodeToRow(node: ParsedNode, subscriptionId: number | null, groupName: s
   };
 }
 
+function preserveNodeMeasurements(previous: Row[], fresh: Row[]): Row[] {
+  const identity = (p: Row) =>
+    String(p.raw_link || '') || [p.name, p.host, p.port, p.protocol].join('|').toLowerCase();
+  const old = new Map(previous.map((p) => [identity(p), p]));
+  return fresh.map((node) => {
+    const before = old.get(identity(node));
+    if (!before) return node;
+    return {
+      ...node,
+      id: before.id,
+      status: before.status,
+      latency_ms: before.latency_ms,
+      last_latency_all: before.last_latency_all,
+      last_checked_at: before.last_checked_at,
+      is_primary: before.is_primary,
+      notes: before.notes,
+      created_at: before.created_at,
+    };
+  });
+}
+
 async function handle(path: string, method: string, body: any): Promise<Response> {
+  await stateReady;
   const [rawPath] = path.split('?');
   const clean = rawPath.replace(/^\/api/, '');
   const parts = clean.split('/').filter(Boolean); // ['sites', '12']
@@ -157,17 +265,17 @@ async function handle(path: string, method: string, body: any): Promise<Response
     const tz = body?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     const isRuTz = String(tz).startsWith('Europe/') || String(tz).startsWith('Asia/');
     return json({
-      ip: body?.clientIp || '213.87.132.48',
+      ip: body?.clientIp || (native ? '' : '213.87.132.48'),
       country_code: body?.cfCountry || (isRuTz ? 'RU' : 'NL'),
       country_name: body?.cfCountry === 'RU' || isRuTz ? 'Россия' : 'Нидерланды',
-      region: 'Москва',
-      city: body?.clientCity || 'Москва',
-      isp: body?.clientIsp || 'ПАО МТС (Мобильная сеть)',
+      region: native ? '' : 'Москва',
+      city: body?.clientCity || (native ? '' : 'Москва'),
+      isp: body?.clientIsp || (native ? '' : 'ПАО МТС (Мобильная сеть)'),
       org: '',
-      asn: body?.clientAsn || 'AS8359',
+      asn: body?.clientAsn || (native ? '' : 'AS8359'),
       is_hosting: false,
       is_proxy: false,
-      is_mobile: true,
+      is_mobile: native ? false : true,
       vpn_detected: false,
       vpn_confidence: 'none',
       vpn_reasons: [],
@@ -177,6 +285,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
 
   // ---------- СЕРВЕРНЫЙ РЕЛЕЙ ЗАМЕРОВ ----------
   if (clean === '/net/probe') {
+    if (native) return json({ error: 'Серверный релей в автономной APK недоступен' }, 404);
     await sleep(400);
     return json({ ok: true, http_status: 200, latency_ms: 480, reason: 'demo' });
   }
@@ -209,7 +318,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
     }
 
     if (parts[0] === 'sites' && parts[1] === 'reset') {
-      state.sites = JSON.parse(JSON.stringify((seed as any).sites));
+      state.sites = catalogSites();
       await sleep(300);
       return json({ sites: state.sites });
     }
@@ -288,9 +397,9 @@ async function handle(path: string, method: string, body: any): Promise<Response
 
     if (parts[1] === 'check-all' && method === 'POST') {
       if (isNativeApp()) {
-        // Реальная проверка: TLS-хендшейк до host:port каждого узла, 8 параллельно.
-        const checked = await mapLimit(state.profiles, 8, async (p) => {
-          const probe = await probeNode(String(p.host), Number(p.port || 443));
+        // Настоящий TCP-connect до host:port, как в списке на экране VPN.
+        const checked = await mapLimit(state.profiles, 12, async (p) => {
+          const probe = await pingNode(String(p.host), Number(p.port || 443));
           return {
             ...p,
             status: probe.status,
@@ -328,13 +437,13 @@ async function handle(path: string, method: string, body: any): Promise<Response
         provider: body?.provider || '',
         dpi_resistance: body?.dpi_resistance || 'high',
         whitelist_bypass: Boolean(body?.whitelist_bypass),
-        status: 'online',
-        latency_ms: 55,
+        status: 'unknown',
+        latency_ms: null,
         uptime_pct: 100,
         is_primary: Boolean(body?.is_primary),
         notes: body?.notes || '',
         raw_link: '',
-        last_checked_at: new Date().toISOString(),
+        last_checked_at: null,
         created_at: new Date().toISOString(),
       };
       if (profile.is_primary) {
@@ -349,7 +458,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
       if (isNativeApp()) {
         const target = state.profiles.find((x) => x.id === id);
         if (target) {
-          const probe = await probeNode(String(target.host), Number(target.port || 443));
+          const probe = await pingNode(String(target.host), Number(target.port || 443));
           state.profiles = state.profiles.map((p) =>
             p.id === id
               ? {
@@ -377,10 +486,10 @@ async function handle(path: string, method: string, body: any): Promise<Response
         const target = state.profiles.find((x) => x.id === id);
         if (!target) return json({ error: 'Узел не найден' }, 404);
         const samples: number[] = [];
-        let last = await probeNode(String(target.host), Number(target.port || 443));
+        let last = await pingNode(String(target.host), Number(target.port || 443));
         if (last.latencyMs != null) samples.push(last.latencyMs);
         for (let i = 0; i < 2; i++) {
-          const again = await probeNode(String(target.host), Number(target.port || 443));
+          const again = await pingNode(String(target.host), Number(target.port || 443));
           if (again.latencyMs != null) samples.push(again.latencyMs);
           last = again;
         }
@@ -562,9 +671,11 @@ async function handle(path: string, method: string, body: any): Promise<Response
       if (isNativeApp() && target && /^https?:\/\//i.test(String(target.url))) {
         try {
           const real = await importRealSubscription(String(target.url));
-          state.profiles = state.profiles.filter((p) => p.subscription_id !== id);
-          const nodes = real.nodes.map((n) => nodeToRow(n, id, String(target.name)));
-          state.profiles = [...nodes, ...state.profiles];
+          const previous = state.profiles.filter((p) => p.subscription_id === id);
+          const others = state.profiles.filter((p) => p.subscription_id !== id);
+          const fresh = real.nodes.map((n) => nodeToRow(n, id, String(target.name)));
+          const nodes = preserveNodeMeasurements(previous, fresh);
+          state.profiles = [...nodes, ...others];
           state.subscriptions = state.subscriptions.map((s) =>
             s.id === id
               ? {
@@ -643,10 +754,10 @@ async function handle(path: string, method: string, body: any): Promise<Response
         status: 'active',
         title: body?.title || 'Новый сбой',
         description: body?.description || '',
-        upvotes: 1,
+        upvotes: native ? 0 : 1,
         ru_sites_ok: Boolean(body?.ru_sites_ok),
         foreign_sites_ok: Boolean(body?.foreign_sites_ok),
-        user_upvoted: true,
+        user_upvoted: !native,
         is_owner: true,
         created_at: new Date().toISOString(),
       };
@@ -699,7 +810,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
         body = init.body;
       }
     }
-    return handle(path, method, body);
+    const response = await handle(path, method, body);
+    if (method !== 'GET' && response.ok) await persistState();
+    return response;
   }
   return realFetch(input, init);
 };

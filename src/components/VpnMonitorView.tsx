@@ -21,6 +21,7 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  ArrowUpDown,
   Server,
   ArrowUpRight,
   Sparkles,
@@ -131,7 +132,7 @@ function formatBytes(bytes: number): string {
 }
 
 const statusTone = (status: VpnProfile['status']) =>
-  status === 'online' ? 'ok' : status === 'degraded' ? 'warn' : 'bad';
+  status === 'online' ? 'ok' : status === 'degraded' ? 'warn' : status === 'unknown' ? 'idle' : 'bad';
 
 const STATUS_LABEL: Record<VpnProfile['status'], string> = {
   online: 'онлайн',
@@ -173,13 +174,14 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     return 'давно';
   }, [profiles]);
 
-  const onlineTotal = profiles.filter((p) => p.status === 'online').length;
+  const onlineTotal = profiles.filter((p) => p.status === 'online' || p.status === 'degraded').length;
   const [checkingAll, setCheckingAll] = useState(false);
   const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
   const [checkingId, setCheckingId] = useState<number | null>(null);
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [protoFilter, setProtoFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const [sortMode, setSortMode] = useState<'ping' | 'subscription'>('ping');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   // ---------- узел вручную ----------
@@ -388,8 +390,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       });
       setProfiles(res.profiles);
       if (!options?.silent) {
-        const online = res.profiles.filter((p) => p.status === 'online').length;
-        showToast('success', `Проверено ${res.profiles.length} узлов, онлайн ${online}`);
+        const online = res.profiles.filter((p) => p.status === 'online' || p.status === 'degraded').length;
+        showToast('success', `Проверено ${res.profiles.length} узлов, отвечают ${online}`);
       }
     } catch {
       // Сервер недоступен — проверяем с телефона, чтобы кнопка не «врала».
@@ -409,6 +411,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                     ...p,
                     status: result.status,
                     latency_ms: result.latencyMs,
+                    notes: result.reason || '',
                     last_checked_at: new Date().toISOString(),
                   }
                 : p
@@ -416,7 +419,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           );
         }
       );
-      const online = results.filter((r) => r.status === 'online').length;
+      const online = results.filter((r) => r.status === 'online' || r.status === 'degraded').length;
       if (!options?.silent) {
         showToast(
           'success',
@@ -600,7 +603,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   };
 
   const filteredProfiles = useMemo(() => {
-    return profiles.filter((p) => {
+    const filtered = profiles.filter((p) => {
       if (protoFilter !== 'all' && p.dpi_resistance !== protoFilter) return false;
       if (!search.trim()) return true;
       const q = search.trim().toLowerCase();
@@ -612,7 +615,16 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         (p.group_name || '').toLowerCase().includes(q)
       );
     });
-  }, [profiles, search, protoFilter]);
+    if (sortMode === 'ping') {
+      // Сначала реально отвечающие и самые быстрые; неизвестные и блок — внизу.
+      filtered.sort((a, b) => {
+        const am = a.latency_ms != null && a.status !== 'blocked' ? a.latency_ms : Number.POSITIVE_INFINITY;
+        const bm = b.latency_ms != null && b.status !== 'blocked' ? b.latency_ms : Number.POSITIVE_INFINITY;
+        return am - bm || a.name.localeCompare(b.name, 'ru');
+      });
+    }
+    return filtered;
+  }, [profiles, search, protoFilter, sortMode]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, VpnProfile[]>();
@@ -717,9 +729,13 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               <span>
                 {connection?.is_hosting
                   ? 'дата-центр'
+                  : connection?.connection_kind === 'wifi'
+                  ? 'Wi-Fi'
                   : connection?.is_mobile
                   ? 'мобильная сеть'
-                  : 'проводная сеть'}
+                  : connection?.connection_kind === 'ethernet'
+                  ? 'Ethernet'
+                  : 'тип сети не определён'}
               </span>
             </div>
           </div>
@@ -778,7 +794,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                 ? Math.ceil((new Date(s.expires_on).getTime() - Date.now()) / 864e5)
                 : null;
               const subNodes = profiles.filter((p) => p.subscription_id === s.id);
-              const subOnline = subNodes.filter((p) => p.status === 'online').length;
+              const subOnline = subNodes.filter((p) => p.status === 'online' || p.status === 'degraded').length;
               const failed = s.last_sync_status === 'error';
               return (
                 <article
@@ -889,7 +905,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                     <span>авто: {s.auto_update ? `каждые ${s.update_interval_hours} ч` : 'выкл'}</span>
                     {subNodes.length > 0 && (
                       <span style={{ color: 'rgb(var(--success))' }}>
-                        {subOnline}/{subNodes.length} онлайн
+                        {subOnline}/{subNodes.length} отвечают
                       </span>
                     )}
                   </div>
@@ -945,6 +961,15 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                 {label}
               </Chip>
             ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <ArrowUpDown className="w-3.5 h-3.5 text-muted" />
+            <Chip active={sortMode === 'ping'} onClick={() => setSortMode('ping')}>
+              Сначала быстрые
+            </Chip>
+            <Chip active={sortMode === 'subscription'} onClick={() => setSortMode('subscription')}>
+              Как в подписке
+            </Chip>
           </div>
         </div>
       )}
@@ -1085,7 +1110,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           </div>
           {grouped.map(([groupName, nodes]) => {
             const isCollapsed = collapsed[groupName];
-            const onlineCount = nodes.filter((n) => n.status === 'online').length;
+            const onlineCount = nodes.filter((n) => n.status === 'online' || n.status === 'degraded').length;
             return (
               <section
                 key={groupName}
@@ -1117,6 +1142,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                           ? 'rgb(var(--success))'
                           : tone === 'warn'
                           ? 'rgb(var(--warning))'
+                          : tone === 'idle'
+                          ? 'var(--text-muted)'
                           : 'rgb(var(--danger))';
                       return (
                         <div
@@ -1277,7 +1304,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                 >
                   Вставить из буфера
                 </button>
-                {IS_DEMO_BUILD && (
+                {IS_DEMO_BUILD && !isNativeApp() && (
                 <button
                   type="button"
                   onClick={() => {

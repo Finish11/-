@@ -62,7 +62,7 @@ const looksLikeOwnContent = (url: string, text: string): boolean => {
   const isImage = /favicon\.(ico|png|svg)|\.(ico|png|jpg|jpeg|gif|webp)(\?|$)/i.test(url);
   if (isImage) {
     // Бинарную картинку нативный HTTP отдаёт как строку: она не должна быть HTML.
-    return !/<!doctype|<html|<head/i.test(lower);
+    return text.trim().length > 0 && !/<!doctype|<html|<head/i.test(lower);
   }
   // У обычной страницы есть разметка; пустой ответ — подозрительно.
   return text.trim().length > 0;
@@ -174,9 +174,17 @@ export async function probeControl(timeoutMs = 5000): Promise<boolean> {
     'https://ya.ru/favicon.ico',
     'https://www.rbc.ru/favicon.ico',
   ];
-  for (const url of targets) {
+  // Ждём первый удачный ответ, остальные адреса идут параллельно. Последовательный
+  // перебор раньше добавлял до 20 секунд ещё до появления прогресса по сайтам.
+  const attempts = targets.map(async (url) => {
     const res = await probeSite(url, { timeoutMs, verifyContent: false });
     if (res.verdict === 'ok' || res.verdict === 'slow') return true;
+    throw new Error('control failed');
+  });
+  try {
+    await Promise.any(attempts);
+    return true;
+  } catch {
+    return false;
   }
-  return false;
 }

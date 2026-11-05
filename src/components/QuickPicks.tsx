@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronRight, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import { Check, ChevronRight, GripVertical, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { tcpPing } from '../lib/nativeBridge';
 import { apiFetch } from '../lib/api';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
@@ -20,6 +20,16 @@ interface QuickPicksProps {
 }
 
 const norm = (domain: string) => domain.replace(/^www\./, '').toLowerCase();
+const ORDER_KEY = 'pulsenet_quick_order';
+
+function loadQuickOrder(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 interface Visual {
   bg: string;
@@ -71,6 +81,14 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean): Visual {
       emojiBg: 'transparent',
     };
   }
+  if (r.intercepted) {
+    return {
+      bg: 'rgb(var(--warning) / 0.1)',
+      fg: 'rgb(var(--warning))',
+      label: 'подмена ответа',
+      emojiBg: 'transparent',
+    };
+  }
   if (r.status === 'blocked') {
     return {
       bg: 'rgb(var(--danger) / 0.1)',
@@ -105,6 +123,8 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [order, setOrder] = useState<string[]>(loadQuickOrder);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const byDomain = useMemo(() => {
     const map = new Map<string, Site>();
@@ -118,13 +138,16 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     return map;
   }, [results]);
 
-  const added = useMemo(
-    () =>
-      QUICK_PICKS.map((pick) => ({ pick, site: byDomain.get(norm(pick.domain)) })).filter(
-        (x): x is { pick: QuickPick; site: Site } => Boolean(x.site)
-      ),
-    [byDomain]
-  );
+  const added = useMemo(() => {
+    const rank = new Map(order.map((id, index) => [id, index]));
+    return QUICK_PICKS.map((pick) => ({ pick, site: byDomain.get(norm(pick.domain)) }))
+      .filter((x): x is { pick: QuickPick; site: Site } => Boolean(x.site))
+      .sort((a, b) => {
+        const ar = rank.get(a.pick.id) ?? Number.MAX_SAFE_INTEGER;
+        const br = rank.get(b.pick.id) ?? Number.MAX_SAFE_INTEGER;
+        return ar - br || QUICK_PICKS.indexOf(a.pick) - QUICK_PICKS.indexOf(b.pick);
+      });
+  }, [byDomain, order]);
 
   const notAdded = useMemo(
     () => QUICK_PICKS.filter((pick) => !byDomain.has(norm(pick.domain))),
@@ -179,6 +202,34 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       // приватный режим
     }
   }, [added.map((a) => a.pick.id).join(',')]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+    } catch {
+      // приватный режим
+    }
+  }, [order]);
+
+  const reorder = (sourceId: string, targetId: string) => {
+    if (!sourceId || sourceId === targetId) return;
+    setOrder(() => {
+      const ids = added.map((a) => a.pick.id);
+      const from = ids.indexOf(sourceId);
+      const to = ids.indexOf(targetId);
+      if (from < 0 || to < 0) return ids;
+      ids.splice(from, 1);
+      ids.splice(to, 0, sourceId);
+      return ids;
+    });
+  };
+
+  const moveBy = (id: string, delta: number) => {
+    const ids = added.map((a) => a.pick.id);
+    const from = ids.indexOf(id);
+    const to = Math.max(0, Math.min(ids.length - 1, from + delta));
+    if (from >= 0 && from !== to) reorder(id, ids[to]);
+  };
 
   /* ---------- TCP-пинг игровых серверов ---------- */
   const [gamePing, setGamePing] = useState<Record<string, { ok: boolean; ms: number | null }>>({});
@@ -276,7 +327,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           </Button>
         </div>
       ) : (
-        <div className="chip-rail -mx-1 px-1">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {added.map(({ pick, site }) => {
             const r = resultByDomain.get(norm(pick.domain));
             const v = statusVisual(r, scanning);
@@ -284,24 +335,67 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
             return (
               <div
                 key={pick.id}
-                className="relative w-[9.5rem] rounded-2xl border p-2.5"
-                style={{ borderColor: 'var(--line)', background: v.bg }}
+                data-quick-id={pick.id}
+                className="relative min-w-0 rounded-2xl border p-2.5 transition-opacity"
+                style={{ borderColor: 'var(--line)', background: v.bg, opacity: draggingId === pick.id ? 0.55 : 1 }}
               >
-                <button
-                  type="button"
-                  onClick={() => handleRemove(pick, site)}
-                  disabled={busy === pick.id}
-                  className="absolute top-1 right-1 p-1.5 rounded-full text-muted hover:text-[rgb(var(--danger))] tap"
-                  aria-label={`Убрать ${pick.name}`}
-                >
-                  {busy === pick.id ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <X className="w-3 h-3" />
-                  )}
-                </button>
-
-                <BrandBadge id={pick.id} size={30} />
+                <div className="flex items-center justify-between gap-1">
+                  <BrandBadge id={pick.id} size={30} />
+                  <div className="flex items-center -mr-1">
+                    <button
+                      type="button"
+                      className="p-1.5 rounded-full text-muted tap cursor-grab active:cursor-grabbing"
+                      style={{ touchAction: 'none' }}
+                      aria-label={`Переместить ${pick.name}. Стрелки также меняют порядок`}
+                      title="Перетащите карточку на новое место"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        setDraggingId(pick.id);
+                      }}
+                      onPointerMove={(e) => {
+                        if (draggingId !== pick.id) return;
+                        const target = document
+                          .elementFromPoint(e.clientX, e.clientY)
+                          ?.closest<HTMLElement>('[data-quick-id]')
+                          ?.dataset.quickId;
+                        if (target) reorder(pick.id, target);
+                      }}
+                      onPointerUp={(e) => {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                        setDraggingId(null);
+                      }}
+                      onPointerCancel={() => setDraggingId(null)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          moveBy(pick.id, e.key === 'ArrowUp' ? -2 : -1);
+                        }
+                        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          moveBy(pick.id, e.key === 'ArrowDown' ? 2 : 1);
+                        }
+                      }}
+                    >
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(pick, site)}
+                      disabled={busy === pick.id}
+                      className="p-1.5 rounded-full text-muted hover:text-[rgb(var(--danger))] tap"
+                      aria-label={`Убрать ${pick.name}`}
+                    >
+                      {busy === pick.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <X className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+                </div>
 
                 <div className="mt-2 text-[12px] font-bold truncate pr-1">{pick.name}</div>
 

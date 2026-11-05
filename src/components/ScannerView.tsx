@@ -23,6 +23,7 @@ import {
   Gauge,
   Sparkles,
   ChevronRight,
+  Share2,
 } from 'lucide-react';
 import {
   CATEGORY_META,
@@ -34,11 +35,7 @@ import {
   type SiteCategory,
   type User,
 } from '../types';
-import {
-  evaluateScanVerdict,
-  IS_DEMO_BUILD,
-  runMultiSiteScan,
-} from '../lib/scanner';
+import { evaluateScanVerdict, IS_DEMO_BUILD } from '../lib/scanner';
 import { apiFetch } from '../lib/api';
 import { QuickPicks } from './QuickPicks';
 import { isNativeApp } from '../lib/nativeBridge';
@@ -51,6 +48,7 @@ import {
   type NetworkContext,
 } from '../lib/networkInfo';
 import { notifyScanResult } from '../lib/notify';
+import { shareText } from '../lib/shareText';
 import { Sheet } from './ui/Sheet';
 import { Button, Chip, Notice, SectionTitle, StatusDot } from './ui/kit';
 
@@ -161,7 +159,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const realLatestScan = latestScan && !latestScan.demo ? latestScan : null;
   const [activeScan, setActiveScan] = useState<ScanRecord | null>(realLatestScan);
 
-  const [siteFilter, setSiteFilter] = useState<'all' | 'blocked' | 'ok' | SiteCategory>('all');
+  const [siteFilter, setSiteFilter] = useState<'all' | 'intercepted' | 'ok' | SiteCategory>('all');
   const [copiedReport, setCopiedReport] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -485,7 +483,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       `Доступно: ${activeScan.ok_sites + activeScan.slow_sites} из ${activeScan.total_sites}`,
       `• Белый список РФ: ${activeScan.ru_ok_pct}%`,
       `• Нейтральные сайты: ${activeScan.global_ok_pct}%`,
-      `• Заблокированы РКН: ${activeScan.dpi_ok_pct}%`,
+      `• Ограничиваемые сервисы: ${activeScan.dpi_ok_pct}%`,
       `Средний отклик: ${activeScan.avg_latency_ms} мс`,
       ...(interceptedCount > 0
         ? [`Подмена ответа (заглушка/чужой сертификат): ${interceptedCount} сайтов`]
@@ -512,14 +510,24 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
   };
 
+  const handleShareReport = async () => {
+    if (!reportText) return;
+    try {
+      const outcome = await shareText('ПульсСети — диагностика интернета', reportText);
+      if (outcome === 'copied') showToast('success', 'Системная отправка недоступна — отчёт скопирован');
+    } catch {
+      showToast('error', 'Не удалось поделиться отчётом');
+    }
+  };
+
   /* --------------------------------- данные --------------------------------- */
 
   const displayedResults = phase === 'scanning' ? liveResults : activeScan?.results || [];
 
   const filteredResults = displayedResults.filter((r) => {
     if (siteFilter === 'all') return true;
-    if (siteFilter === 'blocked') return r.status === 'blocked';
-    if (siteFilter === 'ok') return r.status === 'ok' || r.status === 'slow';
+    if (siteFilter === 'intercepted') return Boolean(r.intercepted);
+    if (siteFilter === 'ok') return !r.intercepted && (r.status === 'ok' || r.status === 'slow');
     return r.category === siteFilter;
   });
 
@@ -536,7 +544,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       if (r.marker_role === 'dpi_target') return 'blocked';
       return 'neutral';
     };
-    const reach = (r: ScanSiteResult) => r.status === 'ok' || r.status === 'slow';
+    const reach = (r: ScanSiteResult) => !r.intercepted && (r.status === 'ok' || r.status === 'slow');
     const build = (key: 'ru' | 'neutral' | 'blocked') => {
       const items = displayedResults.filter((r) => groupOf(r) === key);
       const alive = items.filter(reach);
@@ -551,8 +559,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   }, [displayedResults, sites]);
 
   const meta = VERDICT_META[(activeScan?.verdict as keyof typeof VERDICT_META) || 'OPEN_INTERNET'];
-  const okCount = displayedResults.filter((r) => r.status === 'ok' || r.status === 'slow').length;
-  const blockedCount = displayedResults.filter((r) => r.status === 'blocked').length;
+  const okCount = displayedResults.filter((r) => !r.intercepted && (r.status === 'ok' || r.status === 'slow')).length;
+  const blockedCount = displayedResults.filter((r) => r.status === 'blocked' || r.intercepted).length;
   const scanning = phase === 'scanning' || phase === 'precheck';
   const progressPct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const showResult = Boolean(activeScan) && phase !== 'scanning';
@@ -786,10 +794,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           )}
 
           {/* ---------- Чипы сети ---------- */}
-          <div className="mt-4 flex flex-nowrap items-center justify-center gap-1.5 px-1 whitespace-nowrap overflow-hidden">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 px-1">
             <Chip active className="h-7 px-2.5 text-[11px] shrink-0 gap-1">
               <Radio className="w-3 h-3 shrink-0" />
-              {connectionLabel(netCtx?.kind || 'unknown')}
+              {connectionLabel(detectedConn?.connection_kind || netCtx?.kind || 'unknown')}
               {(appSettings.operator || netCtx?.operator) && (
                 <span className="text-dim font-medium">
                   · {appSettings.operator || netCtx?.operator}
@@ -827,7 +835,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           {/* Три группы ресурсов */}
           <div className="rounded-[1.5rem] border p-4 sm:p-5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
             <SectionTitle
-              hint="Диагноз ставится по первым двум группам: третья без VPN падает всегда"
+              hint="Диагноз ставится по первым двум группам: доступность третьей зависит от оператора"
               right={
                 <Button
                   size="sm"
@@ -856,8 +864,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 color={roleGroups.neutral.pct <= 40 ? 'rgb(var(--danger))' : 'rgb(var(--success))'}
               />
               <GroupRow
-                title="Заблокированы РКН"
-                hint="YouTube, Discord, Instagram — без VPN не открываются"
+                title="Ограничиваемые сервисы"
+                hint="YouTube, Discord, ChatGPT — доступ зависит от оператора и IP"
                 stats={roleGroups.blocked}
                 color="rgb(var(--violet))"
               />
@@ -932,7 +940,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               pct={activeScan.global_ok_pct}
             />
             <Metric
-              label="Через VPN"
+              label="Ограничиваемые"
               value={`${activeScan.dpi_ok_pct}%`}
               color={activeScan.dpi_ok_pct < 40 ? 'rgb(var(--warning))' : 'rgb(var(--success))'}
               pct={activeScan.dpi_ok_pct}
@@ -993,6 +1001,14 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               title="Скопировать текст отчёта — вставите в любой чат"
             >
               {copiedReport ? 'Скопировано' : 'Скопировать отчёт'}
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              icon={<Share2 className="w-3.5 h-3.5" />}
+              onClick={handleShareReport}
+            >
+              Поделиться
             </Button>
             {(activeScan.verdict === 'WHITELIST_ACTIVE' ||
               activeScan.verdict === 'TOTAL_JAMMING' ||
@@ -1091,11 +1107,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </Chip>
             <Chip active={siteFilter === 'ok'} onClick={() => setSiteFilter('ok')}>
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
-              Доступны {displayedResults.filter((r) => r.status === 'ok' || r.status === 'slow').length}
+              Доступны {displayedResults.filter((r) => !r.intercepted && (r.status === 'ok' || r.status === 'slow')).length}
             </Chip>
-            <Chip active={siteFilter === 'blocked'} onClick={() => setSiteFilter('blocked')}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
-              Недоступны {displayedResults.filter((r) => r.status === 'blocked').length}
+            <Chip active={siteFilter === 'intercepted'} onClick={() => setSiteFilter('intercepted')}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--warning))' }} />
+              Подмена {displayedResults.filter((r) => r.intercepted).length}
             </Chip>
             {(Object.keys(CATEGORY_META) as SiteCategory[])
               .filter((c) => displayedResults.some((r) => r.category === c))

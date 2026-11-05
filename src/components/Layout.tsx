@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Signal,
   Wifi,
+  Info,
 } from 'lucide-react';
 import {
   RUSSIAN_CARRIERS,
@@ -328,7 +329,7 @@ export const Layout: React.FC<LayoutProps> = ({
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-3">
             <Notice
               tone="warn"
-              icon={<span className="text-[13px]">i</span>}
+              icon={<Info className="w-3.5 h-3.5" />}
               onClose={() => setDemoBanner(false)}
             >
               <strong className="font-bold">Демо.</strong> Ответы имитируются — реальные замеры

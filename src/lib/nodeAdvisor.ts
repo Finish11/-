@@ -163,7 +163,7 @@ export function recommendNodes(
     // Реальная доступность узла: замер важнее теории
     if (profile.status === 'online') score += 18;
     else if (profile.status === 'degraded') score += 4;
-    if (profile.latency_ms != null) {
+    if (profile.latency_ms != null && profile.latency_kind === 'tcp_connect' && profile.latency_route === 'direct' && profile.latency_trusted) {
       if (profile.latency_ms < 80) score += 16;
       else if (profile.latency_ms < 150) score += 10;
       else if (profile.latency_ms < 300) score += 4;

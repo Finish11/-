@@ -242,6 +242,9 @@ function preserveNodeMeasurements(previous: Row[], fresh: Row[]): Row[] {
       status: before.status,
       latency_ms: before.latency_ms,
       last_latency_all: before.last_latency_all,
+      latency_kind: before.latency_kind,
+      latency_route: before.latency_route,
+      latency_trusted: before.latency_trusted,
       last_checked_at: before.last_checked_at,
       is_primary: before.is_primary,
       notes: before.notes,
@@ -474,11 +477,8 @@ async function handle(path: string, method: string, body: any): Promise<Response
         const checked = await mapLimit(state.profiles, 12, async (p) => {
           const probe = await pingNode(String(p.host), Number(p.port || 443));
           return {
-            ...p,
-            status: probe.status,
-            latency_ms: probe.latencyMs,
-            notes: probe.reason || '',
-            last_checked_at: new Date().toISOString(),
+            ...applyNodeMeasurements([p as VpnProfile], [{ id: p.id, status: probe.status, latencyMs: probe.latencyMs,
+              reason: probe.reason, checkedAt: new Date().toISOString(), route: probe.route, trusted: probe.trusted }])[0],
           };
         });
         state.profiles = checked;
@@ -535,11 +535,8 @@ async function handle(path: string, method: string, body: any): Promise<Response
           state.profiles = state.profiles.map((p) =>
             p.id === id
               ? {
-                  ...p,
-                  status: probe.status,
-                  latency_ms: probe.latencyMs,
-                  notes: probe.reason || '',
-                  last_checked_at: new Date().toISOString(),
+                  ...applyNodeMeasurements([p as VpnProfile], [{ id: p.id, status: probe.status, latencyMs: probe.latencyMs,
+                    reason: probe.reason, checkedAt: new Date().toISOString(), route: probe.route, trusted: probe.trusted }])[0],
                 }
               : p
           );
@@ -555,38 +552,16 @@ async function handle(path: string, method: string, body: any): Promise<Response
       return json({ profile: state.profiles.find((p) => p.id === id) });
     }
     if (parts[2] === 'ping' && method === 'POST') {
+      const target = state.profiles.find((x) => x.id === id); if (!target) return json({ error: 'Узел не найден' }, 404);
       if (isNativeApp()) {
-        const target = state.profiles.find((x) => x.id === id);
-        if (!target) return json({ error: 'Узел не найден' }, 404);
-        const samples: number[] = [];
-        let last = await pingNode(String(target.host), Number(target.port || 443));
-        if (last.latencyMs != null) samples.push(last.latencyMs);
-        for (let i = 0; i < 2; i++) {
-          const again = await pingNode(String(target.host), Number(target.port || 443));
-          if (again.latencyMs != null) samples.push(again.latencyMs);
-          last = again;
-        }
-        state.profiles = state.profiles.map((p) =>
-          p.id === id
-            ? {
-                ...p,
-                status: last.status,
-                latency_ms: samples.length
-                  ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length)
-                  : null,
-                last_latency_all: samples.length ? Math.max(...samples) : null,
-                notes: last.reason || '',
-                last_checked_at: new Date().toISOString(),
-              }
-            : p
-        );
-        return json({ profile: state.profiles.find((p) => p.id === id), samples });
+        const probe = await pingNode(String(target.host), Number(target.port || 443));
+        state.profiles = state.profiles.map((p) => p.id === id ? applyNodeMeasurements([p as VpnProfile], [{ id,
+          status: probe.status, latencyMs: probe.latencyMs, reason: probe.reason, checkedAt: new Date().toISOString(), route: probe.route, trusted: probe.trusted }])[0] : p);
+        return json({ profile: state.profiles.find((p) => p.id === id), samples: probe.latencyMs == null ? [] : [probe.latencyMs] });
       }
-      await sleep(520);
-      const samples = [40, 52, 47].map((v) => v + Math.round(Math.random() * 30));
-      state.profiles = state.profiles.map((p) =>
-        p.id === id ? { ...p, status: 'online', latency_ms: samples[0], last_latency_all: Math.max(...samples) } : p
-      );
+      await sleep(520); const samples = [40, 52, 47].map((v) => v + Math.round(Math.random() * 30));
+      state.profiles = state.profiles.map((p) => p.id === id ? { ...p, status: 'online', latency_ms: samples[0],
+        last_latency_all: Math.max(...samples), latency_kind: undefined, latency_route: 'unknown', latency_trusted: false } : p);
       return json({ profile: state.profiles.find((p) => p.id === id), samples });
     }
     if (parts[2] === 'qr') {
@@ -598,7 +573,9 @@ async function handle(path: string, method: string, body: any): Promise<Response
       if (body?.is_primary) {
         state.profiles = state.profiles.map((p) => ({ ...p, is_primary: p.id === id }));
       }
-      state.profiles = state.profiles.map((p) => (p.id === id ? { ...p, ...body } : p));
+      state.profiles = state.profiles.map((p) => (p.id === id ? { ...p, ...body,
+        status: 'unknown', latency_ms: null, last_checked_at: null, latency_kind: undefined, latency_route: undefined, latency_trusted: false } : p));
+      if (state.confirmationProfileId === id) state.confirmationProfileId = null;
       await sleep(150);
       return json({ profile: state.profiles.find((p) => p.id === id) });
     }

@@ -810,7 +810,7 @@ async function startServer() {
         : Math.max(0, Number((prevUptime * 0.85).toFixed(1)));
 
     db.prepare(
-      `UPDATE vpn_profiles SET status = ?, latency_ms = ?, uptime_pct = ?, last_checked_at = ? WHERE id = ?`
+      `UPDATE vpn_profiles SET status = ?, latency_ms = ?, uptime_pct = ?, last_checked_at = ?, latency_kind = 'browser_relay', latency_route = 'unknown', latency_trusted = 0 WHERE id = ?`
     ).run(probe.status, probe.latency_ms, nextUptime, now, id);
 
     const updated = db.prepare(`SELECT * FROM vpn_profiles WHERE id = ?`).get(id) as Record<string, unknown>;
@@ -830,11 +830,25 @@ async function startServer() {
       .all(userId) as Array<Record<string, unknown>>;
 
     const now = new Date().toISOString();
-    await Promise.all(
+    const supplied = Array.isArray(req.body?.measurements) ? req.body.measurements : null;
+    if (supplied && (req.query.demo === '1' || req.get('x-pulsenet-demo') === '1')) {
+      const allowed = new Set(rows.map((row) => Number(row.id)));
+      const update = db.prepare(`UPDATE vpn_profiles SET status = ?, latency_ms = ?, notes = ?, last_checked_at = ?,
+        latency_kind = 'tcp_connect', latency_route = ?, latency_trusted = ? WHERE id = ? AND user_id = ?`);
+      db.transaction(() => { for (const item of supplied.slice(0, 500)) {
+        const id = Number(item?.id); if (!allowed.has(id) || !['online', 'degraded', 'blocked'].includes(item.status)) continue;
+        const route = ['vpn', 'direct', 'unknown'].includes(item.route) ? item.route : 'unknown';
+        const latency = item.latencyMs == null ? null : Number(item.latencyMs);
+        if (latency != null && (!Number.isFinite(latency) || latency < 0 || latency > 60000)) continue;
+        const checkedAt = typeof item.checkedAt === 'string' && Number.isFinite(Date.parse(item.checkedAt)) ? item.checkedAt : now;
+        update.run(item.status, latency, String(item.reason || '').slice(0, 500), checkedAt, route,
+          route === 'direct' && item.trusted === true && latency != null && latency >= 1 ? 1 : 0, id, userId);
+      } })();
+    } else await Promise.all(
       rows.map(async (r) => {
         const probe = await probeVpnEndpoint(String(r.host), Number(r.port || 443));
         db.prepare(
-          `UPDATE vpn_profiles SET status = ?, latency_ms = ?, last_checked_at = ? WHERE id = ?`
+          `UPDATE vpn_profiles SET status = ?, latency_ms = ?, last_checked_at = ?, latency_kind = 'browser_relay', latency_route = 'unknown', latency_trusted = 0 WHERE id = ?`
         ).run(probe.status, probe.latency_ms, now, r.id);
       })
     );

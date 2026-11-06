@@ -136,6 +136,10 @@ async function restoreState(): Promise<void> {
   }
 }
 
+// Записи из параллельных действий завершаются с разной скоростью. Очередь не
+// даёт старому снимку перезаписать более новый в Preferences или AtomicFile.
+let nativePersistChain: Promise<void> = Promise.resolve();
+
 async function persistState(): Promise<void> {
   const raw = encodeStatePacket(state);
   let webSaved = false;
@@ -152,10 +156,12 @@ async function persistState(): Promise<void> {
 
   // Preferences и файл записываются параллельно. Достаточно одного успешного
   // постоянного хранилища, но при следующем запуске выберется самая свежая копия.
-  const results = await Promise.allSettled([
+  const queued = nativePersistChain.then(() => Promise.allSettled([
     Preferences.set({ key: STATE_KEY, value: raw }),
     writeNativeStateFile(raw),
-  ]);
+  ]));
+  nativePersistChain = queued.then(() => undefined);
+  const results = await queued;
   const nativeSaved = results.some((result) => result.status === 'fulfilled');
   if (!nativeSaved && !webSaved) {
     throw new Error(

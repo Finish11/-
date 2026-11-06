@@ -57,7 +57,13 @@ export function emptyGeo(): GeoInfo {
 }
 
 export function networkSnapshotKey(state: NativeNetworkState): string {
-  return `${state.connected ? 1 : 0}|${state.kind}|${state.vpn ? 1 : 0}`;
+  const transport = `${state.connected ? 1 : 0}|${state.kind}|${state.vpn ? 1 : 0}`;
+  // Два разных Wi-Fi или две сотовые сети имеют одинаковый транспорт. Системный
+  // sequence различает Network ID; у старых bridge его может не быть — тогда
+  // сохраняем прежнее поведение, а не выдумываем идентификатор.
+  return typeof state.sequence === 'number' && Number.isFinite(state.sequence)
+    ? `${transport}|${state.sequence}`
+    : transport;
 }
 
 /** Позднее системное событие не должно запускать устаревший снимок. */
@@ -252,7 +258,11 @@ export function hasSameNetworkAttribution(
 ): boolean {
   const systemVpn = (value: ClientConnectionInfo) =>
     value.vpn_source === 'system' && value.vpn_detected;
-  return before.connection_kind === after.connection_kind && systemVpn(before) === systemVpn(after);
+  const sameNativeNetwork =
+    before.native_sequence == null ||
+    after.native_sequence == null ||
+    before.native_sequence === after.native_sequence;
+  return sameNativeNetwork && before.connection_kind === after.connection_kind && systemVpn(before) === systemVpn(after);
 }
 
 export function toClientConnection(ctx: NetworkContext): ClientConnectionInfo {
@@ -271,6 +281,7 @@ export function toClientConnection(ctx: NetworkContext): ClientConnectionInfo {
     is_mobile: g.is_mobile,
     connection_kind: ctx.networkKind,
     operator: ctx.nativeCarrier || g.isp,
+    native_sequence: ctx.nativeSequence,
     vpn_detected: ctx.vpnLikely,
     vpn_confidence: ctx.vpnSource === 'system' ? 'high' : ctx.vpnSource === 'ip' ? 'medium' : 'none',
     vpn_source: ctx.vpnSource,

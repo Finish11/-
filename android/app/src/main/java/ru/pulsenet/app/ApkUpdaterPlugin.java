@@ -171,6 +171,12 @@ public class ApkUpdaterPlugin extends Plugin {
             call.reject("Для безопасного обновления нужен HTTPS-адрес APK");
             return;
         }
+        // subPath не должен позволять выйти из app-specific Downloads через ../
+        // или передать DownloadManager неожиданный тип файла.
+        if (fileName == null || !fileName.matches("[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.apk")) {
+            call.reject("Некорректное имя APK-файла");
+            return;
+        }
 
         try {
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));

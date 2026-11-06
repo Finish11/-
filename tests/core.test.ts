@@ -387,6 +387,11 @@ test('ключ сети меняется при LTE → Wi-Fi → LTE, стар�
   const lteKey = networkSnapshotKey(lte);
   assert.notEqual(lteKey, networkSnapshotKey(wifi));
   assert.equal(networkSnapshotKey(lte), lteKey);
+  assert.notEqual(
+    networkSnapshotKey({ ...wifi, sequence: 11 }),
+    networkSnapshotKey({ ...wifi, sequence: 12 }),
+    'два разных Wi-Fi не должны считаться одним подключением'
+  );
   assert.equal(isNewerNetworkSequence(11, 12), false);
   assert.equal(isNewerNetworkSequence(12, 12), true);
   assert.equal(isNewerNetworkSequence(13, 12), true);
@@ -402,6 +407,21 @@ test('смена IP не отменяет замер, а смена LTE/Wi-Fi и
   assert.equal(hasSameNetworkAttribution(base, { ...base, ip: '2.2.2.2' }), true);
   assert.equal(hasSameNetworkAttribution(base, { ...base, connection_kind: 'wifi' }), false);
   assert.equal(hasSameNetworkAttribution(base, { ...base, vpn_detected: true }), false);
+  assert.equal(
+    hasSameNetworkAttribution(
+      { ...base, native_sequence: 20 },
+      { ...base, native_sequence: 21 }
+    ),
+    false,
+    'смена Network ID при том же транспорте отменяет смешанный замер'
+  );
+  assert.equal(
+    hasSameNetworkAttribution(
+      { ...base, native_sequence: 20 },
+      { ...base, native_sequence: 20, ip: '8.8.8.8' }
+    ),
+    true
+  );
 });
 
 test('YouTube без характерного приложения не считается открытым по одному названию', () => {

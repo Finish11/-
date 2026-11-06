@@ -209,6 +209,8 @@ export interface ClientConnectionInfo {
   connection_kind?: 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
   /** Мобильный оператор из Android либо ISP из GeoIP. */
   operator?: string;
+  /** Системный Network ID через монотонный sequence: отличает два разных Wi-Fi. */
+  native_sequence?: number;
   vpn_detected: boolean;
   vpn_confidence: 'high' | 'medium' | 'none';
   /** system — факт Android; ip — только приблизительная браузерная оценка. */

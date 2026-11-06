@@ -103,7 +103,8 @@ export function App() {
         return;
       }
       const client = toClientConnection(ctx);
-      transportKey.current = `${client.connection_kind === 'none' ? 0 : 1}|${client.connection_kind}|${client.vpn_source === 'system' && client.vpn_detected ? 1 : 0}`;
+      // transportKey уже сохранён из системного native-статуса выше. Не заменяем
+      // его ключом без sequence: иначе следующий poll снова сотрёт GeoIP.
       setConnection(client);
     } catch {
       // Системный callback или периодическая проверка повторит запрос.

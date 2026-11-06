@@ -16,7 +16,7 @@ interface UpdateCardProps {
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 
-type Phase = 'idle' | 'ready' | 'downloading' | 'installing' | 'permission' | 'error';
+type Phase = 'idle' | 'ready' | 'downloading' | 'downloaded' | 'installing' | 'permission' | 'error';
 
 /** Короткий список изменений из описания релиза (без служебных строк). */
 function extractHighlights(notes: string): string[] {
@@ -43,7 +43,11 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
   const [dismissed, setDismissed] = useState(false);
   const [error, setError] = useState('');
   const downloadId = useRef<number | null>(null);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const downloadReady = useRef(false);
+  const downloadStarting = useRef(false);
+  const installLaunching = useRef(false);
+  const downloadGeneration = useRef(0);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isUpdateSupported()) return;
@@ -63,51 +67,84 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     }, 800);
     return () => {
       alive = false;
+      downloadGeneration.current += 1;
       clearTimeout(timer);
-      if (pollTimer.current) clearInterval(pollTimer.current);
+      if (pollTimer.current) clearTimeout(pollTimer.current);
     };
   }, []);
 
   const stopPolling = () => {
     if (pollTimer.current) {
-      clearInterval(pollTimer.current);
+      clearTimeout(pollTimer.current);
       pollTimer.current = null;
     }
   };
 
   const startInstall = async () => {
-    if (downloadId.current == null) return;
+    if (downloadId.current == null || !downloadReady.current || installLaunching.current) return;
+    const generation = downloadGeneration.current;
+    installLaunching.current = true;
     setPhase('installing');
+    setError('');
     try {
       const res = await ApkUpdater.install({ downloadId: downloadId.current });
+      if (generation !== downloadGeneration.current) return;
       if (res.needsPermission) {
         setPhase('permission');
-        showToast('info', 'Разрешите установку из этого источника и нажмите «Установить» ещё раз');
+        showToast('info', 'Разрешите установку из этого источника и вернитесь в ПульсСети');
       } else {
         showToast('success', 'Установщик открыт — подтвердите обновление в системном окне');
       }
     } catch (err) {
-      setPhase('error');
-      setError(err instanceof Error ? err.message : 'Не удалось открыть установщик');
+      if (generation === downloadGeneration.current) {
+        setPhase('error');
+        setError(err instanceof Error ? err.message : 'Не удалось открыть установщик');
+      }
+    } finally {
+      installLaunching.current = false;
     }
   };
 
-  // Вернулись из системных настроек «Установка неизвестных приложений» —
-  // сразу пробуем открыть установщик снова, без лишних нажатий.
+  // Возврат из системного окна не должен создавать цикл настроек или тупик
+  // после отмены установки. Разрешение сначала проверяем; если пользователь его
+  // не выдал, остаёмся в приложении. После закрытия установщика даём кнопку повтора.
   useEffect(() => {
-    if (phase !== 'permission') return;
+    if (phase !== 'permission' && phase !== 'installing') return;
+    let disposed = false;
     let remove: (() => void) | undefined;
     CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) void startInstall();
+      if (!isActive || disposed) return;
+      if (phase === 'installing') {
+        setPhase('downloaded');
+        return;
+      }
+      void ApkUpdater.getPermissionState()
+        .then(async (permission) => {
+          if (disposed) return;
+          if (permission.canInstall) await startInstall();
+        })
+        .catch(() => {
+          // Кнопка «Установить» остаётся доступна для следующей попытки.
+        });
     })
       .then((h) => {
-        remove = () => void h.remove();
+        if (disposed) void h.remove();
+        else remove = () => void h.remove();
       })
       .catch(() => undefined);
-    return () => remove?.();
+    return () => {
+      disposed = true;
+      remove?.();
+    };
   }, [phase]);
 
   const beginDownload = async (target: UpdateInfo) => {
+    if (downloadStarting.current) return;
+    downloadStarting.current = true;
+    const generation = ++downloadGeneration.current;
+    stopPolling();
+    downloadReady.current = false;
+    downloadId.current = null;
     setPhase('downloading');
     setProgress(0);
     setError('');
@@ -117,43 +154,59 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
         url: target.downloadUrl,
         fileName: `pulsenet-${target.version}.apk`,
       });
+      if (generation !== downloadGeneration.current) return;
       downloadId.current = id;
+      let missingStatusCount = 0;
 
-      stopPolling();
-      pollTimer.current = setInterval(async () => {
+      // Последовательный polling: медленный ответ bridge не накапливает
+      // параллельные запросы и не запускает установщик дважды.
+      const poll = async () => {
         try {
           const status = await ApkUpdater.status({ downloadId: id });
+          if (generation !== downloadGeneration.current) return;
           setProgress(status.progress || 0);
           if (status.state === 8) {
             stopPolling();
+            downloadReady.current = true;
             setProgress(100);
             await startInstall();
-          } else if (status.state === 16) {
+            return;
+          }
+          if (status.state === 16) {
             stopPolling();
             setPhase('error');
             setError('Загрузка прервалась. Проверьте интернет и попробуйте снова.');
+            return;
           }
+          if (status.state === 0) {
+            missingStatusCount += 1;
+            if (missingStatusCount >= 5) {
+              stopPolling();
+              setPhase('error');
+              setError('Android не нашёл системную загрузку. Попробуйте начать её заново.');
+              return;
+            }
+          } else {
+            missingStatusCount = 0;
+          }
+          pollTimer.current = setTimeout(() => void poll(), 800);
         } catch {
+          if (generation !== downloadGeneration.current) return;
           stopPolling();
-          // DownloadManager на части прошивок не отдаёт статус — не оставляем
-          // пользователя в тупике, а открываем прямую ссылку на APK.
-          // Загрузка обычно идёт нормально, просто система не делится статусом.
-          // Поэтому сразу пробуем открыть установщик, а если файл ещё не готов —
-          // подсказываем про уведомление и даём ссылку на APK.
-          setPhase('installing');
-          try {
-            await startInstall();
-          } catch {
-            setPhase('error');
-            setError(
-              'Загрузка идёт в фоне. Когда закончится, придёт уведомление — нажмите на него, либо скачайте APK по ссылке ниже.'
-            );
-          }
+          setPhase('error');
+          setError(
+            'Не удалось получить статус загрузки. Она может продолжаться в фоне: проверьте уведомление Android или начните заново.'
+          );
         }
-      }, 800);
+      };
+      pollTimer.current = setTimeout(() => void poll(), 800);
     } catch (err) {
-      setPhase('error');
-      setError(err instanceof Error ? err.message : 'Не удалось начать загрузку');
+      if (generation === downloadGeneration.current) {
+        setPhase('error');
+        setError(err instanceof Error ? err.message : 'Не удалось начать загрузку');
+      }
+    } finally {
+      downloadStarting.current = false;
     }
   };
 
@@ -171,7 +224,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           className="w-9 h-9 rounded-xl grid place-items-center shrink-0"
           style={{ background: 'var(--accent-soft)', color: 'rgb(var(--accent))' }}
         >
-          {phase === 'installing' ? (
+          {phase === 'installing' || phase === 'downloaded' ? (
             <CheckCircle2 className="w-[18px] h-[18px]" style={{ color: 'rgb(var(--success))' }} />
           ) : phase === 'downloading' ? (
             <Loader2 className="w-[18px] h-[18px] animate-spin" />
@@ -192,9 +245,11 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
 
           <p className="text-[11px] text-dim mt-1 leading-snug">
             {phase === 'permission'
-              ? 'Разрешите «Установка неизвестных приложений» для ПульсСети и вернитесь в приложение — установка начнётся сразу.'
+              ? 'Разрешите «Установка неизвестных приложений» для ПульсСети и вернитесь в приложение. Если передумали, просто вернитесь — настройки сами не откроются повторно.'
               : phase === 'installing'
               ? 'Установщик открыт. Подтвердите обновление в системном окне — приложение обновится поверх, данные сохранятся.'
+              : phase === 'downloaded'
+              ? 'APK скачан. Если вы закрыли системный установщик, откройте его ещё раз кнопкой ниже.'
               : phase === 'downloading'
               ? `Скачиваем APK: ${progress}%`
               : 'Новая версия уже собрана. Обновитесь, чтобы получить свежие проверки и исправления.'}
@@ -211,7 +266,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
             </ul>
           )}
 
-          {(phase === 'downloading' || phase === 'installing') && (
+          {(phase === 'downloading' || phase === 'installing' || phase === 'downloaded') && (
             <div className="mt-2.5 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
@@ -223,7 +278,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
             </div>
           )}
 
-          {(phase === 'idle' || phase === 'error') && (
+          {phase === 'error' && (
             <div className="mt-2 flex items-start gap-1.5 text-[11px]" style={{ color: 'rgb(var(--danger))' }}>
               <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
@@ -237,7 +292,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           )}
 
           <div className="flex items-center gap-2 mt-3">
-            {(phase === 'ready' || phase === 'error') && (
+            {(phase === 'ready' || (phase === 'error' && !downloadReady.current)) && (
               <Button
                 variant="primary"
                 size="sm"
@@ -247,7 +302,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
                 {phase === 'error' ? 'Попробовать снова' : 'Скачать и установить'}
               </Button>
             )}
-            {phase === 'permission' && (
+            {(phase === 'permission' || phase === 'downloaded' || (phase === 'error' && downloadReady.current)) && (
               <Button
                 variant="soft"
                 size="sm"
@@ -276,7 +331,9 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
         <button
           type="button"
           onClick={() => {
+            downloadGeneration.current += 1;
             stopPolling();
+            setPhase('idle');
             setDismissed(true);
           }}
           className="p-1.5 rounded-lg text-muted hover:text-[color:var(--text)] shrink-0"

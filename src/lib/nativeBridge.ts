@@ -1,6 +1,6 @@
-import { registerPlugin } from '@capacitor/core';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
+import { ApkPlugin } from './apkPlugin';
 
 /**
  * Мост к «нативной» сети. В APK (Capacitor) запросы идут через нативный HTTP-стек:
@@ -40,7 +40,7 @@ interface NetworkBridgePlugin {
   ): Promise<PluginListenerHandle>;
 }
 
-const NetworkBridge = registerPlugin<NetworkBridgePlugin>('ApkUpdater');
+const NetworkBridge = ApkPlugin as unknown as NetworkBridgePlugin;
 
 export async function getNativeNetworkState(): Promise<NativeNetworkState> {
   const state = await NetworkBridge.networkKind();
@@ -310,14 +310,14 @@ export async function tcpPing(
 ): Promise<{ ok: boolean; latency_ms: number | null; latency_us?: number | null; error?: string }> {
   if (!isNativeApp()) return { ok: false, latency_ms: null, error: 'только в приложении' };
   try {
-    const res = await registerPlugin<{
+    const res = await (ApkPlugin as unknown as {
       tcpProbe(o: { host: string; port: number; timeout?: number }): Promise<{
         ok: boolean;
         latency_ms?: number;
         latency_us?: number;
         error?: string;
       }>;
-    }>('ApkUpdater').tcpProbe({ host, port, timeout });
+    }).tcpProbe({ host, port, timeout });
     const micros = typeof res.latency_us === 'number' && Number.isFinite(res.latency_us)
       ? Math.max(0, res.latency_us)
       : null;

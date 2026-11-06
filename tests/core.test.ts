@@ -11,6 +11,7 @@ import { decodeStatePacket, encodeStatePacket, selectNewestState } from '../src/
 import { applyServiceAccessPolicy } from '../src/lib/serviceAccess.ts';
 import { orderSitesForScan } from '../src/lib/scanScheduler.ts';
 import { applyNodeMeasurements, formatTcpLatency, type NodeMeasurement } from '../src/lib/nodePing.ts';
+import { compareVersions } from '../src/lib/appUpdate.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
 function site(id: number, role: Site['marker_role'] = 'global_neutral'): Site {
@@ -169,6 +170,13 @@ test('TCP ping никогда не показывает сомнительный
   assert.equal(formatTcpLatency(0.42), '<1 мс');
   assert.equal(formatTcpLatency(12.4), '12 мс');
   assert.equal(formatTcpLatency(null), '—');
+});
+
+test('проверка обновления сравнивает числовые части версий без строковой ошибки', () => {
+  assert.ok(compareVersions('1.5.10', '1.5.9') > 0);
+  assert.ok(compareVersions('1.5.5', '1.5.5') === 0);
+  assert.ok(compareVersions('1.5.4', '1.5.5') < 0);
+  assert.ok(compareVersions('2.0', '1.9.9') > 0);
 });
 
 test('партия TCP обновляет известные узлы, сохраняет дробные мс и не принимает NaN', () => {

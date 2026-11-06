@@ -26,7 +26,7 @@ function extractHighlights(notes: string): string[] {
     .filter(
       (l) =>
         l.length > 8 &&
-        !/^(версия|коммит|собрано|прямая ссылка|установка|подпись)/i.test(l) &&
+        !/^(версия|коммит|собрано|прямая ссылка|установка|подпись|что нового|изменения|основные изменения)/i.test(l) &&
         !l.startsWith('http')
     )
     .slice(0, 3);
@@ -55,9 +55,9 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           if (!alive || !found) return;
           setInfo(found);
           setPhase('ready');
-          // Обновление не спрашивает разрешения: сразу качаем APK,
-          // пользователю останется только подтвердить установку в системе.
-          void beginDownload(found);
+          // APK не скачивается в фоне без ведома пользователя: на мобильной
+          // сети это несколько мегабайт, а установщик не должен неожиданно
+          // перекрывать первый экран разрешений.
         })
         .catch(() => undefined);
     }, 800);
@@ -237,14 +237,14 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           )}
 
           <div className="flex items-center gap-2 mt-3">
-            {phase === 'error' && (
+            {(phase === 'ready' || phase === 'error') && (
               <Button
                 variant="primary"
                 size="sm"
                 icon={<Download className="w-3.5 h-3.5" />}
                 onClick={() => info && void beginDownload(info)}
               >
-                {phase === 'error' ? 'Попробовать снова' : 'Скачать сейчас'}
+                {phase === 'error' ? 'Попробовать снова' : 'Скачать и установить'}
               </Button>
             )}
             {phase === 'permission' && (

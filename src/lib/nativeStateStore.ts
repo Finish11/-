@@ -1,11 +1,11 @@
-import { registerPlugin } from '@capacitor/core';
+import { ApkPlugin } from './apkPlugin';
 
 interface NativeStatePlugin {
   stateRead(): Promise<{ exists: boolean; value?: string }>;
   stateWrite(options: { value: string }): Promise<{ ok: boolean; bytes: number }>;
 }
 
-const plugin = registerPlugin<NativeStatePlugin>('ApkUpdater');
+const plugin = ApkPlugin as unknown as NativeStatePlugin;
 
 /** Независимая копия внутри filesDir приложения. Переживает обновление APK поверх. */
 export async function readNativeStateFile(): Promise<string | null> {

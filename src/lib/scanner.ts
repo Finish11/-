@@ -468,7 +468,7 @@ export function diagnoseScan(
         ? `На ${interceptedTotal} сайтах пришла заглушка или чужой TLS-сертификат: они не считаются работающими. Действительно открылись ${reachableTotal} из ${networkItems.length}.`
         : `Работает ${global_ok_pct}% незаблокированных сайтов и ${ru_ok_pct}% белого списка. Часть подсетей (Cloudflare, CDN) лежит — возможны региональные ограничения.`
       : opts.withVpn
-      ? `Через VPN-туннель отвечают ${reachableTotal} из ${networkItems.length} веб-адресов, включая ${dpi_ok_pct}% группы возможных ограничений. Работа native-приложений и аккаунтов этим не доказана.${interceptedTotal ? ` Нераспознанный ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
+      ? `Через VPN-туннель отвечают ${reachableTotal} из ${networkItems.length} веб-адресов, включая ${dpi_ok_pct}% группы возможных ограничений. Работа установленных приложений и аккаунтов этим не доказана.${interceptedTotal ? ` Нераспознанный ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
       : `Открываются ${reachableTotal} из ${networkItems.length} сайтов, нейтральные ресурсы доступны на ${global_ok_pct}%. Признаков белых списков и глушения нет.`;
 
   return {

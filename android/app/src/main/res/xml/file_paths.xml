@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <!-- Только app-specific storage. Никакого доступа ко всему внешнему хранилищу:
+         обновление скачивается сюда через DownloadManager, а установщик получает
+         системный content URI с одноразовым read grant. -->
     <external-files-path name="apk" path="." />
 </paths>

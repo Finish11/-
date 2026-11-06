@@ -1,6 +1,6 @@
 import { App } from '@capacitor/app';
-import { registerPlugin } from '@capacitor/core';
 import { isNativeApp } from './nativeBridge';
+import { ApkPlugin } from './apkPlugin';
 
 /* ------------------------------------------------------------------ */
 /*  Нативный плагин загрузки APK (android/.../ApkUpdaterPlugin.java)   */
@@ -31,7 +31,7 @@ interface ApkUpdaterPlugin {
   openInstallSettings(): Promise<void>;
 }
 
-export const ApkUpdater = registerPlugin<ApkUpdaterPlugin>('ApkUpdater');
+export const ApkUpdater = ApkPlugin as unknown as ApkUpdaterPlugin;
 
 /* ------------------------------------------------------------------ */
 /*  Проверка обновлений через GitHub Releases                          */

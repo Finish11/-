@@ -167,6 +167,10 @@ public class ApkUpdaterPlugin extends Plugin {
             call.reject("Не передан адрес APK");
             return;
         }
+        if (!url.startsWith("https://")) {
+            call.reject("Для безопасного обновления нужен HTTPS-адрес APK");
+            return;
+        }
 
         try {
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));

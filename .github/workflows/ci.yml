@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, arena/fcf07acb-repo]
   pull_request:
 
 jobs:
@@ -13,20 +13,32 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Установка зависимостей
-        run: npm ci
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Проверка типов
-        run: npm run typecheck
+      - name: Нативный SQLite для тестов
+        run: npm rebuild better-sqlite3
+
+      - name: Типы и тесты
+        run: |
+          npm run typecheck
+          npm run typecheck:community
+          npm run test:core
+          npm run test:regressions
+          npm run test:worker
+          npm audit --omit=dev
 
       - name: Сборка фронтенда
         run: npm run build
 
       - name: Сборка автономного демо (один HTML)
         run: npm run build:demo
+
+      - name: E2E smoke
+        run: npm run test:e2e
 
       - name: Артефакт демо
         uses: actions/upload-artifact@v4

@@ -6,7 +6,7 @@ name: Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, arena/fcf07acb-repo]
     paths:
       - 'src/**'
       - 'android/**'
@@ -81,12 +81,14 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Зависимости
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Проверки TypeScript и боевой логики
         run: |
           npm run typecheck
+          npm run typecheck:community
           npm run test:core
+          npm audit --omit=dev
           npm run build
 
       - name: Версия из package.json

@@ -38,3 +38,7 @@ Thumbs.db
 /apk/
 *.apk
 *.aab
+
+# временный деплой-конфиг Cloudflare
+community/.wrangler-deploy.toml
+.wrangler/

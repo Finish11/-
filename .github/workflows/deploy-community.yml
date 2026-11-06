@@ -21,10 +21,13 @@ jobs:
           cache: npm
       - name: Зависимости
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Нативный SQLite для тестов
+        run: npm rebuild better-sqlite3
       - name: Проверки контракта
         run: |
           npm run typecheck:community
           npm run test:worker
+          npm run test:sync
       - name: Деплой Workers + D1
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

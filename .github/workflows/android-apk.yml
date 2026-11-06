@@ -83,11 +83,15 @@ jobs:
       - name: Зависимости
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Нативный SQLite для тестов
+        run: npm rebuild better-sqlite3
+
       - name: Проверки TypeScript и боевой логики
         run: |
           npm run typecheck
           npm run typecheck:community
           npm run test:core
+          npm run test:sync
           npm audit --omit=dev
           npm run build
 

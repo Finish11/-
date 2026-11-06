@@ -11,7 +11,7 @@ import { encodeBase64 } from '../lib/base64';
 import { Preferences } from '@capacitor/preferences';
 import { applyNodeMeasurements, pingNode, type NodeMeasurement } from '../lib/nodePing';
 import { readNativeStateFile, writeNativeStateFile } from '../lib/nativeStateStore';
-import { encodeStatePacket, selectNewestState } from './stateStorage';
+import { encodeStatePacket, reserveNextLocalId, selectNewestState } from './stateStorage';
 import type { VpnProfile } from '../types';
 
 type Row = Record<string, any>;
@@ -137,7 +137,7 @@ async function restoreState(): Promise<void> {
       .flat()
       .map((row) => Number(row.id))
       .filter(Number.isFinite);
-    nextId = Math.max(100000, ...ids.map((id) => id + 1));
+    nextId = reserveNextLocalId(100000, ids.map((id) => ({ id })));
   } catch {
     // Битое значение не мешает запуску: остаётся чистый каталог.
   }
@@ -836,6 +836,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
     if (parts.length === 2 && parts[1] === 'cache' && method === 'PUT') {
       if (!Array.isArray(body?.incidents)) return json({ error: 'Некорректный кэш ленты' }, 400);
       state.incidents = body.incidents;
+      nextId = reserveNextLocalId(nextId, state.incidents);
       return json({ ok: true, incidents: state.incidents });
     }
 

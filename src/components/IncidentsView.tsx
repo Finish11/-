@@ -404,8 +404,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     } finally { setConnecting(false); }
   };
 
-  const visibleIncidents = incidents.filter((inc) => !inc.pending_delete && (!inc.sync_endpoint || !communityUrl || belongsToEndpoint(inc, communityUrl)));
-  const pendingSync = pendingCommunityCount(visibleIncidents);
+  const visibleIncidents = incidents.filter((inc) => !inc.pending_delete);
+  const isForeignEndpoint = (inc: Incident) => Boolean(communityUrl && inc.sync_endpoint && !belongsToEndpoint(inc, communityUrl));
+  const foreignEndpointCount = visibleIncidents.filter(isForeignEndpoint).length;
+  const pendingSync = pendingCommunityCount(visibleIncidents, communityUrl || undefined);
   const activeList = visibleIncidents.filter((i) => i.status === 'active');
   const whitelistRegionsCount = new Set(
     activeList.filter((i) => i.incident_type === 'whitelist').map((i) => i.region)
@@ -471,6 +473,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               <>Общий сервер: <span className="font-mono break-all">{communityUrl}</span>.
                 {lastSyncAt ? ` Обновлено ${new Date(lastSyncAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}.` : ' Проверяем соединение.'}
                 {pendingSync ? ` Ждут доставки: ${pendingSync}.` : ' Очередь пуста.'}
+                {foreignEndpointCount ? ` Отчётов для другого сервера: ${foreignEndpointCount} — они хранятся на устройстве и будут отправлены после подключения того адреса.` : ''}
                 {syncError && <div className="mt-1" style={{ color: 'rgb(var(--danger))' }}>{syncError}</div>}</>
             ) : (
               <>Без сервера владелец не получит отчёты автоматически. Можно сохранить их на устройстве и отправить вручную через «Поделиться».</>
@@ -685,11 +688,11 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     <span
                       className="text-[9.5px] font-bold px-1.5 py-0.5 rounded ml-auto"
                       style={{
-                        background: inc.sync_state === 'synced' ? 'rgb(var(--success) / 0.14)' : 'var(--surface-2)',
-                        color: inc.sync_state === 'error' ? 'rgb(var(--danger))' : inc.sync_state === 'synced' ? 'rgb(var(--success))' : 'var(--text-muted)',
+                        background: !isForeignEndpoint(inc) && inc.sync_state === 'synced' ? 'rgb(var(--success) / 0.14)' : 'var(--surface-2)',
+                        color: isForeignEndpoint(inc) ? 'var(--text-muted)' : inc.sync_state === 'error' ? 'rgb(var(--danger))' : inc.sync_state === 'synced' ? 'rgb(var(--success))' : 'var(--text-muted)',
                       }}
                     >
-                      {inc.pending_delete ? 'ждёт удаления' : inc.vote_dirty ? 'голос ждёт доставки' : inc.sync_state === 'synced' && !inc.sync_dirty ? 'доставлено' : inc.sync_state === 'error' ? 'не доставлено' : 'ждёт доставки'}
+                      {isForeignEndpoint(inc) ? 'другой сервер' : inc.pending_delete ? 'ждёт удаления' : inc.vote_dirty ? 'голос ждёт доставки' : inc.sync_state === 'synced' && !inc.sync_dirty ? 'доставлено' : inc.sync_state === 'error' ? 'не доставлено' : 'ждёт доставки'}
                     </span>
                   )}
                   {resolved && (
@@ -738,7 +741,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2.5 border-t" style={{ borderColor: 'var(--line)' }}>
-                  {(!IS_DEMO_BUILD || communityUrl) && (
+                  {(!IS_DEMO_BUILD || communityUrl) && !isForeignEndpoint(inc) && (
                     <Button
                       variant={inc.user_upvoted ? 'soft' : 'outline'}
                       size="sm"
@@ -756,7 +759,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                   >
                     Поделиться
                   </Button>
-                  {inc.is_owner && (
+                  {inc.is_owner && !isForeignEndpoint(inc) && (
                     <div className="ml-auto flex items-center gap-0.5">
                       <button
                         type="button"

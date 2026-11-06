@@ -54,3 +54,16 @@ export function selectNewestState<T = unknown>(
   }
   return best;
 }
+
+/**
+ * Локальный счётчик id обязан перешагнуть id записей, пришедших из общей ленты,
+ * иначе новый отчёт получит id чужого и перезапишет его при следующем слиянии.
+ */
+export function reserveNextLocalId(current: number, rows: Array<{ id?: unknown } | null | undefined>): number {
+  let next = Number.isSafeInteger(current) && current > 0 ? current : 100000;
+  for (const row of rows) {
+    const id = Number(row?.id);
+    if (Number.isSafeInteger(id) && id >= next) next = id + 1;
+  }
+  return next;
+}

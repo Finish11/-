@@ -61,10 +61,12 @@
 
 | Файл | Роль |
 |---|---|
-| `.github/workflows/ci.yml` | typecheck + core/regressions/worker + audit + build + demo + e2e |
+| `.github/workflows/ci.yml` | typecheck + core/regressions/sync/worker + audit + build + demo + e2e |
 | `.github/workflows/deploy-community.yml` | ручной деплой Workers + D1 с секретами владельца |
 | `scripts/deploy-community.mjs` | create/reuse D1, migrations, deploy, health-check |
 | `playwright.config.ts`, `tests/e2e/` | mobile/desktop smoke через bundled Chromium |
+| `tests/sync-hardening.test.ts` | outbox: доводящий PATCH, защита ключа, очередь по серверу, счётчик id |
+| `tests/community-quota.test.ts` | суточные квоты устройства/IP, окна очистки лимитов, `TRUST_PROXY` |
 | `.github/workflows/deploy-demo-pages.yml` | публикация демо на GitHub Pages |
 | `.github/workflows/android-apk.yml` | сборка debug APK на раннере: артефакт + публикация в Releases (тег `android-latest`) |
 | `capacitor.config.ts` | Capacitor: `appId`, `appName`, `webDir: demo-dist`, `server.url` для боевого режима |
@@ -73,12 +75,13 @@
 | `scripts/android-assets.mjs` | `demo-dist/demo.html` → `index.html` для Capacitor |
 | `scripts/generate-android-assets.sh` | иконки и сплэш из фирменного стиля (ImageMagick 6) |
 | `Dockerfile`, `docker-compose.yml` | прод-образ и запуск с томом для SQLite |
-| `.env.example` | `PORT`, `NODE_ENV`, `DATA_DIR` |
+| `.env.example` | `PORT`, `NODE_ENV`, `DATA_DIR`, `TRUST_PROXY` |
+| `server/proxyTrust.ts` | разбор `TRUST_PROXY`: `X-Forwarded-For` только от доверенного прокси |
 
 ## Проверки
 
 `npm run typecheck` · `npm run typecheck:community` · `npm run test:core` ·
-`npm run test:regressions` · `npm run test:worker` · `npm run build` ·
+`npm run test:regressions` · `npm run test:sync` · `npm run test:worker` · `npm run build` ·
 `npm run build:demo` · `npm run test:e2e` — должны быть зелёными.
 `npm audit --omit=dev` не должен находить известных уязвимостей.
 

@@ -219,6 +219,7 @@ npm run dev                 # http://localhost:3000
 | `PORT` | `3000` | порт HTTP-сервера |
 | `NODE_ENV` | `development` | `production` — раздавать `dist/` вместо Vite-middleware |
 | `DATA_DIR` | `./data` | каталог с `pulsenet.db` |
+| `TRUST_PROXY` | `loopback` | кому верить в `X-Forwarded-For`: `loopback`, число прокси или список подсетей; `true` небезопасно |
 | `VITE_COMMUNITY_API_URL` | пусто | HTTPS-база общего API, встраиваемая в web/APK на этапе сборки |
 
 Для Android workflow адрес берётся из repository variable `PULSENET_COMMUNITY_API_URL`.
@@ -247,7 +248,7 @@ docker compose up -d --build
 
 Локально: `CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy:community`.
 Без секретов скрипт отказывается выполнять деплой. Проверка контракта без аккаунта:
-`npm run typecheck:community && npm run test:worker`.
+`npm run typecheck:community && npm run test:worker && npm run test:sync`.
 
 **Любой Node-хостинг (Railway, Render, Fly.io, VPS)**
 

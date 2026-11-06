@@ -24,14 +24,22 @@ async function readBody(request: Request): Promise<unknown> {
   if (raw.length > 32_768) throw new ContractError('Отчёт слишком большой', 413);
   try { return JSON.parse(raw); } catch { throw new ContractError('Нужен корректный JSON'); }
 }
-async function limit(store: CommunityStore, key: string, max: number, now: number): Promise<boolean> {
-  const window = Math.floor(now / 60_000);
+export const COMMUNITY_LIMITS = {
+  readPerMinute: 120, writePerMinute: 30, ipPerMinute: 300, createsPerDevicePerDay: 30, createsPerIpPerDay: 100,
+};
+const MINUTE = 60_000, DAY = 86_400_000;
+/** Окна минут и суток живут в одной таблице, поэтому чистятся раздельно. */
+export function rateLimitCleanup(now: number): { sql: string; params: number[] } {
+  return { sql: "DELETE FROM community_rate_limits WHERE (key LIKE 'day:%' AND window < ?) OR (key NOT LIKE 'day:%' AND window < ?)",
+    params: [Math.floor(now / DAY) - 2, Math.floor(now / MINUTE) - 120] };
+}
+async function limit(store: CommunityStore, key: string, max: number, now: number, span = MINUTE): Promise<boolean> {
+  const window = Math.floor(now / span);
   const row = await store.first<{ count: number }>(
     `INSERT INTO community_rate_limits (key, window, count) VALUES (?, ?, 1)
      ON CONFLICT(key) DO UPDATE SET count = CASE WHEN window = excluded.window THEN count + 1 ELSE 1 END,
        window = excluded.window RETURNING count`, [key, window]);
-  if (Math.floor(now / 3_600_000) % 6 === 0 && window % 7 === 0)
-    await store.execute('DELETE FROM community_rate_limits WHERE window < ?', [window - 120]);
+  if (window % 7 === 0) { const cleanup = rateLimitCleanup(now); await store.execute(cleanup.sql, cleanup.params); }
   return Number(row?.count || 1) <= max;
 }
 async function incidentRow(store: CommunityStore, clientId: string, hash: string): Promise<StoredIncident | undefined> {
@@ -41,7 +49,7 @@ async function incidentRow(store: CommunityStore, clientId: string, hash: string
 const recount = (id: number) => `UPDATE community_incidents SET upvotes = (SELECT COUNT(*) FROM community_votes WHERE incident_id = ${id}) WHERE id = ${id}`;
 
 /** Единственная реализация API для Express/SQLite и Cloudflare Worker/D1. */
-export async function handleCommunityRequest(request: Request, store: CommunityStore, clientIp = 'local'): Promise<Response> {
+export async function handleCommunityRequest(request: Request, store: CommunityStore, clientIp = 'local', now = Date.now()): Promise<Response> {
   try {
     const url = new URL(request.url), path = url.pathname.replace(/\/+$/, '');
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -49,11 +57,11 @@ export async function handleCommunityRequest(request: Request, store: CommunityS
       return json({ ok: true, service: COMMUNITY_SERVICE, version: COMMUNITY_VERSION });
     if (!path.startsWith('/api/community/')) return json({ error: 'Неизвестный метод API' }, 404);
     const identity = deviceIdentity(request.headers.get('x-device-id'), request.headers.get('x-device-secret'));
-    const hash = await hashDevice(identity.deviceId, identity.secret), now = Date.now();
+    const hash = await hashDevice(identity.deviceId, identity.secret);
     const write = request.method !== 'GET';
     const ipHash = await hashDevice('ip', clientIp.slice(0, 128));
-    if (!await limit(store, `device:${hash}:${write ? 'write' : 'read'}`, write ? 30 : 120, now)
-      || !await limit(store, `ip:${ipHash}`, 300, now))
+    if (!await limit(store, `device:${hash}:${write ? 'write' : 'read'}`, write ? COMMUNITY_LIMITS.writePerMinute : COMMUNITY_LIMITS.readPerMinute, now)
+      || !await limit(store, `ip:${ipHash}`, COMMUNITY_LIMITS.ipPerMinute, now))
       return json({ error: 'Слишком много запросов. Повторите через минуту.' }, 429, { 'Retry-After': '60' });
 
     if (path === '/api/community/incidents' && request.method === 'GET') {
@@ -72,6 +80,10 @@ export async function handleCommunityRequest(request: Request, store: CommunityS
       if (tombstone) return json({ error: 'Отчёт уже удалён; повторное создание запрещено' }, 410);
       const existing = await incidentRow(store, input.client_id, hash);
       if (existing) return existing.device_hash === hash ? json({ incident: publicIncident(existing, hash) }) : json({ error: 'ID отчёта занят другим устройством' }, 409);
+      // Квота расходуется только на реальное создание: повторы идемпотентного POST бесплатны.
+      if (!await limit(store, `day:device:${hash}`, COMMUNITY_LIMITS.createsPerDevicePerDay, now, DAY)
+        || !await limit(store, `day:ip:${ipHash}`, COMMUNITY_LIMITS.createsPerIpPerDay, now, DAY))
+        return json({ error: 'Суточный лимит новых отчётов исчерпан. Повторите завтра.' }, 429, { 'Retry-After': '3600' });
       if (Date.parse(input.created_at) > now + 300_000) input.created_at = new Date(now).toISOString();
       input.updated_at = input.created_at;
       const inserted = await store.first<{ id: number }>(`INSERT INTO community_incidents

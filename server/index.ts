@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { createServer as createViteServer } from 'vite';
 import { db, seedDefaultSitesForUser } from './db.ts';
+import { resolveTrustProxy } from './proxyTrust.ts';
 import {
   createSession,
   getUserFromRequest,
@@ -23,7 +24,8 @@ const isProd = process.env.NODE_ENV === 'production';
 
 async function startServer() {
   const app = express();
-  app.set('trust proxy', true);
+  // X-Forwarded-For учитывается только от доверенного прокси (см. TRUST_PROXY).
+  app.set('trust proxy', resolveTrustProxy(process.env.TRUST_PROXY));
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
 

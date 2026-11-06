@@ -11,6 +11,7 @@ let memory: { deviceId: string; deviceSecret: string; endpoint: string } | null 
 let hydrated: Promise<void> | null = null;
 let writeChain: Promise<void> = Promise.resolve();
 let storageError = '';
+let credentialsProtected = false;
 export function communityStorageError(): string { return storageError; }
 const readLocal = (key: string) => { try { return localStorage.getItem(key) || ''; } catch { return ''; } };
 const writeLocal = (key: string, value: string): boolean => { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); return true; } catch { return false; } };
@@ -22,19 +23,43 @@ export function normalizeCommunityEndpoint(value: string): string {
     throw new Error('Укажите только адрес сервера: без логина, пути и параметров');
   return url.origin;
 }
+function communityEnvEndpoint(): string {
+  return (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_COMMUNITY_API_URL || '';
+}
+export interface CommunityCredentials { deviceId: string; deviceSecret: string; endpoint: string }
+/**
+ * Слияние сохранённых и резервных реквизитов. Если нативное чтение сломалось,
+ * перезаписывать хранилище нельзя: пустая пара уничтожила бы владение отчётами.
+ */
+export function mergeStoredCredentials(
+  stored: Partial<CommunityCredentials>, fallback: Partial<CommunityCredentials>, nativeReadFailed: boolean,
+): { credentials: CommunityCredentials; writable: boolean; error: string } {
+  const credentials: CommunityCredentials = {
+    deviceId: stored.deviceId || fallback.deviceId || '',
+    deviceSecret: stored.deviceSecret || fallback.deviceSecret || '',
+    endpoint: stored.endpoint || fallback.endpoint || '',
+  };
+  if (nativeReadFailed && !(credentials.deviceId && credentials.deviceSecret))
+    return { credentials, writable: false, error: 'Не удалось прочитать ключ устройства из Android Preferences. Хранилище не изменено — повторите попытку.' };
+  return { credentials, writable: true, error: '' };
+}
 /** В APK ключ живёт в Preferences, а не только в очищаемом WebView localStorage. */
 export function hydrateCommunityStorage(): Promise<void> {
   if (hydrated) return hydrated;
   hydrated = (async () => {
-    let stored: Partial<NonNullable<typeof memory>> = {};
+    let stored: Partial<CommunityCredentials> = {}; let readFailed = false;
     if (isNativeApp()) {
-      try { stored = JSON.parse((await Preferences.get({ key: STORAGE_KEY })).value || '{}'); }
-      catch { storageError = 'Не удалось прочитать ключ устройства из Android Preferences'; }
+      try { stored = JSON.parse((await Preferences.get({ key: STORAGE_KEY })).value || '{}') || {}; }
+      catch { readFailed = true; }
     }
-    let endpoint = '';
-    try { endpoint = normalizeCommunityEndpoint(stored.endpoint || readLocal(ENDPOINT_KEY) || import.meta.env.VITE_COMMUNITY_API_URL || ''); }
-    catch { storageError = 'Сохранённый адрес общего сервера некорректен; укажите его заново'; }
-    memory = { deviceId: stored.deviceId || readLocal(DEVICE_KEY), deviceSecret: stored.deviceSecret || readLocal(SECRET_KEY), endpoint };
+    let endpoint = stored.endpoint || readLocal(ENDPOINT_KEY) || communityEnvEndpoint();
+    try { endpoint = normalizeCommunityEndpoint(endpoint); }
+    catch { endpoint = ''; storageError = 'Сохранённый адрес общего сервера некорректен; укажите его заново'; }
+    const merged = mergeStoredCredentials({ ...stored, endpoint }, {
+      deviceId: readLocal(DEVICE_KEY), deviceSecret: readLocal(SECRET_KEY), endpoint,
+    }, readFailed);
+    memory = merged.credentials; credentialsProtected = !merged.writable;
+    if (merged.error) { storageError = merged.error; hydrated = null; return; }
     if (memory.deviceId || memory.endpoint) {
       try { await persistCommunityStorage(); storageError = ''; }
       catch (error) { storageError = error instanceof Error ? error.message : 'Не удалось сохранить ключ устройства'; }
@@ -47,6 +72,7 @@ function snapshot() {
   return memory;
 }
 function persistCommunityStorage(): Promise<void> {
+  if (credentialsProtected) return Promise.reject(new Error(storageError || 'Ключ устройства недоступен; хранилище не изменено'));
   const value = { ...snapshot() };
   if (!isNativeApp()) {
     const ok = writeLocal(DEVICE_KEY, value.deviceId) && writeLocal(SECRET_KEY, value.deviceSecret) && writeLocal(ENDPOINT_KEY, value.endpoint);
@@ -100,6 +126,17 @@ export async function communityRequest<T>(path: string, method = 'GET', body?: u
   const response = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(18000) });
   const data = await response.json(); if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`); return data as T;
 }
+const EDITABLE_FIELDS = ['region', 'carrier', 'incident_type', 'severity', 'status', 'title', 'description', 'ru_sites_ok', 'foreign_sites_ok'] as const;
+/** Сервер мог вернуть более старую копию: повторный POST идемпотентен и не применяет правки. */
+export function incidentContentDiffers(local: Incident, remote: Partial<Incident> | undefined): boolean {
+  if (!remote) return true;
+  // Старый кэш мог сохранить флаги как 0/1, а описание как null: это не правка пользователя.
+  return EDITABLE_FIELDS.some((field) => {
+    const a = local[field], b = remote[field];
+    if (field === 'ru_sites_ok' || field === 'foreign_sites_ok') return Boolean(a) !== Boolean(b);
+    return String(a ?? '') !== String(b ?? '');
+  });
+}
 export const newClientId = (): string => crypto.randomUUID();
 export const incidentClientId = newClientId;
 export function incidentPayload(item: Incident) {
@@ -119,8 +156,14 @@ export function queueIncidentVote(item: Incident, endpoint = communityEndpoint()
 export function queueIncidentDelete(item: Incident, endpoint = communityEndpoint(), now = new Date().toISOString()): Incident {
   return { ...item, pending_delete: true, sync_dirty: true, updated_at: now, sync_endpoint: endpoint, sync_state: 'pending' };
 }
-export function pendingCommunityCount(items: Incident[]): number {
-  return items.filter((item) => !item.demo && (item.vote_dirty || (item.is_owner && (item.pending_delete || item.sync_dirty || item.sync_state !== 'synced')))).length;
+export function pendingCommunityCount(items: Incident[], endpoint?: string): number {
+  const clean = (value: string) => value.trim().replace(/\/+$/, '').toLowerCase();
+  const target = endpoint === undefined ? undefined : clean(endpoint);
+  return items.filter((item) => {
+    if (item.demo) return false;
+    if (target && item.sync_endpoint && clean(item.sync_endpoint) !== target) return false;
+    return item.vote_dirty || (item.is_owner && (item.pending_delete || item.sync_dirty || item.sync_state !== 'synced'));
+  }).length;
 }
 export function belongsToEndpoint(item: Incident, endpoint: string): boolean { return !item.demo && item.sync_endpoint === endpoint; }
 export function withLocalIds(items: Incident[], userId: number, previous: Incident[] = []): Incident[] {
@@ -133,8 +176,10 @@ export function withLocalIds(items: Incident[], userId: number, previous: Incide
 }
 export function reconcileCommunityState(local: Incident[], remote: Incident[], endpoint: string): Incident[] {
   const localById = new Map(local.map((item) => [item.id, item]));
+  const localOwnedByClient = new Map(local.filter((item) => item.is_owner && item.client_id).map((item) => [item.client_id!, item]));
   const merged = remote.map((item) => {
-    const old = localById.get(item.id); if (!old || old.demo) return item; if (old.pending_delete) return old;
+    const old = localById.get(item.id) ?? (item.is_owner ? localOwnedByClient.get(item.client_id!) : undefined);
+    if (!old || old.demo) return item; if (old.pending_delete) return old;
     const keepEdit = old.sync_dirty && old.sync_endpoint === endpoint, keepVote = old.vote_dirty && old.sync_endpoint === endpoint;
     return { ...item,
       ...(keepEdit ? { title: old.title, description: old.description, region: old.region, carrier: old.carrier,
@@ -172,12 +217,18 @@ async function synchronizeNow(current: Incident[], userId: number): Promise<Comm
     if (!item || (!item.sync_dirty && !item.vote_dirty && item.sync_state === 'synced')) continue;
     try {
       if (item.is_owner && (item.sync_dirty || item.sync_state !== 'synced')) {
-        const result = await communityRequest<{ incident: Incident }>(item.sync_state === 'synced' ? `/incidents/${encodeURIComponent(item.client_id || String(item.id))}` : '/incidents',
-          item.sync_state === 'synced' ? 'PATCH' : 'POST', incidentPayload(item));
+        const patching = item.sync_state === 'synced';
+        const result = await communityRequest<{ incident: Incident }>(patching ? `/incidents/${encodeURIComponent(item.client_id || String(item.id))}` : '/incidents',
+          patching ? 'PATCH' : 'POST', incidentPayload(item));
+        let delivered = result.incident;
+        // Ответ на первый POST мог потеряться: сервер отдаёт старую копию, правку нужно довести.
+        if (!patching && incidentContentDiffers(item, delivered)) {
+          delivered = (await communityRequest<{ incident: Incident }>(`/incidents/${encodeURIComponent(item.client_id || String(item.id))}`, 'PATCH', incidentPayload(item))).incident;
+        }
         const live = working.find((row) => row.id === original.id)!, edited = live.updated_at !== item.updated_at;
-        mark(item.id, { ...result.incident, id: item.id, user_id: userId, sync_endpoint: endpoint,
+        mark(item.id, { ...delivered, id: item.id, user_id: userId, sync_endpoint: endpoint,
           sync_state: edited ? 'pending' : 'synced', sync_dirty: edited, vote_dirty: live.vote_dirty, desired_upvote: live.desired_upvote,
-          sync_error: '', client_id: result.incident.client_id || item.client_id });
+          sync_error: '', client_id: delivered.client_id || item.client_id });
         item = working.find((row) => row.id === original.id)!;
       }
       if (item.vote_dirty) {

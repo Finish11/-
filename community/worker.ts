@@ -1,4 +1,4 @@
-import { handleCommunityRequest } from './handler.ts';
+import { handleCommunityRequest, rateLimitCleanup } from './handler.ts';
 import type { CommunityStore, SqlStatement, SqlValue } from './store.ts';
 
 export interface Env { DB: D1Database }
@@ -15,6 +15,7 @@ export default {
     return handleCommunityRequest(request, d1Store(env.DB), request.headers.get('CF-Connecting-IP') || 'unknown');
   },
   async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
-    await env.DB.prepare('DELETE FROM community_rate_limits WHERE window < ?').bind(Math.floor(Date.now() / 60_000) - 120).run();
+    const cleanup = rateLimitCleanup(Date.now());
+    await env.DB.prepare(cleanup.sql).bind(...cleanup.params).run();
   },
 };

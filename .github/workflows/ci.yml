@@ -28,6 +28,7 @@ jobs:
           npm run typecheck:community
           npm run test:core
           npm run test:regressions
+          npm run test:sync
           npm run test:worker
           npm audit --omit=dev
 

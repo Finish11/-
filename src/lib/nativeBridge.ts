@@ -307,17 +307,26 @@ export async function tcpPing(
   host: string,
   port: number,
   timeout = 5000
-): Promise<{ ok: boolean; latency_ms: number | null; error?: string }> {
+): Promise<{ ok: boolean; latency_ms: number | null; latency_us?: number | null; error?: string }> {
   if (!isNativeApp()) return { ok: false, latency_ms: null, error: 'только в приложении' };
   try {
     const res = await registerPlugin<{
       tcpProbe(o: { host: string; port: number; timeout?: number }): Promise<{
         ok: boolean;
         latency_ms?: number;
+        latency_us?: number;
         error?: string;
       }>;
     }>('ApkUpdater').tcpProbe({ host, port, timeout });
-    return { ok: Boolean(res.ok), latency_ms: res.latency_ms ?? null, error: res.error };
+    const micros = typeof res.latency_us === 'number' && Number.isFinite(res.latency_us)
+      ? Math.max(0, res.latency_us)
+      : null;
+    const millis = micros != null
+      ? micros / 1000
+      : typeof res.latency_ms === 'number' && Number.isFinite(res.latency_ms)
+      ? Math.max(0, res.latency_ms)
+      : null;
+    return { ok: Boolean(res.ok), latency_ms: millis, latency_us: micros, error: res.error };
   } catch (err) {
     return { ok: false, latency_ms: null, error: err instanceof Error ? err.message : 'ошибка' };
   }

@@ -226,7 +226,34 @@ public class ApkUpdaterPlugin extends Plugin {
         }
     }
 
-    /** Открывает системный установщик для скачанного файла. */
+    /** Права и системные настройки установки скачанного APK. */
+    @PluginMethod
+    public void getPermissionState(PluginCall call) {
+        boolean canInstall = Build.VERSION.SDK_INT < 26
+                || getContext().getPackageManager().canRequestPackageInstalls();
+        JSObject ret = new JSObject();
+        ret.put("canInstall", canInstall);
+        ret.put("androidSdk", Build.VERSION.SDK_INT);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openInstallSettings(PluginCall call) {
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                Intent intent = new Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getContext().getPackageName())
+                );
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Не удалось открыть настройки установки", error);
+        }
+    }
+
     @PluginMethod
     public void install(PluginCall call) {
         Long id = call.getLong("downloadId");
@@ -403,13 +430,15 @@ public class ApkUpdaterPlugin extends Plugin {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                long started = System.currentTimeMillis();
+                long started = System.nanoTime();
                 Socket socket = new Socket();
                 try {
                     socket.connect(new InetSocketAddress(host, port), timeout);
+                    long latencyUs = Math.max(0L, (System.nanoTime() - started) / 1000L);
                     JSObject ret = new JSObject();
                     ret.put("ok", true);
-                    ret.put("latency_ms", (int) (System.currentTimeMillis() - started));
+                    ret.put("latency_us", latencyUs);
+                    ret.put("latency_ms", latencyUs / 1000.0d);
                     call.resolve(ret);
                 } catch (Exception e) {
                     JSObject ret = new JSObject();

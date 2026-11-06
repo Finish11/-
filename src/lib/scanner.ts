@@ -354,8 +354,12 @@ export function diagnoseScan(
       if (!reachable(r)) {
         if (r.intercepted || r.block_reason === 'throttled') {
           block_reason = 'throttled';
+        } else if (r.block_reason && r.block_reason !== 'ok') {
+          // Конкретная причина важнее групповой догадки: региональное правило
+          // сервиса и неизвестный ответ нельзя молча превращать в «РКН».
+          block_reason = r.block_reason;
         } else if (base === 'dpi_target' && site?.accessibility !== 'ok') {
-          block_reason = 'rkn';
+          block_reason = 'unknown';
         } else if (base === 'ru_whitelist') {
           block_reason = 'network';
         } else {
@@ -372,13 +376,17 @@ export function diagnoseScan(
         latency_ms: r.intercepted ? null : r.latency_ms,
         block_reason,
         note:
-          base === 'ru_whitelist'
+          r.note ||
+          (base === 'ru_whitelist'
             ? 'Белый список РФ'
             : base === 'dpi_target'
             ? reachable(r)
               ? 'Ограничивается не везде — сейчас отвечает напрямую'
-              : 'Сервис из группы ограничений РКН'
-            : 'Нейтральный сайт',
+              : 'Сервис из группы возможных ограничений; причина не подтверждена'
+            : 'Нейтральный сайт'),
+        proof: r.proof,
+        access_scope: r.access_scope,
+        source_url: r.source_url,
         base,
       };
     });
@@ -430,7 +438,7 @@ export function diagnoseScan(
       : scenario === 'jamming'
       ? 'ГЛУШЕНИЕ СЕТИ / ШАТДАУН'
       : scenario === 'dpi'
-      ? 'БЕЛЫХ СПИСКОВ НЕТ • БЛОКИРОВКИ РКН'
+      ? 'БЕЛЫХ СПИСКОВ НЕТ • ЧАСТИЧНЫЕ ОГРАНИЧЕНИЯ'
       : scenario === 'partial'
       ? 'ЧАСТИЧНЫЕ ОГРАНИЧЕНИЯ'
       : opts.withVpn
@@ -443,13 +451,13 @@ export function diagnoseScan(
       : scenario === 'jamming'
       ? `Массово недоступны и российские (${ru_ok_pct}%), и зарубежные (${global_ok_pct}%) ресурсы. Похоже на шатдаун мобильного интернета или глушение LTE, а не на фильтрацию сайтов.`
       : scenario === 'dpi'
-      ? `Нейтральный интернет открыт (${global_ok_pct}% из ${globalItems.length} незаблокированных сайтов), белые списки не активны. Но ${dpiItems.length - Math.round((dpi_ok_pct / 100) * dpiItems.length)} заблокированных РКН сервисов не отвечают — значит работает ТСПУ/DPI.`
+      ? `Нейтральный интернет открыт (${global_ok_pct}% из ${globalItems.length} незаблокированных сайтов), белые списки маловероятны. Часть сервисов из группы возможных ограничений не отвечает. Сетевая фильтрация — только одна из гипотез; региональные правила сервиса и неизвестные ответы разбираются отдельно по каждому адресу.`
       : scenario === 'partial'
       ? interceptedTotal > 0
         ? `На ${interceptedTotal} сайтах пришла заглушка или чужой TLS-сертификат: они не считаются работающими. Действительно открылись ${reachableTotal} из ${items.length}.`
         : `Работает ${global_ok_pct}% незаблокированных сайтов и ${ru_ok_pct}% белого списка. Часть подсетей (Cloudflare, CDN) лежит — возможны региональные ограничения.`
       : opts.withVpn
-      ? `Через VPN-туннель открываются ${reachableTotal} из ${items.length} сайтов, включая сервисы из группы ограничений РКН (${dpi_ok_pct}%).${interceptedTotal ? ` Чужой ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
+      ? `Через VPN-туннель отвечают ${reachableTotal} из ${items.length} веб-адресов, включая ${dpi_ok_pct}% группы возможных ограничений. Работа native-приложений и аккаунтов этим не доказана.${interceptedTotal ? ` Нераспознанный ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
       : `Открываются ${reachableTotal} из ${items.length} сайтов, нейтральные ресурсы доступны на ${global_ok_pct}%. Признаков белых списков и глушения нет.`;
 
   return {

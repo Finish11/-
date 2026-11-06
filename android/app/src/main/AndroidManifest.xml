@@ -45,4 +45,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Установка APK-обновлений, скачанных самим приложением -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Итог замера в шторке на Android 13+. Запрашивается отдельно при первом входе. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

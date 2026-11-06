@@ -20,7 +20,14 @@ export type MarkerRole = 'ru_whitelist' | 'global_neutral' | 'dpi_target' | 'cus
 export type Accessibility = 'ok' | 'restricted' | 'blocked';
 
 /** Причина, по которой сайт не открылся во время проверки */
-export type SiteBlockReason = 'ok' | 'rkn' | 'whitelist' | 'network' | 'throttled' | 'unknown';
+export type SiteBlockReason =
+  | 'ok'
+  | 'rkn'
+  | 'whitelist'
+  | 'network'
+  | 'throttled'
+  | 'provider_region'
+  | 'unknown';
 
 export type SiteStatus = 'ok' | 'slow' | 'blocked' | 'unknown' | 'checking';
 
@@ -74,6 +81,10 @@ export interface ScanSiteResult {
   intercepted?: boolean;
   /** app/page — ожидаемое содержимое; endpoint/opaque — только сетевой ответ. */
   proof?: SiteProof;
+  /** Что именно удалось (или не удалось) доказать для приложения/сайта. */
+  access_scope?: 'web_only' | 'app_unconfirmed' | 'provider_region_ru';
+  /** Официальный источник справочного регионального ограничения. */
+  source_url?: string;
   /** Короткое пояснение для интерфейса */
   note?: string;
 }

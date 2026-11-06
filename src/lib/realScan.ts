@@ -1,6 +1,8 @@
 import type { ScanSiteResult, Site } from '../types';
 import { isNativeApp, mapLimit } from './nativeBridge';
 import { probeControl, probeSite, type ProbeVerdict } from './siteProbe';
+import { applyServiceAccessPolicy, type ServiceAccessContext } from './serviceAccess';
+import { orderSitesForScan } from './scanScheduler';
 
 /**
  * Настоящий замер сайтов с телефона.
@@ -34,7 +36,8 @@ export async function runRealSiteScan(
     partial: ScanSiteResult[]
   ) => void,
   abortSignal?: AbortSignal,
-  timeoutMs = 4500
+  timeoutMs = 4500,
+  serviceContext: ServiceAccessContext = { withVpn: false }
 ): Promise<RealScanOutcome> {
   const enabled = sites.filter((s) => Boolean(s.enabled));
   const total = enabled.length;
@@ -70,7 +73,8 @@ export async function runRealSiteScan(
 
   // 32 запроса одновременно: на 75 сайтах не остаётся длинного «хвоста»
   // после первых быстрых ответов, но мобильная сеть не забивается 75 сокетами.
-  const results = await mapLimit(enabled, Math.min(32, enabled.length), async (site) => {
+  const scheduled = orderSitesForScan(enabled);
+  const results = await mapLimit(scheduled, Math.min(32, enabled.length), async (site) => {
     if (abortSignal?.aborted) {
       const aborted: ScanSiteResult = {
         site_id: site.id,
@@ -141,11 +145,18 @@ export async function runRealSiteScan(
       }
     }
 
+    if (controlOk) result = applyServiceAccessPolicy(site, result, serviceContext);
     acc.push(result);
     done += 1;
     onProgress(done, total, result, [...acc]);
     return result;
   });
+
+  // Приоритет влияет только на расписание запросов, а не на порядок отчёта.
+  const originalOrder = new Map(enabled.map((site, index) => [site.id, index]));
+  results.sort(
+    (a, b) => (originalOrder.get(a.site_id || -1) ?? 0) - (originalOrder.get(b.site_id || -1) ?? 0)
+  );
 
   // Если хоть один сайт ответил — сеть точно жива, даже когда контрольные
   // адреса заблокированы (так бывает при белых списках).

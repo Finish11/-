@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { diagnoseScan, evaluateScanVerdict } from '../src/lib/scanner.ts';
 import { parseSubscriptionText } from '../src/lib/subscriptionParser.ts';
 import { assessSiteContent } from '../src/lib/siteContent.ts';
@@ -7,6 +8,9 @@ import { canonicalServiceProbeUrl } from '../src/lib/siteProbe.ts';
 import { emptyGeo, hasSameNetworkAttribution, isNewerNetworkSequence, networkSnapshotKey, resolveVpnStatus } from '../src/lib/networkInfo.ts';
 import type { NativeNetworkState } from '../src/lib/nativeBridge.ts';
 import { decodeStatePacket, encodeStatePacket, selectNewestState } from '../src/demo/stateStorage.ts';
+import { applyServiceAccessPolicy } from '../src/lib/serviceAccess.ts';
+import { orderSitesForScan } from '../src/lib/scanScheduler.ts';
+import { formatTcpLatency } from '../src/lib/nodePing.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
 function site(id: number, role: Site['marker_role'] = 'global_neutral'): Site {
@@ -52,6 +56,81 @@ test('подмена TLS не считается открытым сайтом �
   assert.equal(verdict.verdict, 'SEVERE_RESTRICTIONS');
   assert.equal(verdict.ok_sites, 0);
   assert.equal(verdict.blocked_sites, 2);
+});
+
+test('ChatGPT без VPN на RU-IP получает справочное региональное ограничение, не успех и не РКН', () => {
+  const chat = { ...site(90, 'dpi_target'), domain: 'chatgpt.com' };
+  const measured = { ...result(90, 'dpi_target'), domain: 'chatgpt.com', proof: 'app' as const };
+  const actual = applyServiceAccessPolicy(chat, measured, { withVpn: false, countryCode: 'RU' });
+  assert.equal(actual.status, 'blocked');
+  assert.equal(actual.block_reason, 'provider_region');
+  assert.equal(actual.access_scope, 'provider_region_ru');
+  assert.equal(actual.latency_ms, null);
+  assert.match(actual.source_url || '', /help\.openai\.com/);
+  assert.doesNotMatch(actual.note || '', /это блок РКН/i);
+});
+
+test('Claude и WhatsApp через VPN при нераспознанном ответе не получают ложный достоверный отказ', () => {
+  for (const [id, domain] of [[91, 'claude.ai'], [92, 'web.whatsapp.com']] as const) {
+    const target = { ...site(id, 'dpi_target'), domain };
+    const measured = {
+      ...result(id, 'dpi_target'),
+      domain,
+      status: 'blocked' as const,
+      latency_ms: null,
+      intercepted: true,
+      block_reason: 'throttled' as const,
+    };
+    const actual = applyServiceAccessPolicy(target, measured, { withVpn: true, countryCode: 'NL' });
+    assert.equal(actual.access_scope, 'app_unconfirmed');
+    assert.equal(actual.block_reason, 'unknown');
+    assert.equal(actual.intercepted, false);
+    assert.match(actual.note || '', /не доказательство блокировки/i);
+  }
+});
+
+test('сводный вердикт сохраняет региональную причину и не перезаписывает её групповым РКН', () => {
+  const chat = { ...site(94, 'dpi_target'), domain: 'chatgpt.com', accessibility: 'blocked' as const };
+  const measured = applyServiceAccessPolicy(
+    chat,
+    { ...result(94, 'dpi_target'), domain: 'chatgpt.com', proof: 'app' as const },
+    { withVpn: false, countryCode: 'RU' }
+  );
+  const evaluated = evaluateScanVerdict([measured], false, new Map([[94, chat]]));
+  const highlighted = evaluated.diagnosis.highlight_blocked.find((item) => item.domain === 'chatgpt.com');
+  assert.equal(highlighted?.block_reason, 'provider_region');
+  assert.equal(highlighted?.access_scope, 'provider_region_ru');
+  assert.match(highlighted?.source_url || '', /help\.openai\.com/);
+  assert.doesNotMatch(evaluated.diagnosis.headline, /РКН/);
+});
+
+test('открытая страница Gemini через VPN не выдаётся за работу приложения', () => {
+  const gemini = { ...site(93, 'dpi_target'), domain: 'gemini.google.com' };
+  const measured = { ...result(93, 'dpi_target'), domain: 'gemini.google.com', proof: 'app' as const };
+  const actual = applyServiceAccessPolicy(gemini, measured, { withVpn: true, countryCode: 'DE' });
+  assert.equal(actual.status, 'ok');
+  assert.equal(actual.proof, 'page');
+  assert.equal(actual.access_scope, 'web_only');
+  assert.match(actual.note || '', /приложение.*не проверяются/i);
+});
+
+test('прежние таймауты и DPI-цели стартуют раньше быстрых сайтов без потери стабильности', () => {
+  const fast = { ...site(101), last_status: 'ok' as const, last_latency_ms: 40, last_checked_at: '2026-01-01' };
+  const slow = { ...site(102), last_status: 'blocked' as const, last_checked_at: '2026-01-01' };
+  const dpi = { ...site(103, 'dpi_target'), last_status: 'ok' as const, last_latency_ms: 30, last_checked_at: '2026-01-01' };
+  const equalA = site(104);
+  const equalB = site(105);
+  const ordered = orderSitesForScan([fast, equalA, equalB, dpi, slow]);
+  assert.equal(ordered[0].id, slow.id);
+  assert.ok(ordered.findIndex((item) => item.id === dpi.id) < ordered.findIndex((item) => item.id === fast.id));
+  assert.ok(ordered.findIndex((item) => item.id === equalA.id) < ordered.findIndex((item) => item.id === equalB.id));
+});
+
+test('TCP ping никогда не показывает сомнительный ноль как международный RTT', () => {
+  assert.equal(formatTcpLatency(0), '<1 мс');
+  assert.equal(formatTcpLatency(0.42), '<1 мс');
+  assert.equal(formatTcpLatency(12.4), '12 мс');
+  assert.equal(formatTcpLatency(null), '—');
 });
 
 test('реальный ответ нейтральных сайтов по-прежнему даёт открытый сценарий', () => {

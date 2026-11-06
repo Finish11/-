@@ -38,7 +38,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { isNativeApp } from '../lib/nativeBridge';
-import { pingAllNodes } from '../lib/nodePing';
+import { formatTcpLatency, pingAllNodes } from '../lib/nodePing';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { ExpandableText } from './ui/ExpandableText';
@@ -344,7 +344,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       showToast(
         r.status === 'online' ? 'success' : r.status === 'degraded' ? 'warning' : 'error',
         `${stripLeadingFlag(p.name)}: ${
-          r.latencyMs != null ? `${r.latencyMs} мс` : r.reason || 'нет ответа'
+          r.latencyMs != null ? formatTcpLatency(r.latencyMs) : r.reason || 'нет ответа'
         }`
       );
       return true;
@@ -364,10 +364,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         res.profile.status === 'online' ? 'success' : res.profile.status === 'degraded' ? 'warning' : 'error',
         `${stripLeadingFlag(res.profile.name)}: ${
           res.profile.status === 'online'
-            ? `${res.profile.latency_ms} мс`
+            ? formatTcpLatency(res.profile.latency_ms)
             : res.profile.status === 'degraded'
-            ? `медленно, ${res.profile.latency_ms} мс`
-            : 'TCP не проходит — вероятно блок'
+            ? `медленно, ${formatTcpLatency(res.profile.latency_ms)}`
+            : res.profile.notes || 'TCP не проходит — причина не определена'
         }`
       );
     } catch (err) {
@@ -1128,6 +1128,13 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               Проверить
             </Button>
           </div>
+          {connection?.vpn_detected && (
+            <Notice tone="info" icon={<Info className="w-4 h-4" />}>
+              Сейчас включён VPN. TCP может быть принят локально VPN-клиентом, поэтому время —
+              особенно <strong>&lt;1 мс</strong> — не является чистым пингом до страны узла.
+              Для сравнения серверов по прямому маршруту выключите VPN и повторите проверку.
+            </Notice>
+          )}
           {grouped.map(([groupName, nodes]) => {
             const isCollapsed = collapsed[groupName];
             const onlineCount = nodes.filter((n) => n.status === 'online' || n.status === 'degraded').length;
@@ -1197,13 +1204,18 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                               <div className="text-[10.5px] text-muted font-mono truncate mt-0.5">
                                 {p.host}:{p.port} · {p.protocol}
                               </div>
+                              {p.notes && (p.status === 'blocked' || (p.latency_ms != null && p.latency_ms < 1)) && (
+                                <div className="text-[9.5px] leading-snug mt-0.5 break-words" style={{ color: 'rgb(var(--warning))' }}>
+                                  {p.notes}
+                                </div>
+                              )}
                             </div>
                             <span
                               className="inline-flex items-center gap-1 text-[10.5px] font-bold px-1.5 py-1 rounded-md shrink-0 font-mono"
                               style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
                             >
                               <StatusIcon status={p.status} className="w-3 h-3" />
-                              {p.latency_ms != null ? `${p.latency_ms} мс` : STATUS_LABEL[p.status]}
+                              {p.latency_ms != null ? formatTcpLatency(p.latency_ms) : STATUS_LABEL[p.status]}
                             </span>
                           </div>
 

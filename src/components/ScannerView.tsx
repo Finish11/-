@@ -38,6 +38,7 @@ import {
 import { evaluateScanVerdict, IS_DEMO_BUILD } from '../lib/scanner';
 import { apiFetch } from '../lib/api';
 import { QuickPicks } from './QuickPicks';
+import { ResultGlossary } from './ResultGlossary';
 import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
 import { useSettings } from '../lib/appSettings';
@@ -75,7 +76,8 @@ const REASON_TEXT: Record<string, string> = {
   rkn: 'заблокирован по реестру — нужен VPN',
   whitelist: 'не в белом списке оператора',
   network: 'сеть не ответила: таймаут или сброс',
-  throttled: 'не открыт: пришёл чужой ответ или работает ограничение DPI',
+  provider_region: 'региональное ограничение самого сервиса для RU',
+  throttled: 'ответ не распознан: заглушка, антибот-страница или ограничение DPI',
   unknown: 'нет ответа, причина не определена',
 };
 
@@ -158,7 +160,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const realLatestScan = latestScan && !latestScan.demo ? latestScan : null;
   const [activeScan, setActiveScan] = useState<ScanRecord | null>(realLatestScan);
 
-  const [siteFilter, setSiteFilter] = useState<'all' | 'blocked' | 'ok' | SiteCategory>('all');
+  const [siteFilter, setSiteFilter] = useState<'all' | 'blocked' | 'unconfirmed' | 'ok' | SiteCategory>('all');
   const [copiedReport, setCopiedReport] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -316,7 +318,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Замеры всегда настоящие: сетевые запросы идут и в браузере, и в APK.
     // Отличается только глубина проверки — в браузере недоступно содержимое
     // страниц, поэтому результат помечается как оценочный.
-    const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal);
+    const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 4500, {
+      withVpn: vpnMode === 'with_vpn',
+      countryCode: conn.country_code,
+    });
     const results: ScanSiteResult[] = outcome.results;
     const controlOk = outcome.controlOk;
     const approximate = outcome.approximate;
@@ -544,7 +549,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const filteredResults = displayedResults.filter((r) => {
     if (siteFilter === 'all') return true;
-    if (siteFilter === 'blocked') return r.status === 'blocked' || Boolean(r.intercepted);
+    if (siteFilter === 'unconfirmed') return r.access_scope === 'app_unconfirmed';
+    if (siteFilter === 'blocked') {
+      return r.access_scope !== 'app_unconfirmed' && (r.status === 'blocked' || Boolean(r.intercepted));
+    }
     if (siteFilter === 'ok') return !r.intercepted && (r.status === 'ok' || r.status === 'slow');
     return r.category === siteFilter;
   });
@@ -578,7 +586,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const meta = VERDICT_META[(activeScan?.verdict as keyof typeof VERDICT_META) || 'OPEN_INTERNET'];
   const okCount = displayedResults.filter((r) => !r.intercepted && (r.status === 'ok' || r.status === 'slow')).length;
-  const blockedCount = displayedResults.filter((r) => r.status === 'blocked' || r.intercepted).length;
+  const blockedCount = displayedResults.filter(
+    (r) => r.access_scope !== 'app_unconfirmed' && (r.status === 'blocked' || r.intercepted)
+  ).length;
+  const unconfirmedCount = displayedResults.filter((r) => r.access_scope === 'app_unconfirmed').length;
   const scanning = phase === 'scanning' || phase === 'precheck';
   const progressPct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const showResult = Boolean(activeScan) && phase !== 'scanning';
@@ -745,7 +756,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           {phase === 'scanning' ? (
             <div className="w-full max-w-sm mt-5 space-y-2">
               <Meter pct={progressPct} height={7} />
-              <div className="flex justify-between text-[11px] text-dim font-medium">
+              <div className="flex flex-wrap justify-between gap-x-2 gap-y-1 text-[11px] text-dim font-medium">
                 <span className="inline-flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />
                   отвечают {okCount}
@@ -754,6 +765,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
                   не открыты {blockedCount}
                 </span>
+                {unconfirmedCount > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--warning))' }} />
+                    не подтверждено {unconfirmedCount}
+                  </span>
+                )}
               </div>
             </div>
           ) : showResult && activeScan ? (
@@ -853,6 +870,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       {/* ======================= ПОЛНЫЙ ОТЧЁТ ======================= */}
       {showResult && activeScan && (
         <section className="space-y-3 anim-fade-up">
+          <ResultGlossary />
+
           {/* Три группы ресурсов */}
           <div className="rounded-[1.5rem] border p-4 sm:p-5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
             <SectionTitle
@@ -906,10 +925,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 ответили {activeScan.ok_sites + activeScan.slow_sites} из {activeScan.total_sites}
               </span>
               {activeScan.slow_sites > 0 && <span>медленно {activeScan.slow_sites}</span>}
-              <span>не открылись {activeScan.blocked_sites}</span>
+              <span>не открылись {blockedCount}</span>
+              {unconfirmedCount > 0 && <span>приложение не подтверждено: {unconfirmedCount}</span>}
               {displayedResults.filter((r) => r.intercepted).length > 0 && (
                 <span style={{ color: 'rgb(var(--warning))' }}>
-                  чужой ответ {displayedResults.filter((r) => r.intercepted).length}
+                  не распознано {displayedResults.filter((r) => r.intercepted).length}
                 </span>
               )}
               <span>средний отклик {activeScan.avg_latency_ms} мс</span>
@@ -1134,6 +1154,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--danger))' }} />
               Не открылись {blockedCount}
             </Chip>
+            {unconfirmedCount > 0 && (
+              <Chip active={siteFilter === 'unconfirmed'} onClick={() => setSiteFilter('unconfirmed')}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--warning))' }} />
+                Не подтверждено {unconfirmedCount}
+              </Chip>
+            )}
             {(Object.keys(CATEGORY_META) as SiteCategory[])
               .filter((c) => displayedResults.some((r) => r.category === c))
               .map((c) => (
@@ -1146,7 +1172,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <div className="space-y-1.5">
             {filteredResults.map((item, idx) => {
               const tone: 'ok' | 'warn' | 'bad' =
-                item.intercepted || item.status === 'blocked'
+                item.access_scope === 'app_unconfirmed' || item.intercepted
+                  ? 'warn'
+                  : item.status === 'blocked'
                   ? 'bad'
                   : item.status === 'slow' || !item.proof || item.proof === 'endpoint' || item.proof === 'opaque'
                   ? 'warn'
@@ -1178,7 +1206,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                           className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
                           style={{ background: 'rgb(var(--warning) / 0.16)', color: 'rgb(var(--warning))' }}
                         >
-                          чужой ответ
+                          не распознан
                         </span>
                       )}
                     </div>
@@ -1203,7 +1231,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                           : 'rgb(var(--danger))',
                     }}
                   >
-                    {item.latency_ms != null ? `${item.latency_ms} мс` : 'не открыт'}
+                    {item.access_scope === 'app_unconfirmed'
+                      ? 'не подтверждено'
+                      : item.access_scope === 'provider_region_ru'
+                      ? 'ограничение RU'
+                      : item.latency_ms != null
+                      ? `${item.latency_ms} мс`
+                      : 'не открыт'}
                   </span>
                 </div>
               );
@@ -1374,7 +1408,7 @@ const Conclusion: React.FC<{
   if (withVpn && blocked.pct >= 70) {
     return (
       <span className="text-dim">
-        через VPN открывается почти всё, включая заблокированные сервисы — туннель работает.
+        через VPN отвечает большинство проверенных веб-адресов — маршрут работает. Работа native-приложений и аккаунтов этим не гарантируется.
       </span>
     );
   }
@@ -1403,8 +1437,9 @@ const Conclusion: React.FC<{
   if (neutral.pct >= 60 && blocked.pct < 70) {
     return (
       <span className="text-dim">
-        нейтральный интернет открыт, значит белых списков нет; недоступны только сервисы из реестра
-        РКН — <span className="font-bold" style={{ color: 'rgb(var(--warning))' }}>работает фильтрация ТСПУ</span>.
+        нейтральный интернет открыт, значит белые списки маловероятны; ограничения затрагивают часть
+        сервисов — <span className="font-bold" style={{ color: 'rgb(var(--warning))' }}>причину смотрите отдельно у каждого адреса</span>.
+        Сетевая фильтрация и региональные правила самого сервиса не смешиваются.
       </span>
     );
   }

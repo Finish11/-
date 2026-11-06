@@ -27,6 +27,8 @@ interface ApkUpdaterPlugin {
   download(options: { url: string; fileName?: string }): Promise<ApkDownloadStart>;
   status(options: { downloadId: number }): Promise<ApkDownloadStatus>;
   install(options: { downloadId: number }): Promise<ApkInstallResult>;
+  getPermissionState(): Promise<{ canInstall: boolean; androidSdk: number }>;
+  openInstallSettings(): Promise<void>;
 }
 
 export const ApkUpdater = registerPlugin<ApkUpdaterPlugin>('ApkUpdater');

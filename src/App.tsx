@@ -35,6 +35,7 @@ import { SitesView } from './components/SitesView';
 import { VpnMonitorView } from './components/VpnMonitorView';
 import { IncidentsView } from './components/IncidentsView';
 import { HistoryView } from './components/HistoryView';
+import { PermissionOnboarding } from './components/PermissionOnboarding';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -312,6 +313,7 @@ export function App() {
   return (
     <>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <PermissionOnboarding />
       <Layout
         user={user}
         onUserUpdate={setUser}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Search,
@@ -9,18 +9,25 @@ import {
   RotateCcw,
   HelpCircle,
   Check,
+  RefreshCw,
 } from 'lucide-react';
 import {
   CATEGORY_META,
   type MarkerRole,
   type Site,
   type SiteCategory,
+  type ScanSiteResult,
 } from '../types';
 import { apiFetch } from '../lib/api';
 import { probeSingleSite } from '../lib/scanner';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
-import { Button, Chip, EmptyState, StatusIcon } from './ui/kit';
+import { siteMeasurementPatch, siteResultIsStale, siteStatusLabel } from '../lib/siteMeasurement';
+import { runRealSiteScan } from '../lib/realScan';
+import { detectNetworkContext } from '../lib/networkInfo';
+import { IS_DEMO_BUILD } from '../lib/scanner';
+import { isNativeApp, mapLimit } from '../lib/nativeBridge';
+import { Button, Chip, EmptyState, StatusIcon, Notice } from './ui/kit';
 
 interface SitesViewProps {
   sites: Site[];
@@ -35,7 +42,13 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
   const [catFilter, setCatFilter] = useState<'all' | SiteCategory>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'blocked' | 'disabled'>('all');
   const [roleFilter, setRoleFilter] = useState<'all' | 'whitelist' | 'neutral' | 'rkn'>('all');
-  const [pingingId, setPingingId] = useState<number | null>(null);
+  const [pingingIds, setPingIds] = useState<Set<number>>(new Set());
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [checkProgress, setCheckProgress] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => { window.clearInterval(timer); abortRef.current?.abort(); }; }, []);
   const [resetting, setResetting] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -146,40 +159,43 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     }
   };
 
+  const saveMeasurement = async (site: Site, patch: Partial<Site>) => {
+    setSites((prev) => prev.map((item) => item.id !== site.id ? item :
+      item.last_checked_at && patch.last_checked_at && Date.parse(item.last_checked_at) > Date.parse(patch.last_checked_at) ? item : { ...item, ...patch }));
+    await apiFetch(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+  };
   const handlePingSingleSite = async (site: Site) => {
-    setPingingId(site.id);
+    if (checkingAll || pingingIds.has(site.id)) return;
+    setPingIds((prev) => new Set(prev).add(site.id));
     try {
-      const result = await probeSingleSite(site, 'live');
-      const checkedAt = new Date().toISOString();
-      setSites((prev) =>
-        prev.map((s) =>
-          s.id === site.id
-            ? {
-                ...s,
-                last_status: result.status,
-                last_latency_ms: result.latency_ms,
-                last_checked_at: checkedAt,
-              }
-            : s
-        )
-      );
-      await apiFetch(`/api/sites/${site.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          last_status: result.status,
-          last_latency_ms: result.latency_ms,
-          last_checked_at: checkedAt,
-        }),
-      });
-      showToast(
-        result.status === 'ok' || result.status === 'slow' ? 'success' : 'warning',
-        `${site.name}: ${
-          result.latency_ms != null ? `отклик ${result.latency_ms} мс` : 'нет ответа'
-        }`
-      );
-    } finally {
-      setPingingId(null);
-    }
+      const result = IS_DEMO_BUILD && !isNativeApp() ? await probeSingleSite(site, 'live')
+        : (await runRealSiteScan([site], () => undefined, undefined, 8000)).results[0];
+      if (!result) return;
+      await saveMeasurement(site, siteMeasurementPatch(result));
+      showToast(result.network_status === 'ok' || result.network_status === 'slow' ? 'info' : 'warning',
+        `${site.name}: ${siteStatusLabel({ ...site, ...siteMeasurementPatch(result) })}`);
+    } catch (error) { showToast('error', error instanceof Error ? error.message : 'Проверка не завершена; прежний результат сохранён'); }
+    finally { setPingIds((prev) => { const next = new Set(prev); next.delete(site.id); return next; }); }
+  };
+  const handleCheckAll = async () => {
+    if (checkingAll) { abortRef.current?.abort(); return; }
+    const targets = sites.filter((site) => Boolean(site.enabled)); if (!targets.length) return;
+    const ctrl = new AbortController(); abortRef.current = ctrl; setCheckingAll(true);
+    let done = 0, failedSaves = 0;
+    try {
+      const ctx = await detectNetworkContext({ skipGeo: true });
+      const apply = async (result: ScanSiteResult) => {
+        const site = targets.find((item) => item.id === result.site_id); if (!site || ctrl.signal.aborted) return;
+        try { await saveMeasurement(site, siteMeasurementPatch(result)); } catch { failedSaves++; }
+        done++; setCheckProgress(`${done} / ${targets.length}`);
+      };
+      if (IS_DEMO_BUILD && !isNativeApp()) await mapLimit(targets, 6, async (site) => { await apply(await probeSingleSite(site, 'live')); });
+      else await runRealSiteScan(targets, (_done, _total, result) => { void apply(result); }, ctrl.signal, 8000,
+        { withVpn: ctx.vpnLikely, countryCode: ctx.geo?.country_code });
+      if (!ctrl.signal.aborted) showToast(failedSaves ? 'warning' : 'success', failedSaves
+        ? `Проверено ${done}; не сохранено ${failedSaves}. Повторите проверку.` : `Проверено ${done} сайтов одним алгоритмом`);
+    } catch (error) { showToast('error', error instanceof Error ? error.message : 'Проверка не завершена'); }
+    finally { setCheckingAll(false); setCheckProgress(''); abortRef.current = null; }
   };
 
   const handleResetDefaults = async () => {
@@ -247,6 +263,9 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
           <Button variant="primary" size="md" icon={<Plus className="w-4 h-4" />} onClick={openCreateModal}>
             Добавить сайт
           </Button>
+          <Button variant="soft" size="md" icon={<RefreshCw className="w-4 h-4" />} onClick={() => void handleCheckAll()}>
+            {checkingAll ? `Отменить · ${checkProgress}` : 'Проверить все сайты'}
+          </Button>
           <Button
             variant="outline"
             size="md"
@@ -258,6 +277,8 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
           </Button>
         </div>
       </header>
+      <Notice tone="info">Это история проб, а не постоянный мониторинг. После смены Wi-Fi/VPN запустите проверку заново.
+        «Ответ адреса» не означает работу приложения; старые результаты помечены временем проверки.</Notice>
 
       {/* Поиск и фильтры */}
       <section className="space-y-2.5">
@@ -402,18 +423,13 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                         {CATEGORY_META[site.category]?.shortLabel || 'свой'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-[10.5px] font-mono text-muted truncate">{site.domain}</span>
                       <span className="text-muted text-[9px]">·</span>
-                      <StatusIcon status={site.last_status} className="w-3 h-3 shrink-0" />
-                      <span className="text-[10.5px] text-dim shrink-0">
-                        {site.last_status === 'ok'
-                          ? `страница открыта · ${site.last_latency_ms} мс`
-                          : site.last_status === 'slow'
-                          ? `страница медленная · ${site.last_latency_ms} мс`
-                          : site.last_status === 'blocked'
-                          ? 'страница недоступна'
-                          : 'не проверялся'}
+                      <StatusIcon status={siteResultIsStale(site, now) ? 'unknown' : site.last_status} className="w-3 h-3 shrink-0" />
+                      <span className="text-[10.5px] text-dim min-w-0 break-words">
+                        {pingingIds.has(site.id) ? 'проверяем…' : siteStatusLabel(site)}
+                        {site.last_latency_ms != null && !pingingIds.has(site.id) ? ` · ${Math.round(site.last_latency_ms)} мс` : ''}
                       </span>
                     </div>
                   </div>
@@ -435,12 +451,12 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                     <div className="flex items-center gap-0.5">
                       <button
                         type="button"
-                        disabled={pingingId === site.id}
+                        disabled={checkingAll || pingingIds.has(site.id)}
                         onClick={() => handlePingSingleSite(site)}
                         title="Проверить сейчас"
                         className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--accent))]"
                       >
-                        <Zap className={`w-3.5 h-3.5 ${pingingId === site.id ? 'animate-pulse' : ''}`} />
+                        <Zap className={`w-3.5 h-3.5 ${pingingIds.has(site.id) ? 'animate-spin' : ''}`} />
                       </button>
                       <button
                         type="button"
@@ -458,6 +474,10 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                    </div>
+                    <div className="text-[9.5px] leading-snug text-muted mt-1 break-words">
+                      {site.last_checked_at ? `${siteResultIsStale(site, now) ? 'Устарело · ' : ''}${new Date(site.last_checked_at).toLocaleString('ru-RU')}` : 'Ещё не проверялся на этом устройстве'}
+                      {site.last_note ? ` · ${site.last_note}` : ''}
                     </div>
                   </div>
                 </div>

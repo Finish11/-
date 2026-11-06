@@ -467,7 +467,9 @@ async function startServer() {
     db.prepare(
       `UPDATE sites
        SET name = ?, domain = ?, probe_url = ?, category = ?, marker_role = ?,
-           enabled = ?, description = ?, last_status = ?, last_latency_ms = ?, last_checked_at = ?
+           enabled = ?, description = ?, last_status = ?, last_latency_ms = ?, last_checked_at = ?,
+           last_proof = COALESCE(?, last_proof), last_note = COALESCE(?, last_note),
+           last_http_status = ?, last_probe_url = COALESCE(?, last_probe_url)
        WHERE id = ? AND user_id = ?`
     ).run(
       nextName,
@@ -480,6 +482,8 @@ async function startServer() {
       nextLastStatus,
       nextLatency,
       nextCheckedAt,
+      body.last_proof ?? null, body.last_note ?? null,
+      body.last_http_status ?? null, body.last_probe_url ?? null,
       siteId,
       req.user!.id
     );
@@ -583,15 +587,17 @@ async function startServer() {
 
       const updateSiteStmt = db.prepare(
         `UPDATE sites
-         SET last_status = ?, last_latency_ms = ?, last_checked_at = ?
+         SET last_status = ?, last_latency_ms = ?, last_checked_at = ?,
+             last_proof = ?, last_note = ?, last_http_status = ?, last_probe_url = ?
          WHERE id = ? AND user_id = ?`
       );
       for (const item of resultsArr) {
         if (item && item.site_id) {
           updateSiteStmt.run(
-            String(item.status || 'unknown'),
-            item.latency_ms ?? null,
-            now,
+            String(item.network_status || item.status || 'unknown'),
+            item.network_latency_ms ?? item.latency_ms ?? null,
+            item.checked_at || now, item.network_proof || item.proof || null,
+            item.network_note || item.note || null, item.http_status ?? null, item.probe_url || null,
             Number(item.site_id),
             userId
           );

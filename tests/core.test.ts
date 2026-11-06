@@ -565,14 +565,14 @@ test('favicon доказывает только ответ адреса, ста�
   assert.equal(canonicalServiceProbeUrl('https://example.com/favicon.ico'), 'https://example.com/favicon.ico');
 });
 
-test('generic HTML без признаков домена не открыт, а текстовый ответ остаётся endpoint', () => {
+test('generic HTML без признаков домена не подтверждён, а текстовый ответ остаётся endpoint', () => {
   const foreign = assessSiteContent(
     'https://discord.com/',
     '<html><title>Добро пожаловать</title><body>Проверка соединения</body></html>',
     200
   );
   assert.equal(foreign.own, false);
-  assert.equal(foreign.intercepted, true);
+  assert.equal(foreign.intercepted, false); // неизвестный HTML не доказывает подмену провайдером
   const actual = assessSiteContent(
     'https://discord.com/',
     '<html><title>Discord</title><script src="/assets/app.js"></script></html>',

@@ -330,7 +330,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Замеры всегда настоящие: сетевые запросы идут и в браузере, и в APK.
     // Отличается только глубина проверки — в браузере недоступно содержимое
     // страниц, поэтому результат помечается как оценочный.
-    const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 4500, {
+    const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 8000, {
       withVpn: vpnMode === 'with_vpn',
       countryCode: conn.country_code,
     });

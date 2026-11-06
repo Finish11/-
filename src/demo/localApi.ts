@@ -408,7 +408,9 @@ async function handle(path: string, method: string, body: any): Promise<Response
       state.sites = state.sites.map((s) => {
         const hit = (body?.results || []).find((r: any) => r.site_id === s.id);
         return hit
-          ? { ...s, last_status: hit.status, last_latency_ms: hit.latency_ms, last_checked_at: scan.created_at }
+          ? { ...s, last_status: hit.network_status ?? hit.status, last_latency_ms: hit.network_latency_ms ?? hit.latency_ms,
+              last_proof: hit.network_proof ?? hit.proof, last_note: hit.network_note ?? hit.note,
+              last_http_status: hit.http_status ?? null, last_probe_url: hit.probe_url, last_checked_at: hit.checked_at ?? scan.created_at }
           : s;
       });
       await sleep(260);

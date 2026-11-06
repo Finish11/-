@@ -28,6 +28,8 @@ const STUB_MARKERS = [
   'site blocked',
   'access denied by',
   'согласно требованиям законодательства',
+  'портал провайдера',
+  'vpn landing page',
 ];
 
 // Это не подмена провайдером: так может отвечать сам сайт или Cloudflare.
@@ -138,9 +140,11 @@ function strictService(url: string, lower: string): { name: string; matches: boo
 export function assessSiteContent(
   url: string,
   text: string,
-  httpStatus = 200
+  httpStatus = 200,
+  contentType = ''
 ): SiteContentAssessment {
   const lower = text.toLowerCase();
+  if (httpStatus === 204) return { own: true, intercepted: false, proof: 'endpoint' };
 
   if (ACCESS_DENIED_MARKERS.some((marker) => lower.includes(marker))) {
     return {
@@ -157,12 +161,12 @@ export function assessSiteContent(
     };
   }
 
-  const isImage = /favicon\.(ico|png|svg)|\.(ico|png|jpg|jpeg|gif|webp)(\?|$)/i.test(url);
+  const isImage = /^image\//i.test(contentType) || /favicon\.(ico|png|svg)|\.(ico|png|jpg|jpeg|gif|webp)(\?|$)/i.test(url);
   if (isImage) {
     // Бинарную картинку нативный HTTP отдаёт строкой; HTML вместо неё — не успех.
-    return text.trim().length > 0 && !/<!doctype|<html|<head/i.test(lower)
+    return httpStatus >= 200 && httpStatus < 300 && (/^image\//i.test(contentType) || text.trim().length > 0) && !/<!doctype|<html|<head/i.test(lower)
       ? { own: true, intercepted: false, proof: 'endpoint' }
-      : { own: false, intercepted: true, reason: 'вместо значка сайта пришла HTML-страница' };
+      : { own: false, intercepted: false, reason: 'вместо значка сайта пришла HTML-страница или отказ' };
   }
 
   const strict = strictService(url, lower);
@@ -177,8 +181,8 @@ export function assessSiteContent(
     if (!strict.matches) {
       return {
         own: false,
-        intercepted: true,
-        reason: `вместо приложения ${strict.name} пришла другая страница`,
+        intercepted: false,
+        reason: `Ответ ${strict.name} не распознан; это не доказательство подмены`,
       };
     }
     return { own: true, intercepted: false, proof: 'app' };
@@ -192,7 +196,7 @@ export function assessSiteContent(
     };
   }
   if (!text.trim()) {
-    return { own: false, intercepted: true, reason: 'сервер вернул пустой ответ' };
+    return { own: false, intercepted: false, reason: 'сервер вернул пустой ответ; содержимое не подтверждено' };
   }
   const looksLikeHtml = /<!doctype|<html|<head|<title|<script|<body/i.test(lower);
   if (!looksLikeHtml) {
@@ -207,8 +211,8 @@ export function assessSiteContent(
   if (brand && !lower.includes(brand.toLowerCase())) {
     return {
       own: false,
-      intercepted: true,
-      reason: `HTML не содержит признаков сайта ${brand}`,
+      intercepted: false,
+      reason: `HTML получен, но признаков сайта ${brand} недостаточно для подтверждения`,
     };
   }
   return { own: true, intercepted: false, proof: 'page' };

@@ -1,6 +1,7 @@
 import type { ScanSiteResult, Site } from '../types';
 import { isNativeApp, mapLimit } from './nativeBridge';
-import { probeControl, probeSite, type ProbeVerdict } from './siteProbe';
+import { probeControl, probeSiteResilient, type ProbeOptions } from './siteProbe';
+import { siteResultFromProbe } from './siteMeasurement';
 import { applyServiceAccessPolicy, type ServiceAccessContext } from './serviceAccess';
 import { orderSitesForScan } from './scanScheduler';
 
@@ -24,8 +25,6 @@ export type RealScanOutcome = {
   approximate: boolean;
 };
 
-const statusFromVerdict = (v: ProbeVerdict): ScanSiteResult['status'] =>
-  v === 'ok' || v === 'slow' ? v : 'blocked';
 
 export async function runRealSiteScan(
   sites: Site[],
@@ -36,8 +35,9 @@ export async function runRealSiteScan(
     partial: ScanSiteResult[]
   ) => void,
   abortSignal?: AbortSignal,
-  timeoutMs = 4500,
-  serviceContext: ServiceAccessContext = { withVpn: false }
+  timeoutMs = 8000,
+  serviceContext: ServiceAccessContext = { withVpn: false },
+  nativeHttp?: ProbeOptions['nativeHttp']
 ): Promise<RealScanOutcome> {
   const enabled = sites.filter((s) => Boolean(s.enabled));
   const total = enabled.length;
@@ -46,8 +46,8 @@ export async function runRealSiteScan(
 
   // Контрольная проба: без неё «всё недоступно» может означать просто «нет сети».
   // Контрольные адреса проверяются параллельно, а не по 5 секунд каждый.
-  let controlOk = await probeControl(Math.min(timeoutMs, 3500));
-  const recoveredProbes = new Map<number, Awaited<ReturnType<typeof probeSite>>>();
+  let controlOk = await probeControl(Math.min(timeoutMs, 5000), nativeHttp);
+  const recoveredProbes = new Map<number, Awaited<ReturnType<typeof probeSiteResilient>>>();
 
   if (!controlOk && !abortSignal?.aborted && enabled.length > 0) {
     // Четыре контрольных адреса тоже могут быть заблокированы, хотя остальная
@@ -61,10 +61,10 @@ export async function runRealSiteScan(
     const fallbackSites = representatives.length > 0 ? representatives : enabled.slice(0, 6);
     const recovery = await mapLimit(fallbackSites, 6, async (site) => ({
       site,
-      probe: await probeSite(site.probe_url || `https://${site.domain}/favicon.ico`, { timeoutMs }),
+      probe: await probeSiteResilient(site.probe_url || `https://${site.domain}/`, { timeoutMs, nativeHttp }, abortSignal),
     }));
     for (const { site, probe } of recovery) {
-      if (probe.verdict !== 'blocked') {
+      if (probe.networkStatus === 'ok' || probe.networkStatus === 'slow') {
         controlOk = true;
         recoveredProbes.set(site.id, probe);
       }
@@ -74,7 +74,7 @@ export async function runRealSiteScan(
   // 32 запроса одновременно: на 75 сайтах не остаётся длинного «хвоста»
   // после первых быстрых ответов, но мобильная сеть не забивается 75 сокетами.
   const scheduled = orderSitesForScan(enabled);
-  const results = await mapLimit(scheduled, Math.min(32, enabled.length), async (site) => {
+  const results = await mapLimit(scheduled, Math.min(8, enabled.length), async (site) => {
     if (abortSignal?.aborted) {
       const aborted: ScanSiteResult = {
         site_id: site.id,
@@ -103,46 +103,11 @@ export async function runRealSiteScan(
         block_reason: 'network',
       };
     } else {
-      const probeUrl = site.probe_url || `https://${site.domain}/favicon.ico`;
-      let probe = recoveredProbes.get(site.id) || await probeSite(probeUrl, { timeoutMs });
-
-      // Один таймаут — не приговор: на мобильной сети пакет теряется просто так.
-      // Повторяем только таймаут, коротким вторым запросом. DNS/сброс и
-      // подмену не повторяем: это уже определённый ответ, а не случайная потеря.
-      let retried = false;
-      if (probe.verdict === 'blocked' && /таймаут/i.test(probe.reason || '')) {
-        retried = true;
-        const second = await probeSite(probeUrl, { timeoutMs: Math.min(timeoutMs, 2500) });
-        // Оставляем лучший результат: со второго раза адрес мог ответить.
-        if (second.verdict !== 'blocked') probe = second;
-      }
-
-      result = {
-        site_id: site.id,
-        name: site.name,
-        domain: site.domain,
-        category: site.category,
-        marker_role: site.marker_role,
-        status: statusFromVerdict(probe.verdict),
-        latency_ms: probe.verdict === 'ok' || probe.verdict === 'slow' ? probe.latencyMs : null,
-        proof: probe.proof,
-        block_reason:
-          probe.verdict === 'ok' || probe.verdict === 'slow'
-            ? undefined
-            : probe.verdict === 'intercepted'
-            ? 'throttled'
-            : 'network',
-      };
-
-      // Причина отказа видна в детальном списке — так понятно, что именно случилось.
-      if (probe.reason && (probe.verdict !== 'ok' && probe.verdict !== 'slow' || probe.proof === 'endpoint' || probe.proof === 'opaque')) {
-        (result as ScanSiteResult & { note?: string }).note = retried
-          ? `${probe.reason} · проверено дважды`
-          : probe.reason;
-      }
-      if (probe.verdict === 'intercepted') {
-        (result as ScanSiteResult & { intercepted?: boolean }).intercepted = true;
-      }
+      const probeUrl = site.probe_url || `https://${site.domain}/`;
+      const probe = recoveredProbes.get(site.id) || await probeSiteResilient(probeUrl, { timeoutMs, nativeHttp }, abortSignal);
+      result = siteResultFromProbe(site, probe);
+      if ((probe.attempts || 1) > 1) result.note = `${result.note || ''} · попыток: ${probe.attempts}`.trim();
+      if (abortSignal?.aborted) return result;
     }
 
     if (controlOk) result = applyServiceAccessPolicy(site, result, serviceContext);
@@ -152,18 +117,20 @@ export async function runRealSiteScan(
     return result;
   });
 
+  // Отмена/общий сбой сети — не замеры сайтов: не сохраняем blocked-заглушки.
+  const measuredResults = abortSignal?.aborted || !controlOk ? [] : results;
   // Приоритет влияет только на расписание запросов, а не на порядок отчёта.
   const originalOrder = new Map(enabled.map((site, index) => [site.id, index]));
-  results.sort(
+  measuredResults.sort(
     (a, b) => (originalOrder.get(a.site_id || -1) ?? 0) - (originalOrder.get(b.site_id || -1) ?? 0)
   );
 
   // Если хоть один сайт ответил — сеть точно жива, даже когда контрольные
   // адреса заблокированы (так бывает при белых списках).
-  const anyAnswered = results.some((r) => r.status !== 'blocked' || r.intercepted);
+  const anyAnswered = results.some((r) => r.network_status === 'ok' || r.network_status === 'slow');
   const networkAlive = controlOk || anyAnswered;
 
   // В браузере мы видим только сам факт ответа (CORS не даёт прочитать страницу),
   // поэтому результат честно помечается как оценочный — но не выдуманный.
-  return { results, controlOk: networkAlive, approximate: !isNativeApp() };
+  return { results: measuredResults, controlOk: networkAlive, approximate: !isNativeApp() };
 }

@@ -1,193 +1,100 @@
-import { CapacitorHttp } from '@capacitor/core';
-import { isNativeApp } from './nativeBridge';
+import { httpProbe, isNativeApp, type NativeHttpProbe } from './nativeBridge';
 import { assessSiteContent } from './siteContent';
 import type { SiteProof } from '../types';
 
-/**
- * Проверка доступности сайта «по-настоящему».
- *
- * Зачем это отдельно от старого `measureUrl`: раньше любой ответ (или вообще
- * любой не-таймаут) считался успехом. В реальности при блокировке провайдер
- * часто отвечает сам — отдаёт заглушку, режет TLS или подменяет сертификат,
- * и замер показывал «доступен» там, где сайт открыть нельзя.
- *
- * Теперь для каждого сайта мы требуем доказательство, что ответил именно он:
- *   1. контрольная проба — если сеть мертва целиком, все сайты будут «сеть недоступна»;
- *   2. запрос probe_url и проверка содержимого (HTML/картинка/ожидаемый текст);
- *   3. отдельно ловим подмену TLS и заглушки провайдера — это DPI, а не «нет связи».
- */
-
-export type ProbeVerdict =
-  | 'ok' // сайт ответил своим содержимым
-  | 'slow' // ответил, но медленно
-  | 'blocked' // не ответил: таймаут / разрыв / ошибка TLS
-  | 'intercepted' // ответ есть, но это не сайт: заглушка провайдера или подмена TLS
-  | 'offline'; // не работает сеть целиком (проверять нечего)
-
+export type ProbeVerdict = 'ok' | 'slow' | 'blocked' | 'intercepted' | 'offline';
 export interface SiteProbeResult {
-  verdict: ProbeVerdict;
-  latencyMs: number | null;
-  /** HTTP-код, если ответ был */
-  httpStatus?: number;
-  /** Короткая причина для интерфейса */
-  reason?: string;
-  /** Что именно пришло — для подсказки в карточке сайта */
-  detail?: string;
-  /** Сила доказательства: веб-приложение, страница или лишь ответ адреса. */
-  proof?: SiteProof;
+  verdict: ProbeVerdict; latencyMs: number | null; httpStatus?: number; reason?: string; detail?: string;
+  proof?: SiteProof; networkStatus?: 'ok' | 'slow' | 'blocked'; probeUrl?: string; attempts?: number;
 }
-
+export interface ProbeOptions {
+  timeoutMs?: number; verifyContent?: boolean;
+  /** Injectable transport for regression tests; production uses the registered native plugin. */
+  nativeHttp?: (url: string, timeoutMs?: number) => Promise<NativeHttpProbe>;
+}
 const OK_MS = 1500;
-const SLOW_MS = 4000;
-
-const HTML_SERVICE_HOSTS = new Set([
-  'chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com',
-  'telegram.org', 'web.telegram.org', 'whatsapp.com', 'web.whatsapp.com',
-  'youtube.com', 'store.supercell.com',
-]);
-
-/** Старые сохранённые favicon-пробы ключевых сервисов переводим на веб-страницу. */
+const HTML_SERVICE_HOSTS = new Set(['chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com',
+  'telegram.org', 'web.telegram.org', 'whatsapp.com', 'web.whatsapp.com', 'youtube.com', 'store.supercell.com']);
 export function canonicalServiceProbeUrl(value: string): string {
   try {
-    const parsed = new URL(value);
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    if (HTML_SERVICE_HOSTS.has(host) && /\/favicon\.(ico|png|svg)$/i.test(parsed.pathname)) {
-      return `${parsed.origin}/`;
-    }
-    return value;
-  } catch {
-    return value;
-  }
+    const parsed = new URL(value), host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (HTML_SERVICE_HOSTS.has(host) && /\/favicon\.(ico|png|svg)$/i.test(parsed.pathname)) return `${parsed.origin}/`;
+  } catch { /* caller reports invalid URL */ }
+  return value;
 }
-
-/** Разбираем текст ошибки в понятную причину. */
-const classifyError = (message: string): { verdict: ProbeVerdict; reason: string } => {
+function classifyError(message: string): { verdict: ProbeVerdict; reason: string } {
   const m = message.toLowerCase();
-  if (/timeout|timed out|deadline/.test(m)) {
-    return { verdict: 'blocked', reason: 'сервер не ответил (таймаут)' };
-  }
-  if (
-    /certificate|ssl|cert|handshake|tls|err_ssl|trust anchor|hostname/.test(m)
-  ) {
-    return { verdict: 'intercepted', reason: 'TLS-сертификат не совпадает с сайтом — вероятно DPI' };
-  }
-  if (/reset|econnreset|connection closed|broken pipe|aborted|unexpected end/.test(m)) {
-    return { verdict: 'blocked', reason: 'соединение сброшено (похоже на фильтрацию)' };
-  }
-  if (/unable to resolve|no address associated|nxdomain|enotfound|dns/.test(m)) {
-    return { verdict: 'blocked', reason: 'домен не резолвится (DNS)' };
-  }
-  if (/cleartext|not permitted/.test(m)) {
-    return { verdict: 'blocked', reason: 'Android запретил незашифрованное соединение' };
-  }
+  if (/timeout|timed out|deadline/.test(m)) return { verdict: 'blocked', reason: 'сервер не ответил (таймаут)' };
+  if (/certificate|ssl|cert|handshake|tls|trust anchor|hostname/.test(m))
+    return { verdict: 'blocked', reason: 'Ошибка TLS/сертификата: страница не открыта; причина не установлена' };
+  if (/reset|econnreset|closed|broken pipe|aborted|unexpected end/.test(m)) return { verdict: 'blocked', reason: 'соединение сброшено; причина не установлена' };
+  if (/resolve|no address|nxdomain|enotfound|dns/.test(m)) return { verdict: 'blocked', reason: 'домен не резолвится (DNS)' };
+  if (/cleartext|not permitted/.test(m)) return { verdict: 'blocked', reason: 'незашифрованное соединение запрещено' };
   return { verdict: 'blocked', reason: 'нет соединения' };
-};
-
-export interface ProbeOptions {
-  timeoutMs?: number;
-  /** Проверять содержимое (по умолчанию да). */
-  verifyContent?: boolean;
 }
+const webSpeed = (ms: number) => ms > OK_MS ? 'slow' as const : 'ok' as const;
 
-/**
- * Одна проба сайта. В APK — нативный HTTP (не подчиняется CORS),
- * в браузере — no-cors (тогда проверяем только сам факт ответа).
- */
-export async function probeSite(
-  url: string,
-  options: ProbeOptions = {}
-): Promise<SiteProbeResult> {
-  const timeoutMs = options.timeoutMs ?? 6000;
-  const verifyContent = options.verifyContent ?? true;
+export async function probeSite(url: string, options: ProbeOptions = {}): Promise<SiteProbeResult> {
+  const timeoutMs = options.timeoutMs ?? 8000, verifyContent = options.verifyContent ?? true;
   url = canonicalServiceProbeUrl(url);
-  const started = Date.now();
-
-  if (!isNativeApp()) {
-    // Браузер: содержимое недоступно, поэтому «ответил» ≠ «доступен».
-    // Такие данные помечаются как грубая оценка (см. ScannerView).
+  const started = performance.now();
+  if (!isNativeApp() && !options.nativeHttp) {
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      await fetch(url, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' });
-      clearTimeout(timer);
-      const ms = Date.now() - started;
-      return {
-        verdict: ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked',
-        latencyMs: ms,
-        proof: 'opaque',
-        reason: 'браузер получил ответ, но не позволяет проверить содержимое',
-      };
-    } catch {
-      return { verdict: 'blocked', latencyMs: null, reason: 'нет ответа (браузер)' };
-    }
+      await fetch(url, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store', credentials: 'omit' });
+      const ms = Math.round(performance.now() - started);
+      return { verdict: 'blocked', latencyMs: ms, proof: 'opaque', networkStatus: webSpeed(ms), probeUrl: url,
+        reason: 'Браузер получил непрозрачный ответ: содержимое и HTTP-код недоступны' };
+    } catch { return { verdict: 'blocked', latencyMs: null, networkStatus: 'blocked', reason: 'нет ответа (браузер)', probeUrl: url }; }
+    finally { clearTimeout(timer); }
   }
-
+  const res = await (options.nativeHttp || httpProbe)(url, timeoutMs);
+  if (!res.ok || res.status == null) return { ...classifyError(res.error || 'нет ответа'), latencyMs: null, networkStatus: 'blocked', probeUrl: url };
   try {
-    const res = await CapacitorHttp.request({
-      url,
-      method: 'GET',
-      responseType: 'text',
-      connectTimeout: timeoutMs,
-      readTimeout: timeoutMs,
-      headers: { Accept: '*/*', 'Cache-Control': 'no-cache' },
-    });
-    const ms = Date.now() - started;
-    const text = typeof res.data === 'string' ? res.data : '';
-    const finalUrl = (res as unknown as { url?: string }).url || url;
-
-    const content = verifyContent ? assessSiteContent(url, text, res.status) : null;
-    if (content && !content.own) {
-      return {
-        verdict: content.intercepted ? 'intercepted' : 'blocked',
-        latencyMs: ms,
-        httpStatus: res.status,
-        reason: content.reason || 'сайт не открыл своё содержимое',
-        detail: text.replace(/\s+/g, ' ').trim().slice(0, 120),
-      };
-    }
-
-    // HTTP-ответ без доказанной страницы не выдаём за работу приложения.
-    return {
-      verdict: ms <= OK_MS ? 'ok' : ms <= SLOW_MS ? 'slow' : 'blocked',
-      latencyMs: ms,
-      httpStatus: res.status,
-      proof: verifyContent ? content?.proof || 'endpoint' : 'endpoint',
-      reason: (verifyContent ? content?.proof : 'endpoint') === 'endpoint'
-        ? 'получен ответ адреса, но работа приложения этим не доказана'
-        : undefined,
-      detail: finalUrl !== url ? `редирект на ${finalUrl.slice(0, 80)}` : undefined,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const classified = classifyError(message);
-    return { ...classified, latencyMs: null };
-  }
+    const bytes = Uint8Array.from(atob(res.data_base64 || ''), (char) => char.charCodeAt(0));
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const ms = Math.round(res.latency_ms ?? performance.now() - started), finalUrl = res.url || url;
+    const content = verifyContent ? assessSiteContent(finalUrl, text, res.status, res.content_type || '') : null;
+    const base = { latencyMs: ms, httpStatus: res.status, probeUrl: finalUrl,
+      detail: `${finalUrl !== url ? `редирект на ${finalUrl.slice(0, 100)} · ` : ''}${res.truncated ? 'прочитаны первые 256 KiB' : 'ответ прочитан'}` };
+    if (content && !content.own) return { ...base, verdict: content.intercepted ? 'intercepted' : 'blocked',
+      networkStatus: content.intercepted ? 'blocked' : webSpeed(ms), proof: 'opaque', reason: content.reason || 'сайт не открыл своё содержимое' };
+    const own = res.status === 204 || Boolean(content?.own);
+    return { ...base, verdict: own ? webSpeed(ms) : 'blocked', networkStatus: webSpeed(ms),
+      proof: res.status === 204 ? 'endpoint' : content?.proof || 'opaque',
+      reason: res.status >= 400 ? `Адрес ответил HTTP ${res.status}; страница не открыта`
+        : !own ? 'Ответ адреса получен, но содержимое страницы не подтверждено' : 'Получен ответ адреса; работа приложения этим не доказана' };
+  } catch (err) { return { ...classifyError(err instanceof Error ? err.message : String(err)), latencyMs: null, networkStatus: 'blocked', probeUrl: url }; }
 }
 
-/**
- * Контрольная проба: гарантированно нейтральный хост.
- * Если и он не отвечает — сеть мертва целиком, и осуждать сайты нельзя.
- */
-export async function probeControl(timeoutMs = 5000): Promise<boolean> {
-  // Порядок важен: сначала нейтральные зарубежные адреса, затем российские —
-  // при белых списках зарубежные не ответят, а Рунет работает.
-  const targets = [
-    'https://www.gstatic.com/generate_204',
-    'https://cp.cloudflare.com/generate_204',
-    'https://ya.ru/favicon.ico',
-    'https://www.rbc.ru/favicon.ico',
-  ];
-  // Ждём первый удачный ответ, остальные адреса идут параллельно. Последовательный
-  // перебор раньше добавлял до 20 секунд ещё до появления прогресса по сайтам.
-  const attempts = targets.map(async (url) => {
-    const res = await probeSite(url, { timeoutMs, verifyContent: false });
-    if (res.verdict === 'ok' || res.verdict === 'slow') return true;
-    throw new Error('control failed');
-  });
-  try {
-    await Promise.any(attempts);
-    return true;
-  } catch {
-    return false;
+/** Общий алгоритм одиночной и массовой проверки; повтор не короче первого запроса. */
+export async function probeSiteResilient(url: string, options: ProbeOptions = {}, signal?: AbortSignal): Promise<SiteProbeResult> {
+  const timeoutMs = options.timeoutMs ?? 8000;
+  let first = await probeSite(url, { ...options, timeoutMs }), attempts = 1;
+  if (signal?.aborted) return { ...first, attempts };
+  let parsed: URL;
+  try { parsed = new URL(canonicalServiceProbeUrl(url)); } catch { return { ...first, attempts, reason: 'Некорректный URL проверки' }; }
+  const homepage = `${parsed.origin}/`;
+  if (first.verdict === 'blocked' && homepage !== parsed.href && parsed.pathname !== '/') {
+    const fallback = await probeSite(homepage, { ...options, timeoutMs }); attempts++;
+    if (fallback.verdict === 'ok' || fallback.verdict === 'slow') return { ...fallback, attempts,
+      reason: `${fallback.reason || 'Главная страница ответила'} · исходный адрес проверки не открылся` };
+    if (first.httpStatus == null && fallback.httpStatus != null) first = fallback;
   }
+  if (!signal?.aborted && first.verdict === 'blocked' && first.httpStatus == null && !/TLS/i.test(first.reason || '')) {
+    const second = await probeSite(first.probeUrl || url, { ...options, timeoutMs }); attempts++;
+    if (second.verdict === 'ok' || second.verdict === 'slow') return { ...second, attempts };
+    return { ...first, attempts, reason: `${first.reason || 'Нет ответа'} · повторная проверка не помогла` };
+  }
+  return { ...first, attempts };
+}
+export async function probeControl(timeoutMs = 5000, nativeHttp?: ProbeOptions['nativeHttp']): Promise<boolean> {
+  const targets = ['https://www.gstatic.com/generate_204', 'https://cp.cloudflare.com/generate_204', 'https://ya.ru/favicon.ico', 'https://www.rbc.ru/favicon.ico'];
+  try {
+    await Promise.any(targets.map(async (url) => {
+      const res = await probeSite(url, { timeoutMs, verifyContent: false, nativeHttp });
+      if (res.httpStatus != null && res.httpStatus >= 200 && res.httpStatus < 300) return true;
+      throw new Error('control failed');
+    })); return true;
+  } catch { return false; }
 }

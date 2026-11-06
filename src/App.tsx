@@ -1,3 +1,4 @@
+import { mergeSiteMeasurement } from './lib/siteMeasurement';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Radar, Loader2 } from 'lucide-react';
 import { Network } from '@capacitor/network';
@@ -279,18 +280,10 @@ export function App() {
       const byId = new Map(
         scan.results.filter((r) => r.site_id).map((r) => [r.site_id!, r])
       );
-      setSites((prev) =>
-        prev.map((s) => {
-          const hit = byId.get(s.id);
-          if (!hit) return s;
-          return {
-            ...s,
-            last_status: hit.network_status ?? hit.status,
-            last_latency_ms: hit.network_latency_ms ?? hit.latency_ms,
-            last_checked_at: scan.created_at,
-          };
-        })
-      );
+      setSites((prev) => prev.map((site) => {
+        const hit = byId.get(site.id);
+        return hit ? mergeSiteMeasurement(site, { ...hit, checked_at: hit.checked_at || scan.created_at }) : site;
+      }));
     }
   };
 

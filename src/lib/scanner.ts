@@ -1,5 +1,7 @@
 import { isNativeApp } from './nativeBridge';
 import { apiFetch } from './api';
+import { probeSiteResilient } from './siteProbe';
+import { siteResultFromProbe } from './siteMeasurement';
 
 /**
  * Демо-сборка (один HTML-файл без backend) собирается с VITE_DEMO=1.
@@ -223,44 +225,9 @@ export async function probeSingleSite(
     }
   }
 
-  // ЖИВОЙ ЗАМЕР ИЗ БРАУЗЕРА (Image + fetch, с серверным фолбэком)
-  let latency: number | null = null;
-  try {
-    latency = await measureProbe(site.probe_url, 4300);
-  } catch {
-    // Из браузера не достучались. Серверный фолбэк нужен только для сайтов,
-    // которые ОБЯЗАНЫ открываться (белый список и нейтральные): для них
-    // отсутствие ответа — это сигнал фильтрации, а не блокировки РКН.
-    if (site.accessibility !== 'blocked') {
-      const viaServer = await probeViaServerTargets(site, 3200);
-      if (viaServer !== null) {
-        // Сервер видит сайт, а браузер нет → домен вырезается в сети пользователя
-        latency = Math.min(viaServer + 900, 4200);
-      }
-    }
-  }
-
-  if (latency === null) {
-    return {
-      site_id: site.id,
-      name: site.name,
-      domain: site.domain,
-      category: site.category,
-      marker_role: site.marker_role,
-      status: 'blocked',
-      latency_ms: null,
-    };
-  }
-
-  return {
-    site_id: site.id,
-    name: site.name,
-    domain: site.domain,
-    category: site.category,
-    marker_role: site.marker_role,
-    status: latency > 1450 ? 'slow' : 'ok',
-    latency_ms: latency,
-  };
+  // Единый HTTP-путь с APK; серверный релей не подменяет маршрут телефона.
+  const probe = await probeSiteResilient(site.probe_url || `https://${site.domain}/`);
+  return siteResultFromProbe(site, probe);
 }
 
 export async function runMultiSiteScan(

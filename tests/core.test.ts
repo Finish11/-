@@ -10,10 +10,12 @@ import type { NativeNetworkState } from '../src/lib/nativeBridge.ts';
 import { decodeStatePacket, encodeStatePacket, selectNewestState } from '../src/demo/stateStorage.ts';
 import { applyServiceAccessPolicy } from '../src/lib/serviceAccess.ts';
 import { orderSitesForScan } from '../src/lib/scanScheduler.ts';
-import { applyNodeMeasurements, formatTcpLatency, type NodeMeasurement } from '../src/lib/nodePing.ts';
+import { applyNodeMeasurements, formatTcpLatency, medianSamples, nodeLatencyLabel, tcpLatencyIsComparable, type NodeMeasurement } from '../src/lib/nodePing.ts';
 import { compareVersions } from '../src/lib/appUpdate.ts';
 import { findAppConfirmation, recommendConfirmedNodes } from '../src/lib/appConfirmations.ts';
-import { communitySyncChanged, normalizeCommunityEndpoint, reconcileCommunitySync } from '../src/lib/community.ts';
+import { communitySyncChanged, normalizeCommunityEndpoint, pendingCommunityCount, queueIncidentDelete, queueIncidentEdit, queueIncidentVote, reconcileCommunitySync } from '../src/lib/community.ts';
+import { mergeSiteMeasurement, siteMeasurementPatch, siteResultFromProbe, siteResultIsStale, siteStatusLabel } from '../src/lib/siteMeasurement.ts';
+import { decodeCursor, encodeCursor, pageLimit, parseIncident, publicIncident } from '../community/contract.ts';
 import type { AppConfirmation, Incident, VpnProfile } from '../src/types.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
@@ -603,4 +605,77 @@ test('старый формат состояния 1.5.x остаётся сов
   assert.equal(decoded?.savedAtMs, 0);
   assert.equal(decoded?.state.subscriptions[0].id, 7);
   assert.equal(selectNewestState(['null', '{bad', legacy])?.savedAtMs, 0);
+});
+
+
+test('HTTP 403 сохраняет факт ответа адреса, но не открывает страницу', () => {
+  const measured = siteResultFromProbe(site(1), { verdict: 'blocked', latencyMs: 70, httpStatus: 403, networkStatus: 'ok', proof: 'opaque', probeUrl: 'https://site1.example/', reason: 'Адрес ответил HTTP 403' }, '2026-11-06T12:00:00Z');
+  assert.equal(measured.status, 'blocked');
+  assert.equal(measured.network_status, 'ok');
+  assert.equal(measured.http_status, 403);
+  const patch = siteMeasurementPatch(measured);
+  assert.equal(patch.last_status, 'ok');
+  assert.equal(patch.last_http_status, 403);
+  assert.match(siteStatusLabel({ last_status: 'ok', last_proof: 'opaque', last_http_status: 403 }), /HTTP 403/);
+});
+test('поздний ответ не перетирает свежий замер, старый замер помечается устаревшим', () => {
+  const fresh = { ...site(1), last_checked_at: '2026-11-06T12:00:00Z', last_status: 'ok' as const };
+  const late = mergeSiteMeasurement(fresh, { ...result(1, 'global_neutral'), status: 'blocked', latency_ms: null, checked_at: '2026-11-06T11:59:00Z' });
+  assert.equal(late.last_status, 'ok');
+  assert.equal(siteResultIsStale(fresh, Date.parse('2026-11-06T12:11:00Z')), true);
+  assert.equal(siteResultIsStale(fresh, Date.parse('2026-11-06T12:05:00Z')), false);
+});
+test('медиана TCP отсекает NaN и отрицательные значения', () => {
+  assert.equal(medianSamples([900, 40, 120, Number.NaN, -1]), 120);
+  assert.equal(medianSamples([10, 30]), 20);
+  assert.equal(medianSamples([]), null);
+});
+test('сравнивается только достоверный прямой TCP, VPN и legacy не участвуют', () => {
+  const direct = { latency_ms: 42, latency_kind: 'tcp_connect', latency_route: 'direct', latency_trusted: true };
+  assert.equal(tcpLatencyIsComparable(direct), true);
+  assert.equal(tcpLatencyIsComparable({ ...direct, latency_route: 'vpn' }), false);
+  assert.equal(tcpLatencyIsComparable({ ...direct, latency_ms: 0.4 }), false);
+  assert.match(nodeLatencyLabel({ ...direct, latency_route: 'vpn', latency_trusted: false }), /не RTT/);
+  assert.match(nodeLatencyLabel({ latency_ms: 20 }), /старая проба/);
+});
+test('очередь сообщества хранит правку, голос и удаление до доставки', () => {
+  const base = incident(10, '40000000-0000-4000-8000-000000000010');
+  const edited = queueIncidentEdit(base, { title: 'Изменено' }, 'https://api.example', '2026-11-06T12:00:00Z');
+  const voted = queueIncidentVote(edited, 'https://api.example');
+  const deleted = queueIncidentDelete(voted, 'https://api.example', '2026-11-06T12:01:00Z');
+  assert.equal(edited.sync_dirty, true);
+  assert.equal(voted.vote_dirty, true);
+  assert.equal(deleted.pending_delete, true);
+  assert.equal(pendingCommunityCount([deleted]), 1);
+});
+test('доставленный tombstone исчезает, а недоставленное удаление остаётся в очереди', () => {
+  const base = incident(11, '40000000-0000-4000-8000-000000000011');
+  const deleted = queueIncidentDelete(base, 'https://api.example');
+  assert.equal(reconcileCommunitySync([deleted], [deleted], []).length, 0);
+  assert.equal(reconcileCommunitySync([deleted], [deleted], [{ ...deleted, sync_state: 'synced' }]).length, 1);
+});
+test('контракт отчёта проверяет типы, длину и обязательные поля', () => {
+  const valid = { client_id: '40000000-0000-4000-8000-000000000012', region: 'Москва и МО', carrier: 'МТС', incident_type: 'whitelist', severity: 'high', title: 'Сбой', description: '', ru_sites_ok: true, foreign_sites_ok: false, user_upvoted: true };
+  assert.equal(parseIncident(valid).title, 'Сбой');
+  assert.throws(() => parseIncident({ ...valid, title: '' }), /заголовок/);
+  assert.throws(() => parseIncident({ ...valid, ru_sites_ok: 'yes' }), /true или false/);
+  assert.throws(() => parseIncident({ ...valid, incident_type: 'unknown' }), /тип сбоя/);
+  assert.throws(() => parseIncident({ ...valid, title: 'x'.repeat(181) }), /180/);
+});
+test('публичный отчёт не раскрывает device_hash и секрет устройства', () => {
+  const input = parseIncident({ client_id: '40000000-0000-4000-8000-000000000013', region: 'Москва и МО', carrier: 'МТС', incident_type: 'whitelist', severity: 'high', title: 'Сбой', description: '', ru_sites_ok: true, foreign_sites_ok: false, user_upvoted: true });
+  const row = { ...input, id: 1, device_hash: 'secret-hash', upvotes: 1, user_upvoted: 1 };
+  const publicRow = publicIncident(row, 'secret-hash');
+  assert.equal(publicRow.is_owner, true);
+  assert.equal('device_hash' in publicRow, false);
+  assert.equal('secret' in publicRow, false);
+});
+test('курсор ленты и limit валидируются без скрытых параметров', () => {
+  const cursor = encodeCursor({ created_at: '2026-11-06T12:00:00.000Z', id: 7 });
+  assert.deepEqual(decodeCursor(cursor), { at: '2026-11-06T12:00:00.000Z', id: 7 });
+  assert.equal(decodeCursor(null), null);
+  assert.throws(() => decodeCursor('broken'), /курсор/);
+  assert.equal(pageLimit(null), 200);
+  assert.equal(pageLimit('50'), 50);
+  assert.throws(() => pageLimit('201'), /200/);
 });

@@ -151,7 +151,7 @@ export async function pingAllNodes<T extends { host: string; port: number }>(
 }
 
 export function tcpLatencyIsComparable(profile: { latency_ms: number | null; latency_kind?: string; latency_route?: string; latency_trusted?: boolean }): boolean {
-  return profile.latency_ms != null && Number.isFinite(profile.latency_ms) && profile.latency_kind === 'tcp_connect'
+  return profile.latency_ms != null && Number.isFinite(profile.latency_ms) && profile.latency_ms >= 1 && profile.latency_kind === 'tcp_connect'
     && profile.latency_route === 'direct' && profile.latency_trusted === true;
 }
 export function nodeLatencyLabel(profile: Parameters<typeof tcpLatencyIsComparable>[0]): string {

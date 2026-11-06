@@ -12,6 +12,9 @@ import { applyServiceAccessPolicy } from '../src/lib/serviceAccess.ts';
 import { orderSitesForScan } from '../src/lib/scanScheduler.ts';
 import { applyNodeMeasurements, formatTcpLatency, type NodeMeasurement } from '../src/lib/nodePing.ts';
 import { compareVersions } from '../src/lib/appUpdate.ts';
+import { findAppConfirmation, recommendConfirmedNodes } from '../src/lib/appConfirmations.ts';
+import { communitySyncChanged, normalizeCommunityEndpoint, reconcileCommunitySync } from '../src/lib/community.ts';
+import type { AppConfirmation, Incident, VpnProfile } from '../src/types.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
 function site(id: number, role: Site['marker_role'] = 'global_neutral'): Site {
@@ -30,6 +33,24 @@ function site(id: number, role: Site['marker_role'] = 'global_neutral'): Site {
     last_checked_at: null,
     description: '',
     created_at: '',
+  };
+}
+
+function vpnProfile(id: number, name: string, latency: number): VpnProfile {
+  return {
+    id, user_id: 1, name, protocol: 'VLESS', location: 'NL', country_code: 'NL',
+    host: `${name}.example`, port: 443, provider: '', dpi_resistance: 'high',
+    whitelist_bypass: true, status: 'online', latency_ms: latency, uptime_pct: 100,
+    is_primary: false, notes: '', last_checked_at: null, created_at: '',
+  };
+}
+
+function confirmation(profileId: number | null, serviceId: string, ip: string, works: boolean, at: string): AppConfirmation {
+  return {
+    id: 1, service_id: serviceId, domain: `${serviceId}.example`,
+    node_key: profileId == null ? 'direct' : `vpn:${profileId}`, profile_id: profileId,
+    profile_name: profileId == null ? 'Прямое подключение' : `node-${profileId}`,
+    exit_ip: ip, works, confirmed_at: at,
   };
 }
 
@@ -177,6 +198,87 @@ test('проверка обновления сравнивает числовы�
   assert.ok(compareVersions('1.5.5', '1.5.5') === 0);
   assert.ok(compareVersions('1.5.4', '1.5.5') < 0);
   assert.ok(compareVersions('2.0', '1.9.9') > 0);
+});
+
+test('подтверждение приложения привязано к VPN/IP, а совпадение IP не выдаётся за проверку другого узла', () => {
+  const saved = confirmation(7, 'chatgpt', '1.2.3.4', true, '2026-11-06T10:00:00.000Z');
+  const exact = findAppConfirmation([saved], 'chatgpt', vpnProfile(7, 'node-7', 40), '1.2.3.4');
+  assert.equal(exact?.matchedBy, 'node_ip');
+  const sameIp = findAppConfirmation([saved], 'chatgpt', vpnProfile(8, 'node-8', 30), '1.2.3.4');
+  assert.equal(sameIp?.matchedBy, 'ip');
+  assert.equal(findAppConfirmation([saved], 'chatgpt', vpnProfile(8, 'node-8', 30), '5.6.7.8'), null);
+  assert.equal(findAppConfirmation([saved], 'chatgpt', null, '1.2.3.4'), null);
+});
+
+test('рекомендации VPN учитывают последний отзыв и покрытие сервисов, а не только пинг', () => {
+  const first = vpnProfile(1, 'fast', 20);
+  const second = vpnProfile(2, 'coverage', 50);
+  const third = vpnProfile(3, 'failing', 10);
+  const records = [
+    confirmation(1, 'chatgpt', '1.1.1.1', true, '2026-11-01'),
+    confirmation(2, 'chatgpt', '2.2.2.2', true, '2026-11-01'),
+    confirmation(2, 'youtube', '2.2.2.2', true, '2026-11-02'),
+    confirmation(3, 'chatgpt', '3.3.3.3', false, '2026-11-02'),
+    confirmation(3, 'youtube', '3.3.3.3', true, '2026-11-02'),
+  ];
+  const ranked = recommendConfirmedNodes([first, second, third], records);
+  assert.deepEqual(ranked.map((item) => item.profile.id), [2, 1, 3]);
+  assert.equal(ranked[0].works, 2);
+  // Новый отрицательный отзыв заменяет старый положительный для того же сервиса.
+  const changed = recommendConfirmedNodes([first], [records[0], confirmation(1, 'chatgpt', '4.4.4.4', false, '2026-11-03')]);
+  assert.equal(changed.length, 0);
+});
+
+function incident(id: number, clientId: string): Incident {
+  return {
+    id, user_id: null, author_name: 'Пользователь', region: 'Москва и МО', carrier: 'МТС',
+    incident_type: 'whitelist', severity: 'high', status: 'active', title: clientId,
+    description: '', upvotes: 1, ru_sites_ok: true, foreign_sites_ok: false,
+    user_upvoted: true, is_owner: true, created_at: `2026-11-06T10:00:0${id % 10}.000Z`,
+    client_id: clientId, sync_state: 'pending',
+  };
+}
+
+test('синхронизация не стирает добавления, изменения и удаления, сделанные во время запроса', () => {
+  const old = incident(100, 'inc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  const unchanged = incident(101, 'inc_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  const snapshot = [old, unchanged];
+  const added = incident(102, 'inc_cccccccccccccccccccccccccccccccc');
+  const edited = { ...unchanged, title: 'Изменено во время запроса', sync_state: 'error' as const };
+  const current = [edited, added]; // old удалён, unchanged изменён, added создан
+  const synced = [
+    { ...old, sync_state: 'synced' as const },
+    { ...unchanged, title: 'Ответ сервера', sync_state: 'synced' as const },
+    { ...incident(103, 'inc_dddddddddddddddddddddddddddddddd'), sync_state: 'synced' as const },
+  ];
+  assert.equal(communitySyncChanged(snapshot, current), true);
+  const result = reconcileCommunitySync(snapshot, current, synced);
+  assert.equal(result.some((item) => item.client_id === old.client_id), false);
+  assert.equal(result.find((item) => item.client_id === unchanged.client_id)?.title, 'Изменено во время запроса');
+  assert.equal(result.some((item) => item.client_id === added.client_id), true);
+  assert.equal(result.some((item) => item.client_id === synced[2].client_id), true);
+  assert.equal(communitySyncChanged(snapshot, snapshot), false);
+});
+
+test('общий сервер требует HTTPS и нормализует адрес без скрытых параметров', () => {
+  assert.equal(normalizeCommunityEndpoint(' https://community.example/ '), 'https://community.example');
+  assert.equal(normalizeCommunityEndpoint('http://127.0.0.1:3100/'), 'http://127.0.0.1:3100');
+  assert.equal(normalizeCommunityEndpoint(''), '');
+  assert.throws(() => normalizeCommunityEndpoint('http://community.example'), /HTTPS/);
+  assert.throws(() => normalizeCommunityEndpoint('https://user:secret@community.example'), /без логина/);
+  assert.throws(() => normalizeCommunityEndpoint('https://community.example/?token=secret'), /без логина/);
+});
+
+test('справочный сервисный вердикт сохраняет фактический статус страницы для каталога', () => {
+  const chat = { ...site(96, 'dpi_target'), domain: 'chatgpt.com' };
+  const measured = applyServiceAccessPolicy(
+    chat,
+    { ...result(96, 'dpi_target'), domain: 'chatgpt.com', proof: 'app' as const },
+    { withVpn: false, countryCode: 'RU' }
+  );
+  assert.equal(measured.status, 'blocked');
+  assert.equal(measured.network_status, 'ok');
+  assert.equal(measured.network_latency_ms, 50);
 });
 
 test('партия TCP обновляет известные узлы, сохраняет дробные мс и не принимает NaN', () => {

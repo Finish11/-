@@ -34,6 +34,7 @@ export interface NativeNetworkState {
 
 interface NetworkBridgePlugin {
   networkKind(): Promise<NativeNetworkState>;
+  openInstalledApp(options: { packageName: string }): Promise<{ opened: boolean; installed: boolean; packageName?: string }>;
   addListener(
     eventName: 'networkChanged',
     listenerFunc: (state: NativeNetworkState) => void
@@ -52,6 +53,16 @@ export async function getNativeNetworkState(): Promise<NativeNetworkState> {
     carrier: typeof state.carrier === 'string' ? state.carrier : '',
     sequence: typeof state.sequence === 'number' ? state.sequence : undefined,
   };
+}
+
+/** Открывает первый найденный официальный пакет; установка/работа не выдумываются. */
+export async function openInstalledApp(packageNames: string[]): Promise<{ opened: boolean; packageName?: string }> {
+  if (!isNativeApp()) return { opened: false };
+  for (const packageName of packageNames) {
+    const result = await NetworkBridge.openInstalledApp({ packageName });
+    if (result.opened) return { opened: true, packageName: result.packageName || packageName };
+  }
+  return { opened: false };
 }
 
 /** Системные события default network. На обычном Network-плагин не полагаемся. */

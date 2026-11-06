@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11+: разрешаем запуск только явно перечисленных сервисов. -->
+    <queries>
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.anthropic.claude" />
+        <package android:name="com.google.android.apps.bard" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.supercell.brawlstars" />
+    </queries>
+
     <!-- usesCleartextTraffic: проверка узлов стучится и по http://host:port,
          если TLS на этом порту не поднят. Приложение только диагностическое. -->
     <application

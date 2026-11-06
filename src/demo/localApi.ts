@@ -23,6 +23,7 @@ interface DemoState {
   profiles: Row[];
   incidents: Row[];
   subscriptions: Row[];
+  confirmations: Row[];
 }
 
 const native = isNativeApp();
@@ -54,6 +55,7 @@ const state: DemoState = {
         (inc: Record<string, unknown>) => ({ ...inc, demo: true })
       ),
   subscriptions: native ? [] : JSON.parse(JSON.stringify((seed as any).subscriptions)),
+  confirmations: [],
 };
 
 const TOKEN = 'demo-local-token';
@@ -75,6 +77,7 @@ function bootstrap() {
     profiles: state.profiles,
     incidents: state.incidents,
     subscriptions: state.subscriptions,
+    confirmations: state.confirmations,
   };
 }
 
@@ -125,8 +128,9 @@ async function restoreState(): Promise<void> {
     if (Array.isArray(saved.profiles)) state.profiles = saved.profiles;
     if (Array.isArray(saved.incidents)) state.incidents = saved.incidents;
     if (Array.isArray(saved.subscriptions)) state.subscriptions = saved.subscriptions;
+    if (Array.isArray(saved.confirmations)) state.confirmations = saved.confirmations;
 
-    const ids = [state.sites, state.scans, state.profiles, state.incidents, state.subscriptions]
+    const ids = [state.sites, state.scans, state.profiles, state.incidents, state.subscriptions, state.confirmations]
       .flat()
       .map((row) => Number(row.id))
       .filter(Number.isFinite);
@@ -803,8 +807,44 @@ async function handle(path: string, method: string, body: any): Promise<Response
   }
 
   // ---------- INCIDENTS ----------
+  // ---------- РУЧНЫЕ ПОДТВЕРЖДЕНИЯ ПРИЛОЖЕНИЙ ДЛЯ VPN/IP ----------
+  if (parts[0] === 'app-confirmations') {
+    if (parts.length === 1 && method === 'GET') return json({ confirmations: state.confirmations });
+    if (parts.length === 1 && method === 'POST') {
+      const serviceId = String(body?.service_id || '').trim();
+      const nodeKey = String(body?.node_key || 'direct');
+      const exitIp = String(body?.exit_ip || '').trim().toLowerCase();
+      if (!serviceId || !body?.domain) return json({ error: 'Не указан сервис подтверждения' }, 400);
+      const existing = state.confirmations.find((item) =>
+        item.service_id === serviceId && item.node_key === nodeKey && String(item.exit_ip || '').toLowerCase() === exitIp
+      );
+      const confirmation = {
+        ...(existing || {}),
+        id: existing?.id || genId(),
+        user_id: state.user.id,
+        service_id: serviceId,
+        domain: String(body.domain),
+        node_key: nodeKey,
+        profile_id: body.profile_id == null ? null : Number(body.profile_id),
+        profile_name: String(body.profile_name || 'Прямое подключение'),
+        exit_ip: exitIp,
+        works: Boolean(body.works),
+        confirmed_at: new Date().toISOString(),
+      };
+      state.confirmations = existing
+        ? state.confirmations.map((item) => item.id === existing.id ? confirmation : item)
+        : [confirmation, ...state.confirmations];
+      return json({ confirmation }, existing ? 200 : 201);
+    }
+  }
+
   if (parts[0] === 'incidents') {
     if (parts.length === 1 && method === 'GET') return json({ incidents: state.incidents });
+    if (parts.length === 2 && parts[1] === 'cache' && method === 'PUT') {
+      if (!Array.isArray(body?.incidents)) return json({ error: 'Некорректный кэш ленты' }, 400);
+      state.incidents = body.incidents;
+      return json({ ok: true, incidents: state.incidents });
+    }
 
     if (parts.length === 1 && method === 'POST') {
       const incident = {
@@ -818,11 +858,13 @@ async function handle(path: string, method: string, body: any): Promise<Response
         status: 'active',
         title: body?.title || 'Новый сбой',
         description: body?.description || '',
-        upvotes: native ? 0 : 1,
+        upvotes: 1,
         ru_sites_ok: Boolean(body?.ru_sites_ok),
         foreign_sites_ok: Boolean(body?.foreign_sites_ok),
-        user_upvoted: !native,
+        user_upvoted: true,
         is_owner: true,
+        client_id: body?.client_id || null,
+        sync_state: body?.client_id ? (body?.sync_state === 'local' ? 'local' : 'pending') : 'local',
         created_at: new Date().toISOString(),
       };
       state.incidents = [incident, ...state.incidents];

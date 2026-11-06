@@ -65,7 +65,11 @@ export function applyServiceAccessPolicy(
   measured: ScanSiteResult,
   context: ServiceAccessContext
 ): ScanSiteResult {
-  const result: ScanSiteResult = { ...measured };
+  const result: ScanSiteResult = {
+    ...measured,
+    network_status: measured.network_status ?? measured.status,
+    network_latency_ms: measured.network_latency_ms ?? measured.latency_ms,
+  };
   const regionPolicy = regionPolicyFor(site.domain);
   const directRussia = !context.withVpn && context.countryCode?.toUpperCase() === 'RU';
 

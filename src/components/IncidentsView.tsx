@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertOctagon,
   Plus,
@@ -15,6 +15,10 @@ import {
   X,
   Info,
   Share2,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  Settings2,
 } from 'lucide-react';
 import {
   RUSSIAN_CARRIERS,
@@ -25,7 +29,19 @@ import {
 } from '../types';
 import { apiFetch } from '../lib/api';
 import { shareText } from '../lib/shareText';
-import { isNativeApp } from '../lib/nativeBridge';
+import { IS_DEMO_BUILD } from '../lib/scanner';
+import {
+  communitySyncChanged,
+  deleteCommunityIncident,
+  getCommunityEndpoint,
+  isMissingCommunityIncident,
+  newClientId,
+  reconcileCommunitySync,
+  setCommunityEndpoint,
+  synchronizeCommunity,
+  updateCommunityIncident,
+  voteCommunityIncident,
+} from '../lib/community';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { Button, Chip, EmptyState } from './ui/kit';
@@ -90,6 +106,24 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [foreignSitesOk, setForeignSitesOk] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Incident | null>(null);
+  const [communityUrl, setCommunityUrl] = useState(getCommunityEndpoint);
+  const [communityDraft, setCommunityDraft] = useState(getCommunityEndpoint);
+  const [communitySettingsOpen, setCommunitySettingsOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const syncingRef = useRef(false);
+  const syncQueuedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const incidentsRef = useRef(incidents);
+  useEffect(() => {
+    incidentsRef.current = incidents;
+  }, [incidents]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      syncQueuedRef.current = false;
+    };
+  }, []);
 
   // Избранные места: без аккаунта, без сервера, только на этом телефоне
   const [favorites, setFavorites] = useState<Place[]>(() => loadFavorites());
@@ -123,6 +157,83 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   };
   const input =
     'w-full px-3 py-2.5 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-[rgb(var(--accent)/0.3)]';
+
+  const cacheIncidents = useCallback(async (next: Incident[]) => {
+    if (!IS_DEMO_BUILD) return;
+    await apiFetch('/api/incidents/cache', {
+      method: 'PUT',
+      body: JSON.stringify({ incidents: next }),
+    });
+  }, []);
+
+  const syncNow = useCallback(async (silent = false): Promise<void> => {
+    if (!IS_DEMO_BUILD || !communityUrl) return;
+    if (syncingRef.current) {
+      syncQueuedRef.current = true;
+      return;
+    }
+    syncingRef.current = true;
+    setSyncing(true);
+    let snapshot = incidentsRef.current;
+    try {
+      // До сетевого запроса переносим старые отчёты пользователя в очередь.
+      // Встроенные демо-примеры никогда не отправляются в общую ленту.
+      const withIds = snapshot.map((incident) => {
+        if (incident.demo) return incident;
+        if (!incident.client_id) {
+          return { ...incident, client_id: newClientId(), sync_state: 'pending' as const, sync_error: undefined };
+        }
+        if (incident.sync_state === 'local') {
+          return { ...incident, sync_state: 'pending' as const, sync_error: undefined };
+        }
+        return incident;
+      });
+      if (withIds.some((incident, index) => incident !== snapshot[index])) {
+        snapshot = withIds;
+        incidentsRef.current = withIds;
+        setIncidents(withIds);
+        await cacheIncidents(withIds);
+      }
+      const result = await synchronizeCommunity(snapshot);
+      if (!mountedRef.current) return;
+      const current = incidentsRef.current;
+      if (communitySyncChanged(snapshot, current)) syncQueuedRef.current = true;
+      const next = reconcileCommunitySync(snapshot, current, result.incidents);
+      incidentsRef.current = next;
+      setIncidents(next);
+      await cacheIncidents(next);
+      if (!mountedRef.current) return;
+      if (!silent) {
+        showToast(
+          result.failed > 0 ? 'warning' : 'success',
+          result.failed > 0
+            ? `Синхронизировано частично: не отправлено ${result.failed}. Повторите позже.`
+            : 'Общая лента сбоев синхронизирована'
+        );
+      }
+    } catch (error) {
+      if (!silent && mountedRef.current) showToast('error', error instanceof Error ? error.message : 'Не удалось синхронизировать сбои');
+    } finally {
+      syncingRef.current = false;
+      if (mountedRef.current) setSyncing(false);
+      if (mountedRef.current && syncQueuedRef.current) {
+        syncQueuedRef.current = false;
+        window.setTimeout(() => { void syncNow(true); }, 0);
+      }
+    }
+  }, [communityUrl, setIncidents, cacheIncidents, showToast]);
+
+  useEffect(() => {
+    if (!communityUrl || !IS_DEMO_BUILD) return;
+    void syncNow(true);
+    const retry = () => { void syncNow(true); };
+    window.addEventListener('online', retry);
+    const timer = window.setInterval(retry, 60_000);
+    return () => {
+      window.removeEventListener('online', retry);
+      window.clearInterval(timer);
+    };
+  }, [communityUrl, syncNow]);
 
   useEffect(() => {
     if (prefillFromScan) {
@@ -188,12 +299,32 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     setSaving(true);
     try {
       if (editing) {
+        let reupload = false;
+        if (IS_DEMO_BUILD && communityUrl && editing.client_id && editing.sync_state !== 'local') {
+          try {
+            await updateCommunityIncident(editing.client_id, {
+              region, carrier, incident_type: incidentType, severity, status, title, description,
+              ru_sites_ok: ruSitesOk, foreign_sites_ok: foreignSitesOk,
+            });
+          } catch (error) {
+            if (!isMissingCommunityIncident(error)) throw error;
+            reupload = true;
+          }
+        }
         const res = await apiFetch<{ incident: Incident }>(`/api/incidents/${editing.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ region, carrier, incident_type: incidentType, severity, status, title, description }),
+          body: JSON.stringify({
+            region, carrier, incident_type: incidentType, severity, status, title, description,
+            ru_sites_ok: ruSitesOk, foreign_sites_ok: foreignSitesOk,
+            sync_state: reupload ? 'pending' : undefined,
+            sync_error: reupload ? '' : undefined,
+          }),
         });
-        setIncidents((prev) => prev.map((x) => (x.id === editing.id ? res.incident : x)));
-        showToast('success', 'Отчёт обновлён');
+        const next = incidentsRef.current.map((x) => (x.id === editing.id ? res.incident : x));
+        incidentsRef.current = next;
+        setIncidents(next);
+        if (IS_DEMO_BUILD && communityUrl) void syncNow();
+        showToast('success', communityUrl ? 'Отчёт обновлён и отправляется на сервер' : 'Отчёт обновлён на устройстве');
       } else {
         const res = await apiFetch<{ incident: Incident }>('/api/incidents', {
           method: 'POST',
@@ -206,10 +337,20 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             description,
             ru_sites_ok: ruSitesOk,
             foreign_sites_ok: foreignSitesOk,
+            client_id: IS_DEMO_BUILD ? newClientId() : undefined,
+            sync_state: IS_DEMO_BUILD ? (communityUrl ? 'pending' : 'local') : undefined,
           }),
         });
-        setIncidents((prev) => [res.incident, ...prev]);
-        showToast('success', isNativeApp() ? 'Отчёт сохранён на устройстве' : 'Отчёт опубликован в сводке');
+        const next = [res.incident, ...incidentsRef.current];
+        incidentsRef.current = next;
+        setIncidents(next);
+        if (IS_DEMO_BUILD && communityUrl) void syncNow();
+        showToast(
+          'success',
+          IS_DEMO_BUILD
+            ? communityUrl ? 'Отчёт сохранён и отправляется на общий сервер' : 'Отчёт сохранён на устройстве'
+            : 'Отчёт опубликован в сводке'
+        );
       }
       setModalOpen(false);
     } catch (err) {
@@ -220,44 +361,84 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   };
 
   const handleToggleUpvote = async (inc: Incident) => {
+    const backup = incidentsRef.current;
     const nextVoted = !inc.user_upvoted;
     const nextCount = Math.max(0, inc.upvotes + (nextVoted ? 1 : -1));
-    setIncidents((prev) =>
-      prev.map((x) => (x.id === inc.id ? { ...x, user_upvoted: nextVoted, upvotes: nextCount } : x))
-    );
+    const optimistic = backup.map((x) => (x.id === inc.id ? { ...x, user_upvoted: nextVoted, upvotes: nextCount } : x));
+    incidentsRef.current = optimistic;
+    setIncidents(optimistic);
     try {
-      const res = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}/upvote`, {
-        method: 'POST',
-      });
-      setIncidents((prev) => prev.map((x) => (x.id === inc.id ? res.incident : x)));
+      let res: { incident: Incident };
+      if (IS_DEMO_BUILD && communityUrl && inc.client_id && inc.sync_state !== 'local') {
+        try {
+          const remote = await voteCommunityIncident(inc.client_id);
+          res = { incident: { ...remote, id: inc.id } };
+        } catch (error) {
+          if (!isMissingCommunityIncident(error)) throw error;
+          const local = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}/upvote`, { method: 'POST' });
+          res = { incident: { ...local.incident, sync_state: 'pending', sync_error: '' } };
+        }
+      } else {
+        res = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}/upvote`, { method: 'POST' });
+      }
+      const next = incidentsRef.current.map((x) => (x.id === inc.id ? res.incident : x));
+      incidentsRef.current = next;
+      setIncidents(next);
+      if (IS_DEMO_BUILD) await cacheIncidents(next);
+      if (IS_DEMO_BUILD && communityUrl && res.incident.sync_state !== 'synced') void syncNow();
     } catch {
-      setIncidents((prev) => prev.map((x) => (x.id === inc.id ? inc : x)));
+      incidentsRef.current = backup;
+      setIncidents(backup);
       showToast('error', 'Не удалось обновить подтверждение');
     }
   };
 
   const handleToggleResolved = async (inc: Incident) => {
+    const backup = incidentsRef.current;
     const nextStatus: Incident['status'] = inc.status === 'active' ? 'resolved' : 'active';
-    setIncidents((prev) => prev.map((x) => (x.id === inc.id ? { ...x, status: nextStatus } : x)));
+    const optimistic = backup.map((x) => (x.id === inc.id ? { ...x, status: nextStatus } : x));
+    incidentsRef.current = optimistic;
+    setIncidents(optimistic);
     try {
-      await apiFetch(`/api/incidents/${inc.id}`, {
+      let reupload = false;
+      if (IS_DEMO_BUILD && communityUrl && inc.client_id && inc.sync_state !== 'local') {
+        try {
+          await updateCommunityIncident(inc.client_id, { status: nextStatus });
+        } catch (error) {
+          if (!isMissingCommunityIncident(error)) throw error;
+          reupload = true;
+        }
+      }
+      const res = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ status: nextStatus, sync_state: reupload ? 'pending' : undefined, sync_error: reupload ? '' : undefined }),
       });
+      const next = incidentsRef.current.map((x) => (x.id === inc.id ? res.incident : x));
+      incidentsRef.current = next;
+      setIncidents(next);
+      if (IS_DEMO_BUILD) await cacheIncidents(next);
+      if (IS_DEMO_BUILD && communityUrl && res.incident.sync_state !== 'synced') void syncNow();
       showToast('success', nextStatus === 'resolved' ? 'Отмечено: связь восстановлена' : 'Отчёт снова активен');
     } catch {
-      setIncidents((prev) => prev.map((x) => (x.id === inc.id ? inc : x)));
+      incidentsRef.current = backup;
+      setIncidents(backup);
       showToast('error', 'Ошибка смены статуса');
     }
   };
 
   const handleDelete = async (inc: Incident) => {
-    const backup = incidents;
-    setIncidents((prev) => prev.filter((x) => x.id !== inc.id));
+    const backup = incidentsRef.current;
+    const next = backup.filter((x) => x.id !== inc.id);
+    incidentsRef.current = next;
+    setIncidents(next);
     try {
+      if (IS_DEMO_BUILD && communityUrl && inc.client_id && inc.sync_state !== 'local') {
+        await deleteCommunityIncident(inc.client_id);
+      }
       await apiFetch(`/api/incidents/${inc.id}`, { method: 'DELETE' });
-      showToast('info', 'Отчёт удалён');
+      showToast('info', communityUrl && inc.sync_state === 'synced' ? 'Отчёт удалён на устройстве и сервере' : 'Отчёт удалён');
     } catch {
+      incidentsRef.current = backup;
       setIncidents(backup);
       showToast('error', 'Не удалось удалить отчёт');
     }
@@ -278,6 +459,25 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       if (outcome === 'copied') showToast('success', 'Отчёт скопирован — можно опубликовать на любом сайте');
     } catch {
       showToast('error', 'Не удалось поделиться отчётом');
+    }
+  };
+
+  const saveCommunitySettings = () => {
+    if (syncingRef.current) {
+      showToast('info', 'Дождитесь завершения синхронизации перед сменой сервера');
+      return;
+    }
+    try {
+      const normalized = setCommunityEndpoint(communityDraft);
+      setCommunityUrl(normalized);
+      setCommunityDraft(normalized);
+      setCommunitySettingsOpen(false);
+      showToast(
+        'success',
+        normalized ? 'Общий сервер подключён — начинаем синхронизацию' : 'Общий сервер отключён; новые отчёты останутся на устройстве'
+      );
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Некорректный адрес сервера');
     }
   };
 
@@ -308,8 +508,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       <header className="space-y-2">
         <h1 className="text-[22px] font-black tracking-tight">Карта сбоев</h1>
         <p className="text-[12.5px] text-dim leading-snug">
-          {isNativeApp()
-            ? 'Ваши реальные отчёты с автором и временем сохраняются на этом устройстве. Через «Поделиться» их можно отправить в чат или опубликовать на сайте.'
+          {IS_DEMO_BUILD
+            ? communityUrl
+              ? 'Отчёты отправляются на общий сервер и объединяются с отметками других пользователей. Неотправленные остаются в локальной очереди.'
+              : 'Пока отчёты сохраняются только на этом устройстве. Подключите общий HTTPS-сервер, чтобы они доходили до владельца и других пользователей.'
             : 'Регионы, где глушат мобильный интернет или включили белые списки. Отметки ставят такие же пользователи, как вы — каждая подписана автором и временем.'}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
@@ -321,8 +523,33 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           >
             Сообщить о сбое
           </Button>
+          {IS_DEMO_BUILD && (
+            <>
+              {communityUrl && (
+                <Button variant="outline" size="md" loading={syncing} icon={<RefreshCw className="w-4 h-4" />} onClick={() => void syncNow()}>
+                  Синхронизировать
+                </Button>
+              )}
+              <Button variant="soft" size="md" icon={<Settings2 className="w-4 h-4" />} onClick={() => setCommunitySettingsOpen(true)}>
+                {communityUrl ? 'Общий сервер' : 'Подключить сервер'}
+              </Button>
+            </>
+          )}
         </div>
       </header>
+
+      {IS_DEMO_BUILD && (
+        <section className="rounded-2xl border p-3 flex items-start gap-2.5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+          {communityUrl ? <Cloud className="w-4.5 h-4.5 shrink-0" style={{ color: 'rgb(var(--success))' }} /> : <CloudOff className="w-4.5 h-4.5 shrink-0 text-muted" />}
+          <div className="min-w-0 flex-1 text-[11px] leading-relaxed text-dim">
+            {communityUrl ? (
+              <>Общий сервер: <span className="font-mono break-all">{communityUrl}</span>. Статус каждого отчёта указан в карточке.</>
+            ) : (
+              <>Без сервера владелец не получит отчёты автоматически. Можно сохранить их на устройстве и отправить вручную через «Поделиться».</>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ---------- Избранные места ---------- */}
       <section
@@ -495,7 +722,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             const resolved = inc.status === 'resolved';
             return (
               <article
-                key={inc.id}
+                key={inc.client_id || inc.id}
                 className="rounded-2xl border p-3"
                 style={{
                   borderColor: 'var(--line)',
@@ -526,6 +753,17 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                       пример
                     </span>
                   )}
+                  {IS_DEMO_BUILD && !inc.demo && !resolved && (
+                    <span
+                      className="text-[9.5px] font-bold px-1.5 py-0.5 rounded ml-auto"
+                      style={{
+                        background: inc.sync_state === 'synced' ? 'rgb(var(--success) / 0.14)' : 'var(--surface-2)',
+                        color: inc.sync_state === 'error' ? 'rgb(var(--danger))' : inc.sync_state === 'synced' ? 'rgb(var(--success))' : 'var(--text-muted)',
+                      }}
+                    >
+                      {inc.sync_state === 'synced' ? 'в общей ленте' : inc.sync_state === 'error' ? 'не отправлен' : inc.sync_state === 'pending' ? 'ожидает отправки' : 'на устройстве'}
+                    </span>
+                  )}
                   {resolved && (
                     <span
                       className="text-[9.5px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 ml-auto"
@@ -544,6 +782,11 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                 {inc.description && (
                   <p className="text-[11.5px] text-dim leading-relaxed mt-1 line-clamp-3">
                     {inc.description}
+                  </p>
+                )}
+                {inc.sync_state === 'error' && inc.sync_error && (
+                  <p className="text-[10.5px] leading-snug mt-1.5" style={{ color: 'rgb(var(--danger))' }}>
+                    Не доставлено: {inc.sync_error}
                   </p>
                 )}
 
@@ -567,7 +810,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2.5 border-t" style={{ borderColor: 'var(--line)' }}>
-                  {!isNativeApp() && (
+                  {(!IS_DEMO_BUILD || communityUrl) && (
                     <Button
                       variant={inc.user_upvoted ? 'soft' : 'outline'}
                       size="sm"
@@ -772,7 +1015,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                 (document.getElementById('incident-form') as HTMLFormElement | null)?.requestSubmit()
               }
             >
-              {editing ? 'Сохранить' : isNativeApp() ? 'Сохранить отчёт' : 'Опубликовать'}
+              {editing ? 'Сохранить' : IS_DEMO_BUILD && !communityUrl ? 'Сохранить отчёт' : 'Опубликовать'}
             </Button>
           </>
         }
@@ -898,6 +1141,46 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             </div>
           )}
         </form>
+      </Sheet>
+
+      <Sheet
+        open={communitySettingsOpen}
+        onClose={() => setCommunitySettingsOpen(false)}
+        title="Общий сервер сбоев"
+        subtitle="Доставка отчётов владельцу и другим пользователям"
+        size="sm"
+        icon={<Cloud className="w-5 h-5" style={{ color: 'rgb(var(--accent))' }} />}
+        footer={
+          <>
+            {communityDraft && <Button variant="ghost" block onClick={() => setCommunityDraft('')}>Отключить сервер</Button>}
+            <Button variant="primary" block onClick={saveCommunitySettings}>Сохранить и синхронизировать</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="block">
+            <span className="block text-[11.5px] font-semibold text-dim mb-1.5">HTTPS-адрес развёрнутого сервера</span>
+            <input
+              value={communityDraft}
+              onChange={(event) => setCommunityDraft(event.target.value)}
+              placeholder="https://pulsenet-api.example.com"
+              className={`${input} font-mono`}
+              style={inputStyle}
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+          </label>
+          <p className="text-[11px] leading-relaxed text-dim">
+            Используется сервер из этого репозитория с endpoint <span className="font-mono">/api/community/incidents</span>.
+            Один и тот же адрес должен быть задан у владельца и пользователей. Адрес можно также задать
+            переменной сборки <span className="font-mono">VITE_COMMUNITY_API_URL</span>.
+          </p>
+          <div className="rounded-xl border p-3 text-[11px] leading-relaxed text-dim" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+            Отправляются только регион, оператор, текст отчёта и технический ID устройства. Внешний IP,
+            VPN-конфиги и подтверждения приложений на общий сервер не передаются. Повторная синхронизация
+            не создаёт дубли; свои отчёты может изменить только то же устройство.
+          </div>
+        </div>
       </Sheet>
     </div>
   );

@@ -307,6 +307,34 @@ public class ApkUpdaterPlugin extends Plugin {
         }
     }
 
+    /** Запуск официального приложения для ручной проверки пользователем. */
+    @PluginMethod
+    public void openInstalledApp(PluginCall call) {
+        String packageName = call.getString("packageName", "");
+        JSObject ret = new JSObject();
+        if (packageName == null || !packageName.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")) {
+            call.reject("Некорректное имя пакета");
+            return;
+        }
+        try {
+            Intent intent = getContext().getPackageManager().getLaunchIntentForPackage(packageName);
+            if (intent == null) {
+                ret.put("opened", false);
+                ret.put("installed", false);
+                call.resolve(ret);
+                return;
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            ret.put("opened", true);
+            ret.put("installed", true);
+            ret.put("packageName", packageName);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Не удалось открыть приложение: " + e.getMessage());
+        }
+    }
+
     private String transportKind(NetworkCapabilities caps) {
         if (caps == null) return "unknown";
         // Проверяем реальный транспорт до TRANSPORT_VPN: иначе мобильный

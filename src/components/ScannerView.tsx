@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import {
   CATEGORY_META,
+  type AppConfirmation,
   type ClientConnectionInfo,
   type ScanRecord,
   type ScanSiteResult,
@@ -34,6 +35,7 @@ import {
   type Site,
   type SiteCategory,
   type User,
+  type VpnProfile,
 } from '../types';
 import { evaluateScanVerdict, IS_DEMO_BUILD } from '../lib/scanner';
 import { apiFetch } from '../lib/api';
@@ -58,6 +60,9 @@ interface ScannerViewProps {
   sites: Site[];
   latestScan: ScanRecord | null;
   connection: ClientConnectionInfo | null;
+  vpnProfiles: VpnProfile[];
+  confirmations: AppConfirmation[];
+  onConfirmationSaved: (confirmation: AppConfirmation) => void;
   onConnectionDetected: (c: ClientConnectionInfo) => void;
   onScanSaved: (scan: ScanRecord) => void;
   onQuickReportIncident: (scan: ScanRecord) => void;
@@ -139,6 +144,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   sites,
   latestScan,
   connection,
+  vpnProfiles,
+  confirmations,
+  onConfirmationSaved,
   onConnectionDetected,
   onScanSaved,
   onQuickReportIncident,
@@ -432,6 +440,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         created_at: new Date().toISOString(),
       };
       setActiveScan(localScan);
+      onScanSaved(localScan);
     }
 
     if (navigator.vibrate) {
@@ -865,6 +874,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         onOpenCatalog={onNavigateSites}
         results={displayedResults}
         scanning={phase === 'scanning'}
+        connection={detectedConn || connection}
+        profiles={vpnProfiles}
+        confirmations={confirmations}
+        onConfirmationSaved={onConfirmationSaved}
       />
 
       {/* ======================= ПОЛНЫЙ ОТЧЁТ ======================= */}

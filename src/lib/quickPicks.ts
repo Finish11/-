@@ -28,6 +28,8 @@ export interface QuickPick {
   /** Игровой сервер: проверяем TCP-пинг по этому адресу и порту. */
   gameHost?: string;
   gamePort?: number;
+  /** Официальные Android-пакеты для запуска и ручного подтверждения работы. */
+  packageNames?: string[];
 }
 
 export const QUICK_PICKS: QuickPick[] = [
@@ -42,6 +44,7 @@ export const QUICK_PICKS: QuickPick[] = [
     role: 'dpi_target',
     tone: 'emerald',
     caveat: 'Проверяем открытие сайта chatgpt.com, а не вход, API и отправку сообщений.',
+    packageNames: ['com.openai.chatgpt'],
   },
   {
     id: 'claude',
@@ -53,6 +56,7 @@ export const QUICK_PICKS: QuickPick[] = [
     category: 'dev_ai_vpn',
     role: 'dpi_target',
     tone: 'amber',
+    packageNames: ['com.anthropic.claude'],
   },
   {
     id: 'gemini',
@@ -64,6 +68,7 @@ export const QUICK_PICKS: QuickPick[] = [
     category: 'dev_ai_vpn',
     role: 'dpi_target',
     tone: 'sky',
+    packageNames: ['com.google.android.apps.bard'],
   },
   {
     id: 'telegram',
@@ -75,6 +80,7 @@ export const QUICK_PICKS: QuickPick[] = [
     category: 'messengers',
     role: 'dpi_target',
     tone: 'sky',
+    packageNames: ['org.telegram.messenger'],
   },
   {
     id: 'whatsapp',
@@ -86,6 +92,7 @@ export const QUICK_PICKS: QuickPick[] = [
     category: 'messengers',
     role: 'dpi_target',
     tone: 'emerald',
+    packageNames: ['com.whatsapp'],
   },
   {
     id: 'youtube',
@@ -97,6 +104,7 @@ export const QUICK_PICKS: QuickPick[] = [
     category: 'media_social',
     role: 'dpi_target',
     tone: 'rose',
+    packageNames: ['com.google.android.youtube'],
   },
   {
     id: 'brawlstars',
@@ -110,6 +118,7 @@ export const QUICK_PICKS: QuickPick[] = [
     tone: 'violet',
     caveat:
       'Игровые серверы Supercell стоят в ЕС (Франкфурт, Амстердам, Хельсинки) — ближе всего к Москве европейские узлы. Проверяем TCP 9339 до game.brawlstars.com.',
+    packageNames: ['com.supercell.brawlstars'],
     gameHost: 'game.brawlstars.com',
     gamePort: 9339,
   },

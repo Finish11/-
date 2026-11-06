@@ -67,6 +67,19 @@ export interface Site {
 
 export type SiteProof = 'app' | 'page' | 'endpoint' | 'opaque';
 
+export interface AppConfirmation {
+  id: number;
+  user_id?: number;
+  service_id: string;
+  domain: string;
+  node_key: string;
+  profile_id: number | null;
+  profile_name: string;
+  exit_ip: string;
+  works: boolean;
+  confirmed_at: string;
+}
+
 export interface ScanSiteResult {
   site_id?: number;
   name: string;
@@ -75,6 +88,9 @@ export interface ScanSiteResult {
   marker_role: MarkerRole | string;
   status: 'ok' | 'slow' | 'blocked';
   latency_ms: number | null;
+  /** Фактическая веб-проба до справочной политики сервиса — для каталога сайтов. */
+  network_status?: 'ok' | 'slow' | 'blocked';
+  network_latency_ms?: number | null;
   /** Почему не открылось — показываем в детальном списке */
   block_reason?: SiteBlockReason;
   /** Ответила заглушка/подмена TLS, а не сам сайт */
@@ -191,6 +207,10 @@ export interface Incident {
    * отчёт пользователя. Такие записи показываем с явной пометкой.
    */
   demo?: boolean;
+  /** Идемпотентный ID и состояние отправки на общий сервер сбоев. */
+  client_id?: string;
+  sync_state?: 'local' | 'pending' | 'synced' | 'error';
+  sync_error?: string;
 }
 
 export interface ClientConnectionInfo {

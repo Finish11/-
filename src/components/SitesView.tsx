@@ -240,7 +240,8 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
         <p className="text-[12.5px] text-dim leading-snug">
           Активно {enabledCount} из {sites.length}. Белый список Минцифры — {roleCounts.whitelist},
           нейтральные — {roleCounts.neutral}, заблокированы РКН — {roleCounts.rkn}. Статусы сверены
-          на ноябрь 2026.
+          на ноябрь 2026. Здесь показан ответ веб-страницы; ручные проверки приложений находятся
+          в карточках «Мои сервисы» и не помечают сайт как недоступный.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button variant="primary" size="md" icon={<Plus className="w-4 h-4" />} onClick={openCreateModal}>
@@ -407,11 +408,11 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                       <StatusIcon status={site.last_status} className="w-3 h-3 shrink-0" />
                       <span className="text-[10.5px] text-dim shrink-0">
                         {site.last_status === 'ok'
-                          ? `${site.last_latency_ms} мс`
+                          ? `страница открыта · ${site.last_latency_ms} мс`
                           : site.last_status === 'slow'
-                          ? `медленно · ${site.last_latency_ms} мс`
+                          ? `страница медленная · ${site.last_latency_ms} мс`
                           : site.last_status === 'blocked'
-                          ? 'недоступен'
+                          ? 'страница недоступна'
                           : 'не проверялся'}
                       </span>
                     </div>

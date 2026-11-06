@@ -3,6 +3,7 @@ import { Radar, ShieldCheck, Wifi, Sparkles, Lock, Mail, User as UserIcon, MapPi
 import {
   RUSSIAN_CARRIERS,
   RUSSIAN_REGIONS,
+  type AppConfirmation,
   type Incident,
   type ScanRecord,
   type Site,
@@ -22,6 +23,7 @@ export interface AuthBootstrapPayload {
   profiles?: VpnProfile[];
   incidents?: Incident[];
   subscriptions?: VpnSubscription[];
+  confirmations?: AppConfirmation[];
 }
 
 interface AuthViewProps {

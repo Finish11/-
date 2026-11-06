@@ -130,6 +130,20 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS app_confirmations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    service_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    node_key TEXT NOT NULL,
+    profile_id INTEGER REFERENCES vpn_profiles(id) ON DELETE CASCADE,
+    profile_name TEXT NOT NULL DEFAULT '',
+    exit_ip TEXT NOT NULL DEFAULT '',
+    works INTEGER NOT NULL,
+    confirmed_at TEXT NOT NULL,
+    UNIQUE(user_id, service_id, node_key, exit_ip)
+  );
+
   CREATE TABLE IF NOT EXISTS incidents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -144,7 +158,10 @@ db.exec(`
     upvotes INTEGER NOT NULL DEFAULT 1,
     ru_sites_ok INTEGER NOT NULL DEFAULT 1,
     foreign_sites_ok INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    client_id TEXT,
+    device_hash TEXT,
+    community INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS incident_upvotes (
@@ -152,6 +169,13 @@ db.exec(`
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (incident_id, user_id)
   );
+
+  CREATE TABLE IF NOT EXISTS community_upvotes (
+    incident_id INTEGER NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    device_hash TEXT NOT NULL,
+    PRIMARY KEY (incident_id, device_hash)
+  );
+
 `);
 
 /**
@@ -171,6 +195,10 @@ addColumnIfMissing('vpn_profiles', 'subscription_id', 'INTEGER');
 addColumnIfMissing('vpn_profiles', 'group_name', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('vpn_profiles', 'raw_link', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('vpn_profiles', 'last_latency_all', 'INTEGER');
+addColumnIfMissing('incidents', 'client_id', 'TEXT');
+addColumnIfMissing('incidents', 'device_hash', 'TEXT');
+addColumnIfMissing('incidents', 'community', 'INTEGER NOT NULL DEFAULT 0');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS community_incident_client ON incidents(client_id) WHERE client_id IS NOT NULL');
 
 export interface DefaultSiteSeed {
   name: string;

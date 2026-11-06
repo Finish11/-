@@ -19,6 +19,7 @@ import {
   toClientConnection,
 } from './lib/networkInfo';
 import type {
+  AppConfirmation,
   ClientConnectionInfo,
   Incident,
   ScanRecord,
@@ -50,6 +51,7 @@ export function App() {
   const [vpnProfiles, setVpnProfiles] = useState<VpnProfile[]>([]);
   const [subscriptions, setSubscriptions] = useState<VpnSubscription[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [confirmations, setConfirmations] = useState<AppConfirmation[]>([]);
 
   const [connection, setConnection] = useState<ClientConnectionInfo | null>(null);
   const [connLoading, setConnLoading] = useState(false);
@@ -162,6 +164,7 @@ export function App() {
       if (payload.profiles) setVpnProfiles(payload.profiles);
       if (payload.subscriptions) setSubscriptions(payload.subscriptions);
       if (payload.incidents) setIncidents(payload.incidents);
+      if (payload.confirmations) setConfirmations(payload.confirmations);
       refreshConnection();
     },
     [refreshConnection]
@@ -170,18 +173,20 @@ export function App() {
   const loadWorkspaceData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [sitesRes, scansRes, vpnRes, incRes, subRes] = await Promise.all([
+      const [sitesRes, scansRes, vpnRes, incRes, subRes, confirmationsRes] = await Promise.all([
         apiFetch<{ sites: Site[] }>('/api/sites'),
         apiFetch<{ scans: ScanRecord[] }>('/api/scans'),
         apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles'),
         apiFetch<{ incidents: Incident[] }>('/api/incidents'),
         apiFetch<{ subscriptions: VpnSubscription[] }>('/api/vpn-subscriptions'),
+        apiFetch<{ confirmations: AppConfirmation[] }>('/api/app-confirmations'),
       ]);
       setSites(sitesRes.sites);
       setScans(scansRes.scans);
       setVpnProfiles(vpnRes.profiles);
       setIncidents(incRes.incidents);
       setSubscriptions(subRes.subscriptions);
+      setConfirmations(confirmationsRes.confirmations);
     } catch (err) {
       const status = (err as Error & { status?: number })?.status;
       if (status === 401) {
@@ -252,6 +257,7 @@ export function App() {
     setVpnProfiles([]);
     setIncidents([]);
     setSubscriptions([]);
+    setConfirmations([]);
     showToast('info', 'Вы вышли из аккаунта');
   };
 
@@ -274,13 +280,22 @@ export function App() {
           if (!hit) return s;
           return {
             ...s,
-            last_status: hit.status,
-            last_latency_ms: hit.latency_ms,
+            last_status: hit.network_status ?? hit.status,
+            last_latency_ms: hit.network_latency_ms ?? hit.latency_ms,
             last_checked_at: scan.created_at,
           };
         })
       );
     }
+  };
+
+  const handleConfirmationSaved = (confirmation: AppConfirmation) => {
+    setConfirmations((prev) => {
+      const exists = prev.some((item) => item.id === confirmation.id);
+      return exists
+        ? prev.map((item) => item.id === confirmation.id ? confirmation : item)
+        : [confirmation, ...prev];
+    });
   };
 
   const handleQuickReportIncident = (scan: ScanRecord) => {
@@ -353,6 +368,9 @@ export function App() {
                 sites={sites}
                 latestScan={scans[0] || null}
                 connection={connection}
+                vpnProfiles={vpnProfiles}
+                confirmations={confirmations}
+                onConfirmationSaved={handleConfirmationSaved}
                 onConnectionDetected={() => { void refreshConnection(); }}
                 onScanSaved={handleScanSaved}
                 onQuickReportIncident={handleQuickReportIncident}
@@ -380,6 +398,7 @@ export function App() {
                 setProfiles={setVpnProfiles}
                 subscriptions={subscriptions}
                 setSubscriptions={setSubscriptions}
+                confirmations={confirmations}
                 connection={connection}
                 connLoading={connLoading}
                 onRefreshConnection={refreshConnection}

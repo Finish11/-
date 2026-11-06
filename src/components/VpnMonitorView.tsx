@@ -27,7 +27,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
-import type { ClientConnectionInfo, ScanRecord, VpnProfile, VpnSubscription } from '../types';
+import type { AppConfirmation, ClientConnectionInfo, ScanRecord, VpnProfile, VpnSubscription } from '../types';
+import { recommendConfirmedNodes } from '../lib/appConfirmations';
 import {
   detectProblem,
   looksSynthetic,
@@ -58,6 +59,7 @@ interface VpnMonitorViewProps {
   setProfiles: React.Dispatch<React.SetStateAction<VpnProfile[]>>;
   subscriptions: VpnSubscription[];
   setSubscriptions: React.Dispatch<React.SetStateAction<VpnSubscription[]>>;
+  confirmations: AppConfirmation[];
   connection: ClientConnectionInfo | null;
   connLoading: boolean;
   onRefreshConnection: () => void;
@@ -147,6 +149,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   setProfiles,
   subscriptions,
   setSubscriptions,
+  confirmations,
   connection,
   connLoading,
   onRefreshConnection,
@@ -159,6 +162,10 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   const recommended = useMemo(
     () => (realScan ? recommendNodes(realScan, profiles) : []),
     [realScan, profiles]
+  );
+  const confirmedRecommended = useMemo(
+    () => recommendConfirmedNodes(profiles, confirmations).slice(0, 3),
+    [profiles, confirmations]
   );
   const lastCheckedLabel = useMemo(() => {
     const times = profiles
@@ -784,6 +791,49 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           </button>
         </div>
       </section>
+
+      {/* ---------- Узлы, проверенные пользователем в приложениях ---------- */}
+      {profiles.length > 0 && (
+        <section className="rounded-[1.5rem] border p-3.5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+          <div className="flex items-start gap-2.5">
+            <Sparkles className="w-4.5 h-4.5 shrink-0 mt-0.5" style={{ color: 'rgb(var(--accent))' }} />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[13px] font-bold">Лучшие для ваших приложений</h2>
+              <p className="text-[10.5px] text-dim mt-0.5 leading-snug">
+                Рейтинг по вашим подтверждениям «Работает» / «Не работает», затем по TCP-пингу.
+                Основной узел — только отметка для VPN-клиента, не включение туннеля.
+              </p>
+            </div>
+          </div>
+          {confirmedRecommended.length === 0 ? (
+            <p className="mt-2.5 text-[11px] leading-relaxed text-muted">
+              Пока нет ручных результатов. На главной откройте карточку сервиса, запустите приложение
+              и подтвердите результат для текущего узла — рекомендации появятся здесь.
+            </p>
+          ) : (
+            <div className="mt-2.5 space-y-1.5">
+              {confirmedRecommended.map(({ profile, works, failures }) => (
+                <div key={profile.id} className="flex items-center gap-2 rounded-xl px-2.5 py-2" style={{ background: 'var(--surface-2)' }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-bold truncate">{profile.name}</div>
+                    <div className="text-[10px] text-dim">
+                      работает: {works}{failures ? ` · не работает: ${failures}` : ''}
+                      {profile.latency_ms != null ? ` · ${formatTcpLatency(profile.latency_ms)}` : ''}
+                    </div>
+                  </div>
+                  {profile.is_primary ? (
+                    <span className="text-[10px] font-bold" style={{ color: 'rgb(var(--success))' }}>основной</span>
+                  ) : (
+                    <Button size="sm" variant="soft" onClick={() => void handleSetPrimary(profile)}>
+                      Сделать основным
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ---------- Статистика ---------- */}
       {profiles.length > 0 && (

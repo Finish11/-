@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronRight, ExternalLink, GripVertical, Info, Loader2, Plus, Sparkles, X } from 'lucide-react';
-import { isNativeApp, tcpPing } from '../lib/nativeBridge';
+import { Check, ChevronRight, ExternalLink, GripVertical, Info, Loader2, Plus, Smartphone, Sparkles, ThumbsDown, ThumbsUp, X } from 'lucide-react';
+import { isNativeApp, openInstalledApp as launchInstalledApp, tcpPing } from '../lib/nativeBridge';
 import { apiFetch } from '../lib/api';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
-import type { ScanSiteResult, Site } from '../types';
+import { confirmationNodeKey, findAppConfirmation, type ConfirmationMatch } from '../lib/appConfirmations';
+import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
 import { Sheet } from './ui/Sheet';
 import { Button, Chip, EmptyState, Notice } from './ui/kit';
 
@@ -17,6 +18,10 @@ interface QuickPicksProps {
   results?: ScanSiteResult[];
   /** Пока идёт замер — показываем «проверяем…» вместо старых цифр. */
   scanning?: boolean;
+  connection: ClientConnectionInfo | null;
+  profiles: VpnProfile[];
+  confirmations: AppConfirmation[];
+  onConfirmationSaved: (confirmation: AppConfirmation) => void;
 }
 
 const norm = (domain: string) => domain.replace(/^www\./, '').toLowerCase();
@@ -81,9 +86,24 @@ const BrandBadge: React.FC<{ id: string; size?: number }> = ({ id, size = 34 }) 
   );
 };
 
-function statusVisual(r?: ScanSiteResult, scanning?: boolean): Visual {
+function statusVisual(r?: ScanSiteResult, scanning?: boolean, confirmation?: ConfirmationMatch | null): Visual {
   if (scanning) {
     return { bg: 'var(--surface-2)', fg: 'var(--text-dim)', label: 'проверяем', emojiBg: 'transparent' };
+  }
+  if (confirmation) {
+    return confirmation.confirmation.works
+      ? {
+          bg: 'rgb(var(--success) / 0.12)',
+          fg: 'rgb(var(--success))',
+          label: confirmation.matchedBy === 'ip' ? 'приложение работает · по этому IP' : 'приложение работает · подтверждено',
+          emojiBg: 'transparent',
+        }
+      : {
+          bg: 'rgb(var(--danger) / 0.1)',
+          fg: 'rgb(var(--danger))',
+          label: confirmation.matchedBy === 'ip' ? 'приложение не работает · по этому IP' : 'приложение не работает · ваш отзыв',
+          emojiBg: 'transparent',
+        };
   }
   if (!r) {
     return {
@@ -166,12 +186,20 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   onOpenCatalog,
   results = [],
   scanning = false,
+  connection,
+  profiles,
+  confirmations,
+  onConfirmationSaved,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [order, setOrder] = useState<string[]>(loadQuickOrder);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ pick: QuickPick; result?: ScanSiteResult } | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [openingApp, setOpeningApp] = useState(false);
+  const [savingConfirmation, setSavingConfirmation] = useState(false);
 
   const byDomain = useMemo(() => {
     const map = new Map<string, Site>();
@@ -346,6 +374,73 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   };
 
+  const vpnActive = Boolean(connection?.vpn_detected && connection.vpn_source === 'system');
+  const activeProfile = vpnActive ? profiles.find((profile) => Boolean(profile.is_primary)) || null : null;
+  const activeIp = connection?.ip && connection.ip !== '—' ? connection.ip : '';
+  const matchFor = (pick: QuickPick, profile = activeProfile) =>
+    findAppConfirmation(confirmations, pick.id, profile, activeIp);
+
+  const openDetails = (pick: QuickPick, result?: ScanSiteResult) => {
+    setSelected({ pick, result });
+    setSelectedProfileId(activeProfile?.id ?? null);
+    setAwaitingConfirmation(false);
+  };
+
+  const selectedProfile = selectedProfileId == null
+    ? null
+    : profiles.find((profile) => profile.id === selectedProfileId) || null;
+  const selectedMatch = selected ? matchFor(selected.pick, selectedProfile) : null;
+
+  const handleOpenApp = async (pick: QuickPick) => {
+    if (!pick.packageNames?.length) return;
+    if (!isNativeApp()) {
+      showToast('info', 'Запуск установленных приложений доступен в Android APK');
+      return;
+    }
+    setOpeningApp(true);
+    try {
+      const result = await launchInstalledApp(pick.packageNames);
+      if (!result.opened) {
+        showToast('warning', `${pick.name} не найден среди установленных приложений`);
+        return;
+      }
+      setAwaitingConfirmation(true);
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Не удалось открыть приложение');
+    } finally {
+      setOpeningApp(false);
+    }
+  };
+
+  const saveConfirmation = async (works: boolean) => {
+    if (!selected) return;
+    setSavingConfirmation(true);
+    try {
+      const response = await apiFetch<{ confirmation: AppConfirmation }>('/api/app-confirmations', {
+        method: 'POST',
+        body: JSON.stringify({
+          service_id: selected.pick.id,
+          domain: selected.pick.domain,
+          node_key: confirmationNodeKey(selectedProfile),
+          profile_id: selectedProfile?.id ?? null,
+          profile_name: selectedProfile?.name || 'Прямое подключение',
+          exit_ip: activeIp,
+          works,
+        }),
+      });
+      onConfirmationSaved(response.confirmation);
+      setAwaitingConfirmation(false);
+      showToast(
+        works ? 'success' : 'warning',
+        `${selected.pick.name}: результат сохранён для ${selectedProfile?.name || 'прямого подключения'}`
+      );
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Не удалось сохранить подтверждение');
+    } finally {
+      setSavingConfirmation(false);
+    }
+  };
+
   return (
     <section>
       <div className="flex items-center justify-between gap-2 px-1 mb-2">
@@ -386,7 +481,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {added.map(({ pick, site }) => {
             const r = findQuickValue(resultByDomain, pick);
-            const v = statusVisual(r, scanning);
+            const v = statusVisual(r, scanning, matchFor(pick));
             const game = gamePing[pick.id];
             return (
               <div
@@ -455,7 +550,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setSelected({ pick, result: r })}
+                  onClick={() => openDetails(pick, r)}
                   className="mt-2 flex items-center gap-1 max-w-full text-left tap"
                   aria-label={`Подробнее о проверке ${pick.name}`}
                 >
@@ -471,7 +566,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                   <div className="min-w-0 flex-1">
                     <button
                       type="button"
-                      onClick={() => setSelected({ pick, result: r })}
+                      onClick={() => openDetails(pick, r)}
                       className="block text-left text-[10.5px] leading-tight font-semibold break-words tap"
                       style={{ color: v.fg }}
                     >
@@ -504,8 +599,8 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 
       {added.length > 0 && (
         <p className="mt-2 text-[10px] leading-snug text-muted">
-          Нажмите на название или статус — откроется объяснение. «Страница открыта» не означает,
-          что работает приложение: вход, сообщения, звонки и видео отдельно не проверяются.
+          Нажмите на карточку: можно открыть приложение и подтвердить его работу. Результат
+          запоминается для выбранного VPN-узла и внешнего IP и используется в рекомендациях.
         </p>
       )}
 
@@ -522,10 +617,10 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           <div className="space-y-3">
             <div
               className="rounded-2xl border p-3.5"
-              style={{ borderColor: 'var(--line)', background: statusVisual(selected.result, scanning).bg }}
+              style={{ borderColor: 'var(--line)', background: statusVisual(selected.result, scanning, selectedMatch).bg }}
             >
-              <div className="text-[14px] font-extrabold" style={{ color: statusVisual(selected.result, scanning).fg }}>
-                {statusVisual(selected.result, scanning).label}
+              <div className="text-[14px] font-extrabold" style={{ color: statusVisual(selected.result, scanning, selectedMatch).fg }}>
+                {statusVisual(selected.result, scanning, selectedMatch).label}
               </div>
               <div className="text-[11px] font-mono text-muted mt-1">{selected.pick.domain}</div>
             </div>
@@ -538,9 +633,74 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                 Это не доказательство взлома и не достоверный вердикт о приложении.
               </Notice>
             )}
+            <div className="rounded-2xl border p-3 space-y-2.5" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+              <div className="text-[12px] font-bold">Проверить именно приложение</div>
+              {vpnActive && profiles.length > 0 ? (
+                <label className="block text-[11px] text-dim">
+                  Узел, который сейчас включён в VPN-клиенте
+                  <select
+                    value={selectedProfileId ?? ''}
+                    onChange={(event) => setSelectedProfileId(event.target.value ? Number(event.target.value) : null)}
+                    className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
+                    style={{ borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--text)' }}
+                  >
+                    <option value="">Не указан / прямой маршрут</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>{profile.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="text-[11px] text-dim">Маршрут: прямое подключение{activeIp ? ` · IP ${activeIp}` : ''}</div>
+              )}
+              {selectedMatch && (
+                <Notice tone={selectedMatch.confirmation.works ? 'ok' : 'bad'}>
+                  {selectedMatch.confirmation.works ? 'Вы подтвердили: приложение работает.' : 'Вы отметили: приложение не работает.'}
+                  {' '}{selectedMatch.matchedBy === 'ip' ? 'Совпадение найдено по внешнему IP, не по названию узла. ' : ''}
+                  {selectedMatch.confirmation.profile_name} · {new Date(selectedMatch.confirmation.confirmed_at).toLocaleString('ru-RU')}
+                </Notice>
+              )}
+              {awaitingConfirmation && (
+                <Notice tone="info">
+                  Приложение открыто. Вернитесь после проверки входа, сообщения, видео или игры и отметьте фактический результат.
+                </Notice>
+              )}
+              {selected.pick.packageNames && (
+                <Button
+                  variant="soft"
+                  block
+                  loading={openingApp}
+                  icon={<Smartphone className="w-4 h-4" />}
+                  onClick={() => void handleOpenApp(selected.pick)}
+                >
+                  Открыть приложение
+                </Button>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="primary"
+                  disabled={savingConfirmation}
+                  icon={<ThumbsUp className="w-4 h-4" />}
+                  onClick={() => void saveConfirmation(true)}
+                >
+                  Работает
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={savingConfirmation}
+                  icon={<ThumbsDown className="w-4 h-4" />}
+                  onClick={() => void saveConfirmation(false)}
+                >
+                  Не работает
+                </Button>
+              </div>
+              <p className="text-[10px] leading-snug text-muted">
+                Это ваше ручное подтверждение, а не автоматический тест аккаунта. Его можно изменить после следующей проверки.
+              </p>
+            </div>
             <Notice tone="info">
-              Проверяется сетевой адрес и, где возможно, содержимое страницы. Установленное приложение,
-              аккаунт, звонки и отправка сообщений этим запросом не запускаются.
+              Сетевая проба проверяет сайт отдельно. Запуск приложения сам по себе не доказывает
+              работу входа, сообщений, звонков или видео — поэтому итог подтверждаете вы.
             </Notice>
             {selected.result?.source_url && (
               <a

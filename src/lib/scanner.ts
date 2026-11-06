@@ -300,6 +300,9 @@ export interface SiteDiagnosisItem {
   latency_ms: number | null;
   block_reason?: SiteBlockReason;
   note: string;
+  proof?: ScanSiteResult['proof'];
+  access_scope?: ScanSiteResult['access_scope'];
+  source_url?: string;
 }
 
 export interface ScanDiagnosis {
@@ -314,7 +317,7 @@ export interface ScanDiagnosis {
   dpi_pattern: boolean;
   jamming_pattern: boolean;
   open_pattern: boolean;
-  /** Классификация: что реально происходит по трём канонам (белый список / РКН / глушение) */
+  /** Классификация по измерениям: белый список / частные ограничения / глушение. */
   scenario: 'whitelist' | 'dpi' | 'jamming' | 'partial' | 'open';
   highlight_ok: SiteDiagnosisItem[];
   highlight_blocked: SiteDiagnosisItem[];
@@ -333,7 +336,7 @@ function classifyBase(s: Site): 'ru_whitelist' | 'global_neutral' | 'dpi_target'
  * Главный диагност. Разделяет три категории ресурсов:
  *  1) БЕЛЫЙ СПИСОК РФ — перечень Минцифры (работает даже при шатдауне)
  *  2) НЕЙТРАЛЬНЫЕ — глобальные сайты, которые НЕ заблокированы в РФ (должны открываться всегда)
- *  3) ЗАБЛОКИРОВАННЫЕ РКН — YouTube, Discord, Instagram и т.д. (без VPN не работают всегда)
+ *  3) ВОЗМОЖНО ОГРАНИЧЕННЫЕ — сетевая фильтрация и правила сервиса различаются по каждому результату
  * Вердикт строится на 1+2: если нейтральные массово падают, а белый список жив → белые списки.
  */
 export function diagnoseScan(
@@ -391,9 +394,12 @@ export function diagnoseScan(
       };
     });
 
-  const ruItems = items.filter((i) => i.base === 'ru_whitelist');
-  const globalItems = items.filter((i) => i.base === 'global_neutral');
-  const dpiItems = items.filter((i) => i.base === 'dpi_target');
+  // Справочное региональное правило не является сетевым измерением и не должно
+  // само по себе создавать паттерн DPI/белых списков. В подсветке оно остаётся.
+  const networkItems = items.filter((item) => item.access_scope !== 'provider_region_ru');
+  const ruItems = networkItems.filter((i) => i.base === 'ru_whitelist');
+  const globalItems = networkItems.filter((i) => i.base === 'global_neutral');
+  const dpiItems = networkItems.filter((i) => i.base === 'dpi_target');
 
   const pct = (arr: Array<{ status: 'ok' | 'slow' | 'blocked'; intercepted?: boolean }>) =>
     arr.length === 0 ? 100 : Math.round((arr.filter((x) => reachable(x)).length / arr.length) * 100);
@@ -421,11 +427,12 @@ export function diagnoseScan(
     .slice(0, 8)
     .map(({ base, ...rest }) => rest);
 
-  const reachableTotal = items.filter((i) => reachable(i)).length;
+  const reachableTotal = networkItems.filter((i) => reachable(i)).length;
   const interceptedTotal = results.filter((r) => r.intercepted).length;
+  const referenceOnly = networkItems.length === 0 && items.length > 0;
 
   let scenario: ScanDiagnosis['scenario'] = 'open';
-  if (results.length > 0 && reachableTotal === 0) scenario = 'partial';
+  if (referenceOnly || (networkItems.length > 0 && reachableTotal === 0)) scenario = 'partial';
   else if (opts.withVpn) scenario = 'open';
   else if (jamming_pattern) scenario = 'jamming';
   else if (whitelist_pattern) scenario = 'whitelist';
@@ -440,7 +447,9 @@ export function diagnoseScan(
       : scenario === 'dpi'
       ? 'БЕЛЫХ СПИСКОВ НЕТ • ЧАСТИЧНЫЕ ОГРАНИЧЕНИЯ'
       : scenario === 'partial'
-      ? 'ЧАСТИЧНЫЕ ОГРАНИЧЕНИЯ'
+      ? referenceOnly
+        ? 'ТОЛЬКО СПРАВОЧНЫЕ ДАННЫЕ'
+        : 'ЧАСТИЧНЫЕ ОГРАНИЧЕНИЯ'
       : opts.withVpn
       ? 'ДОСТУП ЧЕРЕЗ VPN'
       : 'ИНТЕРНЕТ СВОБОДЕН';
@@ -453,12 +462,14 @@ export function diagnoseScan(
       : scenario === 'dpi'
       ? `Нейтральный интернет открыт (${global_ok_pct}% из ${globalItems.length} незаблокированных сайтов), белые списки маловероятны. Часть сервисов из группы возможных ограничений не отвечает. Сетевая фильтрация — только одна из гипотез; региональные правила сервиса и неизвестные ответы разбираются отдельно по каждому адресу.`
       : scenario === 'partial'
-      ? interceptedTotal > 0
-        ? `На ${interceptedTotal} сайтах пришла заглушка или чужой TLS-сертификат: они не считаются работающими. Действительно открылись ${reachableTotal} из ${items.length}.`
+      ? referenceOnly
+        ? 'В этом наборе есть только справочные региональные правила сервисов. Для сетевого вердикта нужны измерения нейтральных и российских контрольных адресов.'
+        : interceptedTotal > 0
+        ? `На ${interceptedTotal} сайтах пришла заглушка или чужой TLS-сертификат: они не считаются работающими. Действительно открылись ${reachableTotal} из ${networkItems.length}.`
         : `Работает ${global_ok_pct}% незаблокированных сайтов и ${ru_ok_pct}% белого списка. Часть подсетей (Cloudflare, CDN) лежит — возможны региональные ограничения.`
       : opts.withVpn
-      ? `Через VPN-туннель отвечают ${reachableTotal} из ${items.length} веб-адресов, включая ${dpi_ok_pct}% группы возможных ограничений. Работа native-приложений и аккаунтов этим не доказана.${interceptedTotal ? ` Нераспознанный ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
-      : `Открываются ${reachableTotal} из ${items.length} сайтов, нейтральные ресурсы доступны на ${global_ok_pct}%. Признаков белых списков и глушения нет.`;
+      ? `Через VPN-туннель отвечают ${reachableTotal} из ${networkItems.length} веб-адресов, включая ${dpi_ok_pct}% группы возможных ограничений. Работа native-приложений и аккаунтов этим не доказана.${interceptedTotal ? ` Нераспознанный ответ всё ещё заметен на ${interceptedTotal} сайтах.` : ''}`
+      : `Открываются ${reachableTotal} из ${networkItems.length} сайтов, нейтральные ресурсы доступны на ${global_ok_pct}%. Признаков белых списков и глушения нет.`;
 
   return {
     ru_ok_pct,
@@ -541,12 +552,12 @@ export function evaluateScanVerdict(
       : d.scenario === 'jamming'
       ? 'Похоже на глушение сети'
       : d.scenario === 'dpi'
-      ? 'Есть замедление ТСПУ'
+      ? 'Часть сервисов ограничена'
       : d.scenario === 'partial'
       ? 'Часть сайтов недоступна'
       : withVpn
-      ? 'Свободный доступ через VPN'
-      : 'Интернет работает свободно';
+      ? 'Веб-доступ через VPN'
+      : 'Нейтральный интернет доступен';
 
   return {
     verdict,

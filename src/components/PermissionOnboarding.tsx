@@ -14,6 +14,7 @@ export const PermissionOnboarding: React.FC = () => {
   const [notifications, setNotifications] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [busy, setBusy] = useState<'notifications' | 'install' | null>(null);
+  const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
     if (!isNativeApp()) return;
@@ -64,9 +65,15 @@ export const PermissionOnboarding: React.FC = () => {
 
   const requestNotifications = async () => {
     setBusy('notifications');
+    setError('');
     try {
       const result = await LocalNotifications.requestPermissions();
       setNotifications(result.display === 'granted');
+      if (result.display !== 'granted') {
+        setError('Уведомления не разрешены. Их можно включить позже в настройках Android.');
+      }
+    } catch {
+      setError('Android не смог показать запрос уведомлений. Попробуйте ещё раз или откройте настройки приложения.');
     } finally {
       setBusy(null);
     }
@@ -74,8 +81,11 @@ export const PermissionOnboarding: React.FC = () => {
 
   const openInstallSettings = async () => {
     setBusy('install');
+    setError('');
     try {
       await ApkUpdater.openInstallSettings();
+    } catch {
+      setError('Не удалось открыть системную настройку. Найдите «ПульсСети → Установка неизвестных приложений» в настройках Android.');
     } finally {
       setBusy(null);
     }
@@ -148,6 +158,7 @@ export const PermissionOnboarding: React.FC = () => {
           </div>
         </div>
 
+        {error && <Notice tone="bad">{error}</Notice>}
         <Notice tone="info">
           Мы не запрашиваем контакты, геолокацию, фотографии или широкий доступ к файлам.
           Любое разрешение можно изменить позже в настройках Android.

@@ -101,7 +101,7 @@ const VERDICT_META = {
     accentRgb: 'var(--warning)',
   },
   DPI_THROTTLING: {
-    label: 'Фильтрация ТСПУ',
+    label: 'Частные ограничения',
     tone: 'warn' as const,
     icon: ShieldAlert,
     accentRgb: 'var(--warning)',

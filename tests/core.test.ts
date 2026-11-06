@@ -10,7 +10,7 @@ import type { NativeNetworkState } from '../src/lib/nativeBridge.ts';
 import { decodeStatePacket, encodeStatePacket, selectNewestState } from '../src/demo/stateStorage.ts';
 import { applyServiceAccessPolicy } from '../src/lib/serviceAccess.ts';
 import { orderSitesForScan } from '../src/lib/scanScheduler.ts';
-import { formatTcpLatency } from '../src/lib/nodePing.ts';
+import { applyNodeMeasurements, formatTcpLatency, type NodeMeasurement } from '../src/lib/nodePing.ts';
 import type { ScanSiteResult, Site } from '../src/types.ts';
 
 function site(id: number, role: Site['marker_role'] = 'global_neutral'): Site {
@@ -104,6 +104,44 @@ test('сводный вердикт сохраняет региональную 
   assert.doesNotMatch(evaluated.diagnosis.headline, /РКН/);
 });
 
+test('справочный RU-статус не создаёт DPI-паттерн при живом нейтральном интернете', () => {
+  const chat = { ...site(95, 'dpi_target'), domain: 'chatgpt.com', accessibility: 'blocked' as const };
+  const neutral = site(96);
+  const reference = applyServiceAccessPolicy(
+    chat,
+    { ...result(95, 'dpi_target'), domain: 'chatgpt.com' },
+    { withVpn: false, countryCode: 'RU' }
+  );
+  const evaluated = evaluateScanVerdict(
+    [reference, result(96, 'global_neutral')],
+    false,
+    new Map([[95, chat], [96, neutral]])
+  );
+  assert.equal(evaluated.diagnosis.dpi_pattern, false);
+  assert.equal(evaluated.diagnosis.scenario, 'open');
+  assert.equal(evaluated.diagnosis.blocked_total, 0);
+  assert.equal(evaluated.diagnosis.highlight_blocked[0]?.block_reason, 'provider_region');
+});
+
+test('неотвечающая dpi_target не даёт автоматический заголовок ТСПУ или РКН', () => {
+  const limited = site(97, 'dpi_target');
+  const neutral = site(98);
+  const unavailable = {
+    ...result(97, 'dpi_target'),
+    status: 'blocked' as const,
+    latency_ms: null,
+    block_reason: 'network' as const,
+  };
+  const evaluated = evaluateScanVerdict(
+    [unavailable, result(98, 'global_neutral')],
+    false,
+    new Map([[97, limited], [98, neutral]])
+  );
+  assert.equal(evaluated.diagnosis.scenario, 'dpi');
+  assert.equal(evaluated.verdict_title, 'Часть сервисов ограничена');
+  assert.doesNotMatch(evaluated.verdict_title, /ТСПУ|РКН/);
+});
+
 test('открытая страница Gemini через VPN не выдаётся за работу приложения', () => {
   const gemini = { ...site(93, 'dpi_target'), domain: 'gemini.google.com' };
   const measured = { ...result(93, 'dpi_target'), domain: 'gemini.google.com', proof: 'app' as const };
@@ -131,6 +169,33 @@ test('TCP ping никогда не показывает сомнительный
   assert.equal(formatTcpLatency(0.42), '<1 мс');
   assert.equal(formatTcpLatency(12.4), '12 мс');
   assert.equal(formatTcpLatency(null), '—');
+});
+
+test('партия TCP обновляет известные узлы, сохраняет дробные мс и не принимает NaN', () => {
+  const profiles: Array<{
+    id: number;
+    status: 'online' | 'degraded' | 'blocked' | 'unknown';
+    latency_ms: number | null;
+    notes: string;
+    last_checked_at: string | null;
+    name: string;
+  }> = [
+    { id: 1, status: 'online', latency_ms: 30, notes: '', last_checked_at: null, name: 'A' },
+    { id: 2, status: 'unknown', latency_ms: null, notes: '', last_checked_at: null, name: 'B' },
+  ];
+  const measurements: NodeMeasurement[] = [
+    { id: 2, status: 'online', latencyMs: 0.42, reason: 'TCP через VPN', checkedAt: '2026-11-06' },
+    { id: 1, status: 'blocked', latencyMs: Number.NaN, reason: 'таймаут', checkedAt: '2026-11-06' },
+    { id: 999, status: 'online', latencyMs: 1, reason: '', checkedAt: '2026-11-06' },
+  ];
+  const actual = applyNodeMeasurements(profiles, measurements);
+  assert.equal(actual.length, 2);
+  assert.equal(actual[1].latency_ms, 0.42);
+  assert.equal(actual[1].notes, 'TCP через VPN');
+  assert.equal(actual[1].name, 'B');
+  assert.equal(actual[0].status, 'blocked');
+  assert.equal(actual[0].latency_ms, null);
+  assert.equal(actual.some((profile) => profile.id === 999), false);
 });
 
 test('реальный ответ нейтральных сайтов по-прежнему даёт открытый сценарий', () => {

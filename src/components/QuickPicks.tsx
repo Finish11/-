@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronRight, ExternalLink, GripVertical, Info, Loader2, Plus, Sparkles, X } from 'lucide-react';
-import { tcpPing } from '../lib/nativeBridge';
+import { isNativeApp, tcpPing } from '../lib/nativeBridge';
 import { apiFetch } from '../lib/api';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
 import type { ScanSiteResult, Site } from '../types';
@@ -279,7 +279,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   };
 
   /* ---------- TCP-пинг игровых серверов ---------- */
-  const [gamePing, setGamePing] = useState<Record<string, { ok: boolean; ms: number | null }>>({});
+  const [gamePing, setGamePing] = useState<Record<string, { ok: boolean; ms: number | null; unsupported?: boolean }>>({});
   const gameIds = added.filter((a) => a.pick.gameHost).map((a) => a.pick.id).join(',');
 
   useEffect(() => {
@@ -288,6 +288,15 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     added
       .filter((a) => a.pick.gameHost)
       .forEach(async ({ pick }) => {
+        if (!isNativeApp()) {
+          if (alive) {
+            setGamePing((prev) => ({
+              ...prev,
+              [pick.id]: { ok: false, ms: null, unsupported: true },
+            }));
+          }
+          return;
+        }
         const res = await tcpPing(pick.gameHost as string, pick.gamePort || 9339);
         if (!alive) return;
         setGamePing((prev) => ({ ...prev, [pick.id]: { ok: res.ok, ms: res.latency_ms } }));
@@ -479,9 +488,11 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                 {pick.gameHost && !scanning && (
                   <div className="mt-1 text-[9px] font-semibold text-muted truncate">
                     {game
-                      ? game.ok
+                      ? game.unsupported
+                        ? 'игровой TCP — только в APK'
+                        : game.ok
                         ? `игра TCP ${game.ms != null && game.ms < 1 ? '<1' : game.ms} мс`
-                        : 'игра недоступна'
+                        : 'игровой TCP не проходит'
                       : 'игровой сервер…'}
                   </div>
                 )}

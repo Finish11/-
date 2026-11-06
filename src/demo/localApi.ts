@@ -9,9 +9,10 @@ import { isNativeApp, mapLimit } from '../lib/nativeBridge';
 import { importRealSubscription } from './realSubscription';
 import { encodeBase64 } from '../lib/base64';
 import { Preferences } from '@capacitor/preferences';
-import { pingNode } from '../lib/nodePing';
+import { applyNodeMeasurements, pingNode, type NodeMeasurement } from '../lib/nodePing';
 import { readNativeStateFile, writeNativeStateFile } from '../lib/nativeStateStore';
 import { encodeStatePacket, selectNewestState } from './stateStorage';
+import type { VpnProfile } from '../types';
 
 type Row = Record<string, any>;
 
@@ -445,7 +446,16 @@ async function handle(path: string, method: string, body: any): Promise<Response
 
     if (parts[1] === 'check-all' && method === 'POST') {
       if (isNativeApp()) {
-        // Настоящий TCP-connect до host:port, как в списке на экране VPN.
+        // UI уже измерил узлы с живым прогрессом: здесь только атомарно
+        // применяем и сохраняем партию, не запуская второй полный TCP-обход.
+        if (Array.isArray(body?.measurements)) {
+          state.profiles = applyNodeMeasurements(
+            state.profiles as VpnProfile[],
+            body.measurements as NodeMeasurement[]
+          );
+          return json({ profiles: state.profiles });
+        }
+        // Совместимость для старых вызовов без готовых измерений.
         const checked = await mapLimit(state.profiles, 12, async (p) => {
           const probe = await pingNode(String(p.host), Number(p.port || 443));
           return {

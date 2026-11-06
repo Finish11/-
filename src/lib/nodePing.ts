@@ -26,6 +26,48 @@ export interface NodePingResult {
 
 const PORT_TIMEOUT = 4000;
 
+export interface NodeMeasurement {
+  id: number;
+  status: NodeProbe['status'];
+  latencyMs: number | null;
+  reason: string;
+  checkedAt: string;
+}
+
+/** Применяет только известные id и валидные результаты, не затрагивая остальные узлы. */
+export function applyNodeMeasurements<
+  T extends {
+    id: number;
+    status: NodeProbe['status'] | 'unknown';
+    latency_ms: number | null;
+    notes: string;
+    last_checked_at: string | null;
+  }
+>(profiles: T[], measurements: NodeMeasurement[]): T[] {
+  const byId = new Map<number, NodeMeasurement>();
+  for (const measurement of measurements) {
+    if (!Number.isInteger(measurement.id)) continue;
+    if (!['online', 'degraded', 'blocked'].includes(measurement.status)) continue;
+    byId.set(measurement.id, measurement);
+  }
+  return profiles.map((profile) => {
+    const measurement = byId.get(profile.id);
+    if (!measurement) return profile;
+    return {
+      ...profile,
+      status: measurement.status,
+      latency_ms:
+        typeof measurement.latencyMs === 'number' &&
+        Number.isFinite(measurement.latencyMs) &&
+        measurement.latencyMs >= 0
+          ? measurement.latencyMs
+          : null,
+      notes: typeof measurement.reason === 'string' ? measurement.reason : '',
+      last_checked_at: measurement.checkedAt,
+    };
+  });
+}
+
 type TcpResult = { latencyMs: number | null; latencyUs?: number | null; error?: string };
 
 export function formatTcpLatency(ms: number | null | undefined): string {

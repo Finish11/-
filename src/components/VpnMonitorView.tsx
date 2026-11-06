@@ -38,7 +38,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { isNativeApp } from '../lib/nativeBridge';
-import { formatTcpLatency, pingAllNodes } from '../lib/nodePing';
+import { applyNodeMeasurements, formatTcpLatency, pingAllNodes } from '../lib/nodePing';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { ExpandableText } from './ui/ExpandableText';
@@ -381,11 +381,54 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
     }
   };
 
-  /** Проверка всех узлов без VPN: показываем результат по ходу проверки. */
-  const handleCheckAll = async (options?: { silent?: boolean }) => {
+  /** Массовый TCP в APK идёт с живым прогрессом и одним сохранением всей партии. */
+  const handleCheckAll = async (options?: { silent?: boolean; targets?: VpnProfile[] }) => {
+    const targetProfiles = options?.targets || profiles;
     setCheckingAll(true);
-    setCheckProgress({ done: 0, total: profiles.length });
+    setCheckProgress({ done: 0, total: targetProfiles.length });
     try {
+      if (isNativeApp()) {
+        const base = targetProfiles;
+        const results = await pingAllNodes(
+          base.map((p) => ({ host: p.host, port: Number(p.port || 443) })),
+          (done, total, result, index) => {
+            setCheckProgress({ done, total });
+            const target = base[index];
+            if (!target) return;
+            setProfiles((prev) => applyNodeMeasurements(prev, [{
+              id: target.id,
+              status: result.status,
+              latencyMs: result.latencyMs,
+              reason: result.reason || '',
+              checkedAt: new Date().toISOString(),
+            }]));
+          }
+        );
+        const checkedAt = new Date().toISOString();
+        const measurements = base.map((profile, index) => ({
+          id: profile.id,
+          status: results[index].status,
+          latencyMs: results[index].latencyMs,
+          reason: results[index].reason || '',
+          checkedAt,
+        }));
+        setProfiles((prev) => applyNodeMeasurements(prev, measurements));
+        try {
+          const saved = await apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles/check-all', {
+            method: 'POST',
+            body: JSON.stringify({ measurements }),
+          });
+          setProfiles(saved.profiles);
+        } catch {
+          showToast('warning', 'TCP измерен, но сохранить результаты не удалось. Повторите проверку.');
+        }
+        if (!options?.silent) {
+          const online = results.filter((r) => r.status === 'online' || r.status === 'degraded').length;
+          showToast('success', `Проверено ${results.length} узлов с телефона, отвечают ${online}`);
+        }
+        return;
+      }
+
       const res = await apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles/check-all', {
         method: 'POST',
       });
@@ -394,38 +437,9 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
         const online = res.profiles.filter((p) => p.status === 'online' || p.status === 'degraded').length;
         showToast('success', `Проверено ${res.profiles.length} узлов, отвечают ${online}`);
       }
-    } catch {
-      // Сервер недоступен — проверяем с телефона, чтобы кнопка не «врала».
-      if (!isNativeApp()) {
-        if (!options?.silent) showToast('error', 'Не удалось проверить узлы: нет связи с сервером');
-        return;
-      }
-      const base = profiles;
-      const results = await pingAllNodes(
-        base.map((p) => ({ host: p.host, port: Number(p.port || 443) })),
-        (done, total, result, index) => {
-          setCheckProgress({ done, total });
-          setProfiles((prev) =>
-            prev.map((p, i) =>
-              i === index
-                ? {
-                    ...p,
-                    status: result.status,
-                    latency_ms: result.latencyMs,
-                    notes: result.reason || '',
-                    last_checked_at: new Date().toISOString(),
-                  }
-                : p
-            )
-          );
-        }
-      );
-      const online = results.filter((r) => r.status === 'online' || r.status === 'degraded').length;
+    } catch (error) {
       if (!options?.silent) {
-        showToast(
-          'success',
-          `Проверено ${results.length} узлов с телефона, отвечают ${online}`
-        );
+        showToast('error', error instanceof Error ? error.message : 'Не удалось проверить узлы');
       }
     } finally {
       setCheckingAll(false);
@@ -506,7 +520,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       showToast('success', `Подписка загружена: ${res.imported} узлов`);
       setSubModalOpen(false);
       // Сразу проверяем узлы — иначе список выглядит «мёртвым» с нулями.
-      if (res.imported > 0) void handleCheckAll({ silent: true });
+      if (res.imported > 0) void handleCheckAll({ silent: true, targets: res.profiles });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить подписку';
       setSubError(message);

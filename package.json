@@ -16,7 +16,12 @@
     "android:add": "cap add android",
     "apk:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:open": "cap open android",
-    "preview:demo": "npx --yes serve . -l 4173"
+    "preview:demo": "npx --yes serve . -l 4173",
+    "typecheck:community": "tsc --noEmit -p community/tsconfig.json",
+    "test:worker": "tsx --test tests/community-worker.test.ts",
+    "test:regressions": "tsx --test tests/regressions.test.ts",
+    "test:e2e": "playwright test",
+    "deploy:community": "node scripts/deploy-community.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
@@ -37,6 +42,9 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",
+    "@cloudflare/workers-types": "5.20260730.1",
+    "@playwright/test": "1.65.0",
+    "@sparticuz/chromium": "153.0.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/cookie-parser": "^1.4.7",
     "@types/express": "^4.17.25",
@@ -46,14 +54,17 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
+    "esbuild": "0.25.12",
+    "miniflare": "4.20260730.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^6.4.4",
-    "vite-plugin-singlefile": "^2.3.4"
+    "vite-plugin-singlefile": "^2.3.4",
+    "wrangler": "4.116.0"
   },
-  "description": "ПульсСети — проверка белых списков, шатдаунов и мониторинг VPN (RU)",
+  "description": "\u041f\u0443\u043b\u044c\u0441\u0421\u0435\u0442\u0438 \u2014 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0431\u0435\u043b\u044b\u0445 \u0441\u043f\u0438\u0441\u043a\u043e\u0432, \u0448\u0430\u0442\u0434\u0430\u0443\u043d\u043e\u0432 \u0438 \u043c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433 VPN (RU)",
   "engines": {
     "node": ">=20"
   }

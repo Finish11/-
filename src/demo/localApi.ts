@@ -858,6 +858,8 @@ async function handle(path: string, method: string, body: any): Promise<Response
         is_owner: true,
         client_id: body?.client_id || null,
         sync_state: body?.client_id ? (body?.sync_state === 'local' ? 'local' : 'pending') : 'local',
+        sync_dirty: Boolean(body?.sync_dirty), sync_endpoint: body?.sync_endpoint || '',
+        updated_at: body?.updated_at || new Date().toISOString(), desired_upvote: true,
         created_at: new Date().toISOString(),
       };
       state.incidents = [incident, ...state.incidents];

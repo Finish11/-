@@ -32,15 +32,17 @@ import { shareText } from '../lib/shareText';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import {
   communitySyncChanged,
-  deleteCommunityIncident,
   getCommunityEndpoint,
-  isMissingCommunityIncident,
   newClientId,
   reconcileCommunitySync,
   setCommunityEndpoint,
+  checkCommunityHealth,
+  queueIncidentEdit,
+  queueIncidentVote,
+  queueIncidentDelete,
+  pendingCommunityCount,
+  belongsToEndpoint,
   synchronizeCommunity,
-  updateCommunityIncident,
-  voteCommunityIncident,
 } from '../lib/community';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
@@ -110,6 +112,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [communityDraft, setCommunityDraft] = useState(getCommunityEndpoint);
   const [communitySettingsOpen, setCommunitySettingsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const [lastSyncAt, setLastSyncAt] = useState('');
   const syncingRef = useRef(false);
   const syncQueuedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -179,12 +184,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       // До сетевого запроса переносим старые отчёты пользователя в очередь.
       // Встроенные демо-примеры никогда не отправляются в общую ленту.
       const withIds = snapshot.map((incident) => {
-        if (incident.demo) return incident;
-        if (!incident.client_id) {
-          return { ...incident, client_id: newClientId(), sync_state: 'pending' as const, sync_error: undefined };
-        }
-        if (incident.sync_state === 'local') {
-          return { ...incident, sync_state: 'pending' as const, sync_error: undefined };
+        if (incident.demo || !incident.is_owner || (incident.sync_endpoint && incident.sync_endpoint !== communityUrl)) return incident;
+        if (!incident.client_id || incident.sync_state === 'local' || !incident.sync_endpoint) {
+          return { ...incident, client_id: incident.client_id || newClientId(), sync_state: 'pending' as const,
+            sync_dirty: true, sync_endpoint: communityUrl, updated_at: incident.updated_at || incident.created_at, sync_error: '' };
         }
         return incident;
       });
@@ -194,24 +197,28 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         setIncidents(withIds);
         await cacheIncidents(withIds);
       }
-      const result = await synchronizeCommunity(snapshot);
+      const result = await synchronizeCommunity(snapshot, user.id);
       if (!mountedRef.current) return;
       const current = incidentsRef.current;
       if (communitySyncChanged(snapshot, current)) syncQueuedRef.current = true;
-      const next = reconcileCommunitySync(snapshot, current, result.incidents);
+      const next = reconcileCommunitySync(snapshot, current, result.incidents)
+        .filter((item) => !(snapshot.some((old) => old.id === item.id && old.pending_delete) && !result.incidents.some((row) => row.id === item.id)));
       incidentsRef.current = next;
       setIncidents(next);
       await cacheIncidents(next);
       if (!mountedRef.current) return;
+      if (result.fetched) setLastSyncAt(new Date().toISOString());
+      setSyncError(result.error || (result.failed ? `Не доставлено изменений: ${result.failed}. Повтор при связи или кнопке синхронизации.` : ''));
       if (!silent) {
         showToast(
-          result.failed > 0 ? 'warning' : 'success',
-          result.failed > 0
+          result.failed > 0 || !result.fetched ? 'warning' : 'success',
+          result.failed > 0 || !result.fetched
             ? `Синхронизировано частично: не отправлено ${result.failed}. Повторите позже.`
             : 'Общая лента сбоев синхронизирована'
         );
       }
     } catch (error) {
+      if (mountedRef.current) setSyncError(error instanceof Error ? error.message : 'Не удалось синхронизировать сбои');
       if (!silent && mountedRef.current) showToast('error', error instanceof Error ? error.message : 'Не удалось синхронизировать сбои');
     } finally {
       syncingRef.current = false;
@@ -221,18 +228,17 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         window.setTimeout(() => { void syncNow(true); }, 0);
       }
     }
-  }, [communityUrl, setIncidents, cacheIncidents, showToast]);
+  }, [communityUrl, setIncidents, cacheIncidents, showToast, user.id]);
 
   useEffect(() => {
     if (!communityUrl || !IS_DEMO_BUILD) return;
     void syncNow(true);
     const retry = () => { void syncNow(true); };
     window.addEventListener('online', retry);
-    const timer = window.setInterval(retry, 60_000);
-    return () => {
-      window.removeEventListener('online', retry);
-      window.clearInterval(timer);
-    };
+    const visible = () => { if (document.visibilityState === 'visible') retry(); };
+    const timer = window.setInterval(visible, 300_000);
+    document.addEventListener('visibilitychange', visible);
+    return () => { window.removeEventListener('online', retry); document.removeEventListener('visibilitychange', visible); window.clearInterval(timer); };
   }, [communityUrl, syncNow]);
 
   useEffect(() => {
@@ -299,32 +305,13 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     setSaving(true);
     try {
       if (editing) {
-        let reupload = false;
-        if (IS_DEMO_BUILD && communityUrl && editing.client_id && editing.sync_state !== 'local') {
-          try {
-            await updateCommunityIncident(editing.client_id, {
-              region, carrier, incident_type: incidentType, severity, status, title, description,
-              ru_sites_ok: ruSitesOk, foreign_sites_ok: foreignSitesOk,
-            });
-          } catch (error) {
-            if (!isMissingCommunityIncident(error)) throw error;
-            reupload = true;
-          }
-        }
-        const res = await apiFetch<{ incident: Incident }>(`/api/incidents/${editing.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            region, carrier, incident_type: incidentType, severity, status, title, description,
-            ru_sites_ok: ruSitesOk, foreign_sites_ok: foreignSitesOk,
-            sync_state: reupload ? 'pending' : undefined,
-            sync_error: reupload ? '' : undefined,
-          }),
-        });
-        const next = incidentsRef.current.map((x) => (x.id === editing.id ? res.incident : x));
-        incidentsRef.current = next;
-        setIncidents(next);
-        if (IS_DEMO_BUILD && communityUrl) void syncNow();
-        showToast('success', communityUrl ? 'Отчёт обновлён и отправляется на сервер' : 'Отчёт обновлён на устройстве');
+        const changed = queueIncidentEdit(editing, { region, carrier, incident_type: incidentType, severity, status,
+          title, description, ru_sites_ok: ruSitesOk, foreign_sites_ok: foreignSitesOk,
+          client_id: editing.client_id || newClientId() }, communityUrl);
+        const next = incidentsRef.current.map((x) => x.id === editing.id ? changed : x);
+        incidentsRef.current = next; setIncidents(next); await cacheIncidents(next);
+        if (communityUrl) void syncNow();
+        showToast('info', communityUrl ? 'Изменение сохранено на устройстве и ждёт доставки' : 'Изменение сохранено только на устройстве');
       } else {
         const res = await apiFetch<{ incident: Incident }>('/api/incidents', {
           method: 'POST',
@@ -339,16 +326,19 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             foreign_sites_ok: foreignSitesOk,
             client_id: IS_DEMO_BUILD ? newClientId() : undefined,
             sync_state: IS_DEMO_BUILD ? (communityUrl ? 'pending' : 'local') : undefined,
+            sync_dirty: IS_DEMO_BUILD ? true : undefined,
+            sync_endpoint: IS_DEMO_BUILD ? communityUrl : undefined,
+            updated_at: IS_DEMO_BUILD ? new Date().toISOString() : undefined,
+            desired_upvote: IS_DEMO_BUILD ? true : undefined,
           }),
         });
         const next = [res.incident, ...incidentsRef.current];
-        incidentsRef.current = next;
-        setIncidents(next);
+        incidentsRef.current = next; setIncidents(next); await cacheIncidents(next);
         if (IS_DEMO_BUILD && communityUrl) void syncNow();
         showToast(
           'success',
           IS_DEMO_BUILD
-            ? communityUrl ? 'Отчёт сохранён и отправляется на общий сервер' : 'Отчёт сохранён на устройстве'
+            ? communityUrl ? 'Отчёт сохранён на устройстве и поставлен в очередь доставки' : 'Отчёт сохранён только на устройстве'
             : 'Отчёт опубликован в сводке'
         );
       }
@@ -360,88 +350,24 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     }
   };
 
-  const handleToggleUpvote = async (inc: Incident) => {
-    const backup = incidentsRef.current;
-    const nextVoted = !inc.user_upvoted;
-    const nextCount = Math.max(0, inc.upvotes + (nextVoted ? 1 : -1));
-    const optimistic = backup.map((x) => (x.id === inc.id ? { ...x, user_upvoted: nextVoted, upvotes: nextCount } : x));
-    incidentsRef.current = optimistic;
-    setIncidents(optimistic);
-    try {
-      let res: { incident: Incident };
-      if (IS_DEMO_BUILD && communityUrl && inc.client_id && inc.sync_state !== 'local') {
-        try {
-          const remote = await voteCommunityIncident(inc.client_id);
-          res = { incident: { ...remote, id: inc.id } };
-        } catch (error) {
-          if (!isMissingCommunityIncident(error)) throw error;
-          const local = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}/upvote`, { method: 'POST' });
-          res = { incident: { ...local.incident, sync_state: 'pending', sync_error: '' } };
-        }
-      } else {
-        res = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}/upvote`, { method: 'POST' });
-      }
-      const next = incidentsRef.current.map((x) => (x.id === inc.id ? res.incident : x));
-      incidentsRef.current = next;
-      setIncidents(next);
-      if (IS_DEMO_BUILD) await cacheIncidents(next);
-      if (IS_DEMO_BUILD && communityUrl && res.incident.sync_state !== 'synced') void syncNow();
-    } catch {
-      incidentsRef.current = backup;
-      setIncidents(backup);
-      showToast('error', 'Не удалось обновить подтверждение');
-    }
+  const persistLocal = async (next: Incident[]) => {
+    incidentsRef.current = next; setIncidents(next);
+    try { await cacheIncidents(next); } catch { setSyncError('Очередь не сохранена. Не закрывайте приложение и повторите действие.'); return; }
+    if (communityUrl) void syncNow();
   };
-
-  const handleToggleResolved = async (inc: Incident) => {
-    const backup = incidentsRef.current;
-    const nextStatus: Incident['status'] = inc.status === 'active' ? 'resolved' : 'active';
-    const optimistic = backup.map((x) => (x.id === inc.id ? { ...x, status: nextStatus } : x));
-    incidentsRef.current = optimistic;
-    setIncidents(optimistic);
-    try {
-      let reupload = false;
-      if (IS_DEMO_BUILD && communityUrl && inc.client_id && inc.sync_state !== 'local') {
-        try {
-          await updateCommunityIncident(inc.client_id, { status: nextStatus });
-        } catch (error) {
-          if (!isMissingCommunityIncident(error)) throw error;
-          reupload = true;
-        }
-      }
-      const res = await apiFetch<{ incident: Incident }>(`/api/incidents/${inc.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus, sync_state: reupload ? 'pending' : undefined, sync_error: reupload ? '' : undefined }),
-      });
-      const next = incidentsRef.current.map((x) => (x.id === inc.id ? res.incident : x));
-      incidentsRef.current = next;
-      setIncidents(next);
-      if (IS_DEMO_BUILD) await cacheIncidents(next);
-      if (IS_DEMO_BUILD && communityUrl && res.incident.sync_state !== 'synced') void syncNow();
-      showToast('success', nextStatus === 'resolved' ? 'Отмечено: связь восстановлена' : 'Отчёт снова активен');
-    } catch {
-      incidentsRef.current = backup;
-      setIncidents(backup);
-      showToast('error', 'Ошибка смены статуса');
-    }
+  const handleToggleUpvote = (inc: Incident) => {
+    if (inc.demo) { showToast('info', 'Это пример, за него нельзя голосовать'); return; }
+    void persistLocal(incidentsRef.current.map((x) => x.id === inc.id ? queueIncidentVote(x, communityUrl) : x));
   };
-
-  const handleDelete = async (inc: Incident) => {
-    const backup = incidentsRef.current;
-    const next = backup.filter((x) => x.id !== inc.id);
-    incidentsRef.current = next;
-    setIncidents(next);
-    try {
-      if (IS_DEMO_BUILD && communityUrl && inc.client_id && inc.sync_state !== 'local') {
-        await deleteCommunityIncident(inc.client_id);
-      }
-      await apiFetch(`/api/incidents/${inc.id}`, { method: 'DELETE' });
-      showToast('info', communityUrl && inc.sync_state === 'synced' ? 'Отчёт удалён на устройстве и сервере' : 'Отчёт удалён');
-    } catch {
-      incidentsRef.current = backup;
-      setIncidents(backup);
-      showToast('error', 'Не удалось удалить отчёт');
-    }
+  const handleToggleResolved = (inc: Incident) => {
+    if (!inc.is_owner) return;
+    void persistLocal(incidentsRef.current.map((x) => x.id === inc.id ? queueIncidentEdit(x, { status: inc.status === 'active' ? 'resolved' : 'active' }, communityUrl) : x));
+  };
+  const handleDelete = (inc: Incident) => {
+    if (!inc.is_owner) return;
+    void persistLocal(!communityUrl || inc.sync_state === 'local' ? incidentsRef.current.filter((x) => x.id !== inc.id)
+      : incidentsRef.current.map((x) => x.id === inc.id ? queueIncidentDelete(x, communityUrl) : x));
+    showToast('info', communityUrl ? 'Удаление сохранено и ждёт доставки' : 'Отчёт удалён с устройства');
   };
 
   const handleShare = async (inc: Incident) => {
@@ -462,46 +388,45 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     }
   };
 
-  const saveCommunitySettings = () => {
+  const saveCommunitySettings = async () => {
     if (syncingRef.current) {
       showToast('info', 'Дождитесь завершения синхронизации перед сменой сервера');
       return;
     }
     try {
-      const normalized = setCommunityEndpoint(communityDraft);
-      setCommunityUrl(normalized);
-      setCommunityDraft(normalized);
-      setCommunitySettingsOpen(false);
-      showToast(
-        'success',
-        normalized ? 'Общий сервер подключён — начинаем синхронизацию' : 'Общий сервер отключён; новые отчёты останутся на устройстве'
-      );
+      setConnecting(true);
+      const normalized = communityDraft.trim(); if (normalized) await checkCommunityHealth(normalized);
+      const saved = await setCommunityEndpoint(normalized);
+      setCommunityUrl(saved); setCommunityDraft(saved); setCommunitySettingsOpen(false); setSyncError('');
+      showToast('success', saved ? 'Сервер проверен и подключён; начинаем доставку очереди' : 'Общий сервер отключён; новые отчёты останутся на устройстве');
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Некорректный адрес сервера');
-    }
+    } finally { setConnecting(false); }
   };
 
-  const activeList = incidents.filter((i) => i.status === 'active');
+  const visibleIncidents = incidents.filter((inc) => !inc.pending_delete && (!inc.sync_endpoint || !communityUrl || belongsToEndpoint(inc, communityUrl)));
+  const pendingSync = pendingCommunityCount(visibleIncidents);
+  const activeList = visibleIncidents.filter((i) => i.status === 'active');
   const whitelistRegionsCount = new Set(
     activeList.filter((i) => i.incident_type === 'whitelist').map((i) => i.region)
   ).size;
   const shutdownRegionsCount = new Set(
     activeList.filter((i) => i.incident_type === 'mobile_shutdown').map((i) => i.region)
   ).size;
-  const totalUpvotes = incidents.reduce((sum, i) => sum + i.upvotes, 0);
+  const totalUpvotes = visibleIncidents.reduce((sum, i) => sum + i.upvotes, 0);
 
   const filtered = useMemo(
     () =>
-      incidents.filter((inc) => {
+      visibleIncidents.filter((inc) => {
         if (regionFilter !== 'all' && inc.region !== regionFilter) return false;
         if (carrierFilter !== 'all' && inc.carrier !== carrierFilter) return false;
         if (statusFilter !== 'all' && inc.status !== statusFilter) return false;
         return true;
       }),
-    [incidents, regionFilter, carrierFilter, statusFilter]
+    [visibleIncidents, regionFilter, carrierFilter, statusFilter]
   );
 
-  const uniqueRegionsInFeed = Array.from(new Set(incidents.map((i) => i.region)));
+  const uniqueRegionsInFeed = Array.from(new Set(visibleIncidents.map((i) => i.region)));
 
   return (
     <div className="space-y-4">
@@ -526,7 +451,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           {IS_DEMO_BUILD && (
             <>
               {communityUrl && (
-                <Button variant="outline" size="md" loading={syncing} icon={<RefreshCw className="w-4 h-4" />} onClick={() => void syncNow()}>
+                <Button variant="outline" size="md" loading={syncing || connecting} icon={<RefreshCw className="w-4 h-4" />} onClick={() => void syncNow()}>
                   Синхронизировать
                 </Button>
               )}
@@ -543,7 +468,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           {communityUrl ? <Cloud className="w-4.5 h-4.5 shrink-0" style={{ color: 'rgb(var(--success))' }} /> : <CloudOff className="w-4.5 h-4.5 shrink-0 text-muted" />}
           <div className="min-w-0 flex-1 text-[11px] leading-relaxed text-dim">
             {communityUrl ? (
-              <>Общий сервер: <span className="font-mono break-all">{communityUrl}</span>. Статус каждого отчёта указан в карточке.</>
+              <>Общий сервер: <span className="font-mono break-all">{communityUrl}</span>.
+                {lastSyncAt ? ` Обновлено ${new Date(lastSyncAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}.` : ' Проверяем соединение.'}
+                {pendingSync ? ` Ждут доставки: ${pendingSync}.` : ' Очередь пуста.'}
+                {syncError && <div className="mt-1" style={{ color: 'rgb(var(--danger))' }}>{syncError}</div>}</>
             ) : (
               <>Без сервера владелец не получит отчёты автоматически. Можно сохранить их на устройстве и отправить вручную через «Поделиться».</>
             )}
@@ -650,7 +578,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             className={input}
             style={inputStyle}
           >
-            <option value="all">Все регионы ({incidents.length})</option>
+            <option value="all">Все регионы ({visibleIncidents.length})</option>
             {uniqueRegionsInFeed.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -761,7 +689,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                         color: inc.sync_state === 'error' ? 'rgb(var(--danger))' : inc.sync_state === 'synced' ? 'rgb(var(--success))' : 'var(--text-muted)',
                       }}
                     >
-                      {inc.sync_state === 'synced' ? 'в общей ленте' : inc.sync_state === 'error' ? 'не отправлен' : inc.sync_state === 'pending' ? 'ожидает отправки' : 'на устройстве'}
+                      {inc.pending_delete ? 'ждёт удаления' : inc.vote_dirty ? 'голос ждёт доставки' : inc.sync_state === 'synced' && !inc.sync_dirty ? 'доставлено' : inc.sync_state === 'error' ? 'не доставлено' : 'ждёт доставки'}
                     </span>
                   )}
                   {resolved && (
@@ -815,7 +743,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                       variant={inc.user_upvoted ? 'soft' : 'outline'}
                       size="sm"
                       icon={<ThumbsUp className="w-3.5 h-3.5" />}
-                      onClick={() => handleToggleUpvote(inc)}
+                      onClick={() => void handleToggleUpvote(inc)}
                     >
                       У меня так же · {inc.upvotes}
                     </Button>
@@ -832,7 +760,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     <div className="ml-auto flex items-center gap-0.5">
                       <button
                         type="button"
-                        onClick={() => handleToggleResolved(inc)}
+                        onClick={() => void handleToggleResolved(inc)}
                         title={resolved ? 'Вернуть в активные' : 'Отметить решённым'}
                         className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--success))]"
                       >
@@ -1153,7 +1081,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         footer={
           <>
             {communityDraft && <Button variant="ghost" block onClick={() => setCommunityDraft('')}>Отключить сервер</Button>}
-            <Button variant="primary" block onClick={saveCommunitySettings}>Сохранить и синхронизировать</Button>
+            <Button variant="primary" block loading={connecting} onClick={() => void saveCommunitySettings()}>Проверить и подключить</Button>
           </>
         }
       >

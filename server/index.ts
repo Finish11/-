@@ -3,7 +3,6 @@ import http from 'node:http';
 import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import fs from 'node:fs';
-import crypto from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 import { db, seedDefaultSitesForUser } from './db.ts';
 import {
@@ -16,6 +15,8 @@ import {
 } from './auth.ts';
 import { inspectClientConnection, probeVpnEndpoint, tcpSiteProbe } from './networkProbe.ts';
 import { registerVpnRoutes } from './vpnRoutes.ts';
+import { handleCommunityRequest } from '../community/handler.ts';
+import { sqliteCommunityStore } from './communityStore.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
@@ -94,6 +95,7 @@ async function startServer() {
                 CASE WHEN u.user_id IS NOT NULL THEN 1 ELSE 0 END AS user_upvoted
          FROM incidents i
          LEFT JOIN incident_upvotes u ON u.incident_id = i.id AND u.user_id = ?
+         WHERE COALESCE(i.community, 0) = 0
          ORDER BY CASE WHEN i.status = 'active' THEN 0 ELSE 1 END, i.created_at DESC`
       )
       .all(userId) as Array<Record<string, unknown>>;
@@ -878,181 +880,22 @@ async function startServer() {
   });
 
   // ==================== PUBLIC COMMUNITY INCIDENT SYNC ====================
-  app.use('/api/community', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type,X-Device-Id,X-Device-Secret');
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(204);
-      return;
+  // Тот же handler и SQL-контракт, что у Cloudflare Worker/D1.
+  const communityStore = sqliteCommunityStore(db);
+  app.use('/api/community', async (req, res) => {
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (Array.isArray(value)) value.forEach((item) => headers.append(key, item));
+      else if (value !== undefined) headers.set(key, String(value));
     }
-    next();
-  });
-
-  const communityDeviceHash = (req: express.Request): string | null => {
-    const id = String(req.headers['x-device-id'] || '');
-    const secret = String(req.headers['x-device-secret'] || '');
-    if (!/^[a-f0-9]{32}$/.test(id) || !/^[a-f0-9]{64}$/.test(secret)) return null;
-    return crypto.createHash('sha256').update(`${id}:${secret}`).digest('hex');
-  };
-  const requireCommunityDevice = (req: express.Request, res: express.Response): string | null => {
-    const hash = communityDeviceHash(req);
-    if (!hash) res.status(401).json({ error: 'Нужен действительный идентификатор устройства' });
-    return hash;
-  };
-  const communityText = (value: unknown, max: number): string => String(value || '').trim().slice(0, max);
-  const communityJson = (row: Record<string, unknown>, deviceHash: string, voted: boolean) => ({
-    ...row,
-    ru_sites_ok: Boolean(row.ru_sites_ok),
-    foreign_sites_ok: Boolean(row.foreign_sites_ok),
-    user_upvoted: voted,
-    is_owner: row.device_hash === deviceHash,
-    device_hash: undefined,
-    sync_state: 'synced',
-  });
-
-  app.get('/api/community/incidents', (req, res) => {
-    const deviceHash = communityDeviceHash(req);
-    if (!deviceHash) {
-      res.status(401).json({ error: 'Нужен действительный идентификатор устройства' });
-      return;
-    }
-    const rows = db.prepare(`SELECT i.*,
-        CASE WHEN u.device_hash IS NOT NULL THEN 1 ELSE 0 END AS voted
-        FROM incidents i LEFT JOIN community_upvotes u
-          ON u.incident_id = i.id AND u.device_hash = ?
-        WHERE i.community = 1
-        ORDER BY CASE WHEN i.status = 'active' THEN 0 ELSE 1 END, i.created_at DESC LIMIT 500`
-    ).all(deviceHash) as Array<Record<string, unknown>>;
-    res.json({ incidents: rows.map((row) => communityJson(row, deviceHash, Boolean(row.voted))) });
-  });
-
-  app.post('/api/community/incidents', (req, res) => {
-    const deviceHash = requireCommunityDevice(req, res);
-    if (!deviceHash) return;
-    const b = req.body || {};
-    const clientId = communityText(b.client_id, 40);
-    if (!/^inc_[a-f0-9]{32}$/.test(clientId)) {
-      res.status(400).json({ error: 'Некорректный ID отчёта' });
-      return;
-    }
-    const existing = db.prepare('SELECT * FROM incidents WHERE client_id = ? AND community = 1').get(clientId) as Record<string, unknown> | undefined;
-    if (existing) {
-      if (existing.device_hash !== deviceHash) {
-        res.status(409).json({ error: 'Такой ID отчёта уже используется другим устройством' });
-        return;
-      }
-      const voted = db.prepare('SELECT 1 FROM community_upvotes WHERE incident_id = ? AND device_hash = ?').get(existing.id, deviceHash);
-      res.json({ incident: communityJson(existing, deviceHash, Boolean(voted)) });
-      return;
-    }
-    const region = communityText(b.region, 100);
-    const carrier = communityText(b.carrier, 100);
-    const title = communityText(b.title, 180);
-    const description = communityText(b.description, 4000);
-    if (!region || !carrier || !title) {
-      res.status(400).json({ error: 'Заполните регион, оператора и заголовок отчёта' });
-      return;
-    }
-    const type = ['whitelist', 'mobile_shutdown', 'dpi_wave', 'vpn_block', 'cdn_block'].includes(b.incident_type) ? b.incident_type : 'whitelist';
-    const severity = ['critical', 'high', 'moderate'].includes(b.severity) ? b.severity : 'moderate';
-    const now = new Date().toISOString();
-    const initiallyVoted = b.user_upvoted === undefined ? true : Boolean(b.user_upvoted);
-    const tx = db.transaction(() => {
-      const inserted = db.prepare(`INSERT INTO incidents (
-          user_id, author_name, region, carrier, incident_type, severity, status,
-          title, description, upvotes, ru_sites_ok, foreign_sites_ok, created_at,
-          client_id, device_hash, community
-        ) VALUES (NULL, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, 1)`
-      ).run(
-        `Участник ${String(req.headers['x-device-id']).slice(0, 4)}`,
-        region, carrier, type, severity, title, description, initiallyVoted ? 1 : 0,
-        b.ru_sites_ok ? 1 : 0, b.foreign_sites_ok ? 1 : 0, now, clientId, deviceHash
-      );
-      const id = Number(inserted.lastInsertRowid);
-      if (initiallyVoted) {
-        db.prepare('INSERT INTO community_upvotes (incident_id, device_hash) VALUES (?, ?)').run(id, deviceHash);
-      }
-      return id;
+    const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'DELETE';
+    const request = new Request(`http://community.local${req.originalUrl}`, {
+      method: req.method, headers, body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
     });
-    const id = tx();
-    const row = db.prepare('SELECT * FROM incidents WHERE id = ?').get(id) as Record<string, unknown>;
-    res.status(201).json({ incident: communityJson(row, deviceHash, initiallyVoted) });
-  });
-
-  app.patch('/api/community/incidents/:clientId', (req, res) => {
-    const deviceHash = requireCommunityDevice(req, res);
-    if (!deviceHash) return;
-    const existing = db.prepare('SELECT * FROM incidents WHERE client_id = ? AND community = 1').get(req.params.clientId) as Record<string, unknown> | undefined;
-    if (!existing || existing.device_hash !== deviceHash) {
-      res.status(404).json({ error: 'Отчёт не найден или принадлежит другому устройству' });
-      return;
-    }
-    const b = req.body || {};
-    const requestedType = String(b.incident_type ?? existing.incident_type);
-    const requestedSeverity = String(b.severity ?? existing.severity);
-    const nextType = ['whitelist', 'mobile_shutdown', 'dpi_wave', 'vpn_block', 'cdn_block'].includes(requestedType)
-      ? requestedType : existing.incident_type;
-    const nextSeverity = ['critical', 'high', 'moderate'].includes(requestedSeverity)
-      ? requestedSeverity : existing.severity;
-    const nextStatus = b.status === undefined ? existing.status : b.status === 'resolved' ? 'resolved' : 'active';
-    db.prepare(`UPDATE incidents SET region = ?, carrier = ?, incident_type = ?, severity = ?,
-        status = ?, title = ?, description = ?, ru_sites_ok = ?, foreign_sites_ok = ? WHERE id = ?`
-    ).run(
-      communityText(b.region ?? existing.region, 100) || existing.region,
-      communityText(b.carrier ?? existing.carrier, 100) || existing.carrier,
-      nextType,
-      nextSeverity,
-      nextStatus,
-      communityText(b.title ?? existing.title, 180) || existing.title,
-      communityText(b.description ?? existing.description, 4000),
-      b.ru_sites_ok === undefined ? existing.ru_sites_ok : (b.ru_sites_ok ? 1 : 0),
-      b.foreign_sites_ok === undefined ? existing.foreign_sites_ok : (b.foreign_sites_ok ? 1 : 0),
-      existing.id
-    );
-    const row = db.prepare('SELECT * FROM incidents WHERE id = ?').get(existing.id) as Record<string, unknown>;
-    const voted = db.prepare('SELECT 1 FROM community_upvotes WHERE incident_id = ? AND device_hash = ?').get(existing.id, deviceHash);
-    res.json({ incident: communityJson(row, deviceHash, Boolean(voted)) });
-  });
-
-  app.delete('/api/community/incidents/:clientId', (req, res) => {
-    const deviceHash = requireCommunityDevice(req, res);
-    if (!deviceHash) return;
-    const existing = db.prepare('SELECT id, device_hash FROM incidents WHERE client_id = ? AND community = 1').get(req.params.clientId) as Record<string, unknown> | undefined;
-    if (!existing) {
-      res.status(404).json({ error: 'Отчёт не найден' });
-      return;
-    }
-    if (existing.device_hash !== deviceHash) {
-      res.status(403).json({ error: 'Отчёт принадлежит другому устройству' });
-      return;
-    }
-    db.prepare('DELETE FROM incidents WHERE id = ?').run(existing.id);
-    res.json({ ok: true });
-  });
-
-  app.post('/api/community/incidents/:clientId/upvote', (req, res) => {
-    const deviceHash = requireCommunityDevice(req, res);
-    if (!deviceHash) return;
-    const existing = db.prepare('SELECT * FROM incidents WHERE client_id = ? AND community = 1').get(req.params.clientId) as Record<string, unknown> | undefined;
-    if (!existing) {
-      res.status(404).json({ error: 'Отчёт не найден' });
-      return;
-    }
-    const tx = db.transaction(() => {
-      const voted = db.prepare('SELECT 1 FROM community_upvotes WHERE incident_id = ? AND device_hash = ?').get(existing.id, deviceHash);
-      if (voted) {
-        db.prepare('DELETE FROM community_upvotes WHERE incident_id = ? AND device_hash = ?').run(existing.id, deviceHash);
-        db.prepare('UPDATE incidents SET upvotes = MAX(0, upvotes - 1) WHERE id = ?').run(existing.id);
-        return false;
-      }
-      db.prepare('INSERT INTO community_upvotes (incident_id, device_hash) VALUES (?, ?)').run(existing.id, deviceHash);
-      db.prepare('UPDATE incidents SET upvotes = upvotes + 1 WHERE id = ?').run(existing.id);
-      return true;
-    });
-    const voted = tx();
-    const row = db.prepare('SELECT * FROM incidents WHERE id = ?').get(existing.id) as Record<string, unknown>;
-    res.json({ incident: communityJson(row, deviceHash, voted) });
+    const response = await handleCommunityRequest(request, communityStore, req.ip || 'local');
+    res.status(response.status);
+    response.headers.forEach((value, key) => res.setHeader(key, value));
+    res.send(await response.text());
   });
 
   // ==================== MANUAL APP CONFIRMATIONS ====================
@@ -1120,6 +963,7 @@ async function startServer() {
                 CASE WHEN u.user_id IS NOT NULL THEN 1 ELSE 0 END AS user_upvoted
          FROM incidents i
          LEFT JOIN incident_upvotes u ON u.incident_id = i.id AND u.user_id = ?
+         WHERE COALESCE(i.community, 0) = 0
          ORDER BY CASE WHEN i.status = 'active' THEN 0 ELSE 1 END, i.created_at DESC`
       )
       .all(userId) as Array<Record<string, unknown>>;
@@ -1197,6 +1041,10 @@ async function startServer() {
       res.status(404).json({ error: 'Отчёт не найден' });
       return;
     }
+    if (Number(existing.community || 0) === 1) {
+      res.status(404).json({ error: 'Отчёт не найден' });
+      return;
+    }
     if (existing.user_id !== userId) {
       res.status(403).json({ error: 'Редактировать можно только собственные отчёты' });
       return;
@@ -1241,7 +1089,7 @@ async function startServer() {
       | Record<string, unknown>
       | undefined;
 
-    if (!existing) {
+    if (!existing || Number(existing.community || 0) === 1) {
       res.status(404).json({ error: 'Отчёт не найден' });
       return;
     }

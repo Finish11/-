@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { COMMUNITY_SCHEMA } from './communityStore.ts';
 
 const ROOT_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT_DIR, 'data');
@@ -213,6 +214,7 @@ addColumnIfMissing('incidents', 'client_id', 'TEXT');
 addColumnIfMissing('incidents', 'device_hash', 'TEXT');
 addColumnIfMissing('incidents', 'community', 'INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS community_incident_client ON incidents(client_id) WHERE client_id IS NOT NULL');
+db.exec(COMMUNITY_SCHEMA);
 
 export interface DefaultSiteSeed {
   name: string;

@@ -21,6 +21,11 @@
 | `server/networkProbe.ts` | инспекция соединения, `/api/net/probe`, TCP-пинг, `mapLimit` |
 | `server/subscription.ts` | парсер подписок: VLESS/Reality, VMess, Trojan, SS, Hysteria2, WG, Clash |
 | `server/vpnRoutes.ts` | подписки, узлы, импорт, QR, пинг |
+| `server/communityStore.ts` | SQLite-адаптер общего API и миграция старых community-отчётов |
+| `community/handler.ts` | единый HTTP-handler Express/SQLite и Worker/D1 |
+| `community/contract.ts` | валидация, курсор, публичная проекция без секретов |
+| `community/worker.ts` | Cloudflare Worker entrypoint + D1 adapter |
+| `community/migrations/` | схема D1/SQLite: отчёты, голоса, tombstones, rate limits |
 
 ## Фронтенд
 
@@ -56,7 +61,10 @@
 
 | Файл | Роль |
 |---|---|
-| `.github/workflows/ci.yml` | typecheck + build + build:demo на каждый push |
+| `.github/workflows/ci.yml` | typecheck + core/regressions/worker + audit + build + demo + e2e |
+| `.github/workflows/deploy-community.yml` | ручной деплой Workers + D1 с секретами владельца |
+| `scripts/deploy-community.mjs` | create/reuse D1, migrations, deploy, health-check |
+| `playwright.config.ts`, `tests/e2e/` | mobile/desktop smoke через bundled Chromium |
 | `.github/workflows/deploy-demo-pages.yml` | публикация демо на GitHub Pages |
 | `.github/workflows/android-apk.yml` | сборка debug APK на раннере: артефакт + публикация в Releases (тег `android-latest`) |
 | `capacitor.config.ts` | Capacitor: `appId`, `appName`, `webDir: demo-dist`, `server.url` для боевого режима |
@@ -69,7 +77,10 @@
 
 ## Проверки
 
-`npm run typecheck` · `npm run build` · `npm run build:demo` — все три должны быть зелёными.
+`npm run typecheck` · `npm run typecheck:community` · `npm run test:core` ·
+`npm run test:regressions` · `npm run test:worker` · `npm run build` ·
+`npm run build:demo` · `npm run test:e2e` — должны быть зелёными.
+`npm audit --omit=dev` не должен находить известных уязвимостей.
 
 Android: `npm run android:sync` (без SDK) → `npm run apk:debug` (нужны JDK 21 и Android SDK).
 APK в CI собирает `.github/workflows/android-apk.yml`.

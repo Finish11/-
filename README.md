@@ -20,8 +20,11 @@
 - Результат привязан к сервису, выбранному VPN-узлу и внешнему IP. Совпадение IP другого узла показано отдельно и не даёт этому узлу лишний голос в рейтинге; отзыв о VPN не переносится на прямое подключение.
 - Рекомендации VPN учитывают последние подтверждения по каждому сервису, покрытие, отказы, статус и latency, а не только TCP-пинг.
 - Фактическая web-проба больше не подменяется сервисным вердиктом: «Сайты», сканер и быстрые карточки используют согласованные `network_status/network_latency_ms`.
-- «Сбои» получили общий HTTPS API, очередь доставки, идемпотентный `client_id`, синхронизацию без дублей, объединение ленты, голоса и server-side CRUD своих отчётов. Встроенные демо-примеры не отправляются.
-- Состояние каждого отчёта видно явно: «на устройстве», «ожидает отправки», «не отправлен» или «в общей ленте». Изменения во время синхронизации не перезаписываются поздним ответом сервера.
+- «Сбои» получили общий HTTPS API, durable-очередь доставки, идемпотентный `client_id`, синхронизацию без дублей, объединение ленты, голоса и server-side CRUD своих отчётов. Встроенные демо-примеры не отправляются.
+- Состояние каждого отчёта видно явно: «ждёт доставки», «не доставлено», «доставлено», «ждёт удаления». Изменения во время синхронизации не перезаписываются поздним ответом сервера; удалённые отчёты защищены tombstone от повторного создания.
+- Общий API можно развернуть в Cloudflare Workers + D1 одним workflow. Express/SQLite и Worker/D1 используют один контракт и один handler; локальный сервер не объявляется развёрнутым автоматически.
+- TCP-замеры узлов используют медиану трёх попыток без DNS. В рейтинг скорости попадают только подтверждённые прямые TCP-connect ≥1 мс; VPN/unknown/браузерный relay не выдаются за чистый RTT.
+- Сайты проверяются единым HTTP-путём с fallback на главную страницу и одним повтором при отсутствии ответа. HTTP 403/нераспознанный HTML не считается открытой страницей, но и не доказывает подмену провайдером; поздний ответ не перетирает свежий замер.
 
 ## Что нового в 1.5.5
 
@@ -233,6 +236,19 @@ docker compose up -d --build
 # приложение на http://localhost:3000, база в томе pulsenet-data
 ```
 
+**Cloudflare Workers + D1 (общие «Сбои», бесплатный тариф при небольших объёмах)**
+
+1. В GitHub Secrets задайте `CLOUDFLARE_API_TOKEN` (Workers Scripts Edit + D1 Edit) и
+   `CLOUDFLARE_ACCOUNT_ID`. Токен не попадает в репозиторий и APK.
+2. Запустите workflow **Deploy community API** (`workflow_dispatch`). Он создаёт/переиспользует
+   D1 `pulsenet-community`, применяет миграции, публикует Worker и проверяет `/api/community/health`.
+3. Скопируйте напечатанный `https://…workers.dev` в repository variable
+   `PULSENET_COMMUNITY_API_URL` для сборки APK или подключите адрес в «Сбои» на устройствах.
+
+Локально: `CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy:community`.
+Без секретов скрипт отказывается выполнять деплой. Проверка контракта без аккаунта:
+`npm run typecheck:community && npm run test:worker`.
+
 **Любой Node-хостинг (Railway, Render, Fly.io, VPS)**
 
 1. Build: `npm ci && npm run build`
@@ -325,7 +341,7 @@ keytool -genkeypair -v -keystore pulsenet-release.jks -alias pulsenet \
 (`CapacitorHttp`), поэтому CORS не мешает: вставляйте любой URL подписки — распознаются
 все узлы (VLESS/Reality, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, WireGuard, Clash),
 подтягивается трафик и срок из заголовка `Subscription-Userinfo`. Кнопка «Проверить»
-делает настоящий TCP-connect до каждого узла (12 параллельно) и ставит статус
+делает настоящий TCP-connect до каждого узла (4 параллельно, медиана трёх попыток) и ставит статус
 online/degraded/blocked с пингом. Главный экран выполняет реальные пробы всех включённых
 сайтов через нативный HTTP; заглушки и подмена TLS не засчитываются как доступность.
 VPN-туннель приложение не поднимает.
@@ -376,9 +392,12 @@ POST /api/vpn-profiles/import   POST /api/vpn-profiles/check-all
 GET  /api/vpn-profiles/:id/qr   POST /api/vpn-profiles/:id/ping
 GET/POST /api/incidents    PATCH|DELETE /api/incidents/:id  POST /api/incidents/:id/upvote
 GET/POST /api/app-confirmations — ручные результаты приложений для VPN/IP
-GET/POST /api/community/incidents — общая device-based лента APK
-PATCH|DELETE /api/community/incidents/:clientId
-POST /api/community/incidents/:clientId/upvote
+GET  /api/community/health — проверка совместимости сервера
+GET  /api/community/incidents?limit=200&cursor=… — общая device-based лента APK
+POST /api/community/incidents — идемпотентное создание по client_id
+PATCH|DELETE /api/community/incidents/:clientId — только своё устройство; DELETE оставляет tombstone
+PUT  /api/community/incidents/:clientId/vote — идемпотентный голос { voted }
+POST /api/community/incidents/:clientId/upvote — совместимость со старыми APK (toggle)
 
 POST /api/network/inspect  — IP, страна, оператор, ASN, признаки VPN по эвристикам
 POST /api/net/probe        — серверный релей замера { url } → latency/status

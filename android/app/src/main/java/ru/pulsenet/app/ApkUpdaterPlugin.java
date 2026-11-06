@@ -3,6 +3,7 @@ package ru.pulsenet.app;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.net.ConnectivityManager;
@@ -19,9 +20,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.util.Base64;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -80,7 +89,7 @@ public class ApkUpdaterPlugin extends Plugin {
                     synchronized (networkLock) {
                         defaultNetwork = network;
                         // Network ID отличает и смену двух сетей с одинаковым транспортом.
-                        String signature = network.toString() + "|1|" + kind + "|" + vpn;
+                        String signature = network.toString() + "|1|" + kind + "|" + vpn + "|" + vpnPackage(caps);
                         if (signature.equals(lastNetworkSignature)) return;
                         lastNetworkSignature = signature;
                         networkSequence += 1;
@@ -88,6 +97,8 @@ public class ApkUpdaterPlugin extends Plugin {
                         event.put("kind", kind);
                         event.put("vpn", vpn);
                         event.put("carrier", carrier);
+                        event.put("vpnPackage", vpnPackage(caps));
+                        event.put("vpnAppName", vpnAppName(caps));
                         event.put("sequence", networkSequence);
                     }
                     // Не держим networkLock во время вызова моста Capacitor.
@@ -335,6 +346,23 @@ public class ApkUpdaterPlugin extends Plugin {
         }
     }
 
+    /** Владелец системного VPN — имя клиента, НЕ выбранный внутри него сервер. */
+    private String vpnPackage(NetworkCapabilities caps) {
+        if (caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || Build.VERSION.SDK_INT < 29) return "";
+        try {
+            String[] packages = getContext().getPackageManager().getPackagesForUid(caps.getOwnerUid());
+            if (packages == null) return "";
+            for (String name : packages) if (name != null && !name.equals(getContext().getPackageName())) return name;
+        } catch (Exception ignored) { }
+        return "";
+    }
+    private String vpnAppName(NetworkCapabilities caps) {
+        String name = vpnPackage(caps); if (name.isEmpty()) return "";
+        try { PackageManager pm = getContext().getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(name, 0)).toString();
+        } catch (Exception ignored) { return name; }
+    }
+
     private String transportKind(NetworkCapabilities caps) {
         if (caps == null) return "unknown";
         // Проверяем реальный транспорт до TRANSPORT_VPN: иначе мобильный
@@ -366,6 +394,8 @@ public class ApkUpdaterPlugin extends Plugin {
             ret.put("kind", connected ? kind : "none");
             ret.put("vpn", connected && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
             ret.put("carrier", connected ? carrierName(kind) : "");
+            ret.put("vpnPackage", connected ? vpnPackage(caps) : "");
+            ret.put("vpnAppName", connected ? vpnAppName(caps) : "");
             synchronized (networkLock) {
                 ret.put("sequence", networkSequence);
             }
@@ -468,15 +498,29 @@ public class ApkUpdaterPlugin extends Plugin {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                long started = System.nanoTime();
                 Socket socket = new Socket();
                 try {
-                    socket.connect(new InetSocketAddress(host, port), timeout);
+                    ConnectivityManager manager = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+                    Network before = manager == null ? null : manager.getActiveNetwork();
+                    NetworkCapabilities beforeCaps = before == null ? null : manager.getNetworkCapabilities(before);
+                    long dnsStarted = System.nanoTime();
+                    InetSocketAddress address = new InetSocketAddress(host, port);
+                    long dnsUs = Math.max(0L, (System.nanoTime() - dnsStarted) / 1000L);
+                    if (address.isUnresolved()) throw new java.net.UnknownHostException("DNS: адрес не найден");
+                    long started = System.nanoTime();
+                    if (before != null) socket = before.getSocketFactory().createSocket();
+                    socket.connect(address, timeout);
                     long latencyUs = Math.max(0L, (System.nanoTime() - started) / 1000L);
+                    Network after = manager == null ? null : manager.getActiveNetwork();
+                    NetworkCapabilities afterCaps = after == null ? null : manager.getNetworkCapabilities(after);
+                    boolean changed = before == null || !before.equals(after) || beforeCaps == null || afterCaps == null
+                        || beforeCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != afterCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                        || !vpnPackage(beforeCaps).equals(vpnPackage(afterCaps));
                     JSObject ret = new JSObject();
-                    ret.put("ok", true);
-                    ret.put("latency_us", latencyUs);
-                    ret.put("latency_ms", latencyUs / 1000.0d);
+                    ret.put("ok", !changed); ret.put("latency_us", latencyUs); ret.put("latency_ms", latencyUs / 1000.0d);
+                    ret.put("dns_us", dnsUs); ret.put("vpn_package", vpnPackage(beforeCaps));
+                    ret.put("route", afterCaps != null && afterCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ? "vpn" : "direct");
+                    if (changed) ret.put("error", "Сеть изменилась во время TCP-пробы — повторите");
                     call.resolve(ret);
                 } catch (Exception e) {
                     JSObject ret = new JSObject();

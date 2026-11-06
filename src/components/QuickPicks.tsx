@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, ExternalLink, GripVertical, Info, Loader2, Plus, Smartphone, Sparkles, ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { isNativeApp, openInstalledApp as launchInstalledApp, tcpPing } from '../lib/nativeBridge';
 import { apiFetch } from '../lib/api';
+import { detectNetworkContext, networkSnapshotKey, toClientConnection } from '../lib/networkInfo';
+import { confirmationRouteStillValid } from '../lib/appConfirmations';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
 import { confirmationNodeKey, findAppConfirmation, type ConfirmationMatch } from '../lib/appConfirmations';
 import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
@@ -22,6 +24,8 @@ interface QuickPicksProps {
   profiles: VpnProfile[];
   confirmations: AppConfirmation[];
   onConfirmationSaved: (confirmation: AppConfirmation) => void;
+  confirmationProfileId: number | null;
+  onConfirmationRoute: (id: number | null) => Promise<void>;
 }
 
 const norm = (domain: string) => domain.replace(/^www\./, '').toLowerCase();
@@ -91,17 +95,19 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean, confirmation?: Con
     return { bg: 'var(--surface-2)', fg: 'var(--text-dim)', label: 'проверяем', emojiBg: 'transparent' };
   }
   if (confirmation) {
+    if (confirmation.matchedBy === 'ip') return { bg: 'rgb(var(--warning) / 0.08)', fg: 'rgb(var(--warning))',
+      label: 'отзыв другого узла с тем же IP', emojiBg: 'transparent' };
     return confirmation.confirmation.works
       ? {
           bg: 'rgb(var(--success) / 0.12)',
           fg: 'rgb(var(--success))',
-          label: confirmation.matchedBy === 'ip' ? 'приложение работает · по этому IP' : 'приложение работает · подтверждено',
+          label: 'приложение работает · подтверждено',
           emojiBg: 'transparent',
         }
       : {
           bg: 'rgb(var(--danger) / 0.1)',
           fg: 'rgb(var(--danger))',
-          label: confirmation.matchedBy === 'ip' ? 'приложение не работает · по этому IP' : 'приложение не работает · ваш отзыв',
+          label: 'приложение не работает · ваш отзыв',
           emojiBg: 'transparent',
         };
   }
@@ -190,13 +196,19 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   profiles,
   confirmations,
   onConfirmationSaved,
+  confirmationProfileId,
+  onConfirmationRoute,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [order, setOrder] = useState<string[]>(loadQuickOrder);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ pick: QuickPick; result?: ScanSiteResult } | null>(null);
-  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(confirmationProfileId);
+  const [routeBusy, setRouteBusy] = useState(false);
+  const [freshConnection, setFreshConnection] = useState<ClientConnectionInfo | null>(null);
+  const [routeError, setRouteError] = useState('');
+  const launchRoute = useRef<{ networkKey: string; exitIp: string; nodeKey: string; vpnPackage?: string } | null>(null);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [openingApp, setOpeningApp] = useState(false);
   const [savingConfirmation, setSavingConfirmation] = useState(false);
@@ -374,22 +386,41 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   };
 
-  const vpnActive = Boolean(connection?.vpn_detected && connection.vpn_source === 'system');
-  const activeProfile = vpnActive ? profiles.find((profile) => Boolean(profile.is_primary)) || null : null;
-  const activeIp = connection?.ip && connection.ip !== '—' ? connection.ip : '';
-  const matchFor = (pick: QuickPick, profile = activeProfile) =>
-    findAppConfirmation(confirmations, pick.id, profile, activeIp);
-
-  const openDetails = (pick: QuickPick, result?: ScanSiteResult) => {
-    setSelected({ pick, result });
-    setSelectedProfileId(activeProfile?.id ?? null);
-    setAwaitingConfirmation(false);
+  useEffect(() => { setSelectedProfileId(confirmationProfileId); }, [confirmationProfileId]);
+  const currentConnection = freshConnection || connection;
+  const vpnActive = Boolean(currentConnection?.vpn_detected && currentConnection.vpn_source === 'system');
+  const routeKnown = !isNativeApp() || currentConnection?.vpn_source === 'system';
+  // is_primary — закладка, а не активный конфиг стороннего VPN-клиента.
+  const activeProfile = vpnActive || !isNativeApp() ? profiles.find((p) => p.id === confirmationProfileId) || null : null;
+  const activeIp = currentConnection?.ip && currentConnection.ip !== '—' ? currentConnection.ip : '';
+  const routeLabel = !routeKnown ? 'Маршрут не определён' : vpnActive
+    ? activeProfile ? `Выбран вами: ${activeProfile.name}` : 'VPN включён · выберите используемый узел'
+    : isNativeApp() ? 'Прямое подключение · системный VPN выключен' : 'Маршрут выбран вручную · браузер';
+  const matchFor = (pick: QuickPick, profile = activeProfile) => findAppConfirmation(confirmations, pick.id, profile, activeIp);
+  const openDetails = async (pick: QuickPick, result?: ScanSiteResult) => {
+    setSelected({ pick, result }); setSelectedProfileId(confirmationProfileId);
+    setAwaitingConfirmation(false); setRouteError(''); launchRoute.current = null; setRouteBusy(true);
+    try {
+      const ctx = await detectNetworkContext();
+      if (ctx.changedDuringCheck) throw new Error('Сеть переключается. Повторите открытие карточки на стабильном маршруте.');
+      setFreshConnection(toClientConnection(ctx));
+    } catch (error) {
+      setFreshConnection(null); setRouteError(error instanceof Error ? error.message : 'Не удалось проверить маршрут');
+    } finally { setRouteBusy(false); }
   };
 
   const selectedProfile = selectedProfileId == null
     ? null
     : profiles.find((profile) => profile.id === selectedProfileId) || null;
   const selectedMatch = selected ? matchFor(selected.pick, selectedProfile) : null;
+  const canConfirm = !routeBusy && !routeError && routeKnown && Boolean(activeIp)
+    && (!isNativeApp() || !vpnActive || Boolean(selectedProfile));
+  const chooseRoute = async (id: number | null) => {
+    const before = selectedProfileId; setSelectedProfileId(id); setRouteBusy(true);
+    try { await onConfirmationRoute(id); launchRoute.current = null; setAwaitingConfirmation(false); setRouteError(''); }
+    catch (error) { setSelectedProfileId(before); setRouteError(error instanceof Error ? error.message : 'Выбор узла не сохранён'); }
+    finally { setRouteBusy(false); }
+  };
 
   const handleOpenApp = async (pick: QuickPick) => {
     if (!pick.packageNames?.length) return;
@@ -397,8 +428,20 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       showToast('info', 'Запуск установленных приложений доступен в Android APK');
       return;
     }
+    if (!canConfirm || !selected) { showToast('warning', 'Сначала определите маршрут и выберите включённый VPN-узел'); return; }
     setOpeningApp(true);
     try {
+      const ctx = await detectNetworkContext(); const conn = toClientConnection(ctx);
+      if (ctx.changedDuringCheck || !conn.ip || (isNativeApp() && conn.vpn_detected && !selectedProfile))
+        throw new Error('Маршрут или внешний IP не определён. Повторите проверку перед запуском.');
+      if (isNativeApp() && conn.vpn_detected !== vpnActive) {
+        setFreshConnection(conn); throw new Error('Системный VPN изменился. Выберите маршрут заново.');
+      }
+      launchRoute.current = {
+        networkKey: networkSnapshotKey({ connected: conn.connection_kind !== 'none', kind: conn.connection_kind || 'unknown', vpn: conn.vpn_detected, sequence: conn.native_sequence, vpnPackage: conn.vpn_package }),
+        exitIp: conn.ip, nodeKey: confirmationNodeKey(selectedProfile), vpnPackage: conn.vpn_package,
+      };
+      setFreshConnection(conn);
       const result = await launchInstalledApp(pick.packageNames);
       if (!result.opened) {
         showToast('warning', `${pick.name} не найден среди установленных приложений`);
@@ -413,9 +456,21 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   };
 
   const saveConfirmation = async (works: boolean) => {
-    if (!selected) return;
+    if (!selected || !canConfirm) return;
     setSavingConfirmation(true);
     try {
+      const ctx = await detectNetworkContext(); const conn = toClientConnection(ctx);
+      const after = {
+        networkKey: networkSnapshotKey({ connected: conn.connection_kind !== 'none', kind: conn.connection_kind || 'unknown', vpn: conn.vpn_detected, sequence: conn.native_sequence, vpnPackage: conn.vpn_package }),
+        exitIp: conn.ip, nodeKey: confirmationNodeKey(selectedProfile), vpnPackage: conn.vpn_package,
+      };
+      if (ctx.changedDuringCheck || !conn.ip || (isNativeApp() && conn.vpn_source !== 'system')
+          || (isNativeApp() && conn.vpn_detected && !selectedProfile)
+          || (launchRoute.current && !confirmationRouteStillValid(launchRoute.current, after))) {
+        setFreshConnection(conn); launchRoute.current = null; setAwaitingConfirmation(false);
+        throw new Error('Сеть, VPN или IP изменились после запуска. Откройте приложение ещё раз и подтвердите текущий результат.');
+      }
+      setFreshConnection(conn);
       const response = await apiFetch<{ confirmation: AppConfirmation }>('/api/app-confirmations', {
         method: 'POST',
         body: JSON.stringify({
@@ -424,7 +479,9 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           node_key: confirmationNodeKey(selectedProfile),
           profile_id: selectedProfile?.id ?? null,
           profile_name: selectedProfile?.name || 'Прямое подключение',
-          exit_ip: activeIp,
+          exit_ip: conn.ip,
+          vpn_package: conn.vpn_package || '',
+          route_source: isNativeApp() ? 'system' : 'browser-manual',
           works,
         }),
       });
@@ -550,7 +607,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => openDetails(pick, r)}
+                  onClick={() => void openDetails(pick, r)}
                   className="mt-2 flex items-center gap-1 max-w-full text-left tap"
                   aria-label={`Подробнее о проверке ${pick.name}`}
                 >
@@ -566,7 +623,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                   <div className="min-w-0 flex-1">
                     <button
                       type="button"
-                      onClick={() => openDetails(pick, r)}
+                      onClick={() => void openDetails(pick, r)}
                       className="block text-left text-[10.5px] leading-tight font-semibold break-words tap"
                       style={{ color: v.fg }}
                     >
@@ -635,24 +692,33 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
             )}
             <div className="rounded-2xl border p-3 space-y-2.5" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
               <div className="text-[12px] font-bold">Проверить именно приложение</div>
-              {vpnActive && profiles.length > 0 ? (
+              <div className="text-[11px] font-semibold break-words" style={{ color: 'rgb(var(--accent))' }}>
+                {routeBusy ? 'Определяем свежий маршрут и IP…' : routeLabel}
+                {currentConnection?.vpn_app_name ? ` · клиент ${currentConnection.vpn_app_name}` : ''}
+              </div>
+              {routeError && <Notice tone="warn">{routeError}</Notice>}
+              {(vpnActive || !isNativeApp()) ? (
                 <label className="block text-[11px] text-dim">
-                  Узел, который сейчас включён в VPN-клиенте
+                  Узел, который вы сейчас используете в VPN-клиенте
                   <select
                     value={selectedProfileId ?? ''}
-                    onChange={(event) => setSelectedProfileId(event.target.value ? Number(event.target.value) : null)}
+                    disabled={routeBusy || savingConfirmation}
+                    onChange={(event) => void chooseRoute(event.target.value ? Number(event.target.value) : null)}
                     className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
                     style={{ borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--text)' }}
                   >
-                    <option value="">Не указан / прямой маршрут</option>
+                    <option value="">{vpnActive ? "Выберите узел — обязательное поле" : "Не указан / прямой маршрут"}</option>
                     {profiles.map((profile) => (
                       <option key={profile.id} value={profile.id}>{profile.name}</option>
                     ))}
                   </select>
                 </label>
               ) : (
-                <div className="text-[11px] text-dim">Маршрут: прямое подключение{activeIp ? ` · IP ${activeIp}` : ''}</div>
+                <div className="text-[11px] text-dim">{routeKnown ? 'Системный VPN выключен; отзыв для прямого подключения.' : 'Системный маршрут не определён. Подтверждение недоступно.'}{activeIp ? ` IP ${activeIp}` : ''}</div>
               )}
+              {vpnActive && <p className="text-[10.5px] leading-relaxed text-muted">Android показывает VPN-клиент, но не его внутренний конфиг.
+                Сверьте имя сервера в клиенте и выберите его здесь. Выбор сохранится; звёздочка «основной» ничего не переключает.</p>}
+              {!canConfirm && !routeBusy && !routeError && <Notice tone="warn">{!activeIp ? 'Внешний IP не определён. Откройте карточку заново после восстановления сети.' : 'Выберите используемый VPN-узел.'}</Notice>}
               {selectedMatch && (
                 <Notice tone={selectedMatch.confirmation.works ? 'ok' : 'bad'}>
                   {selectedMatch.confirmation.works ? 'Вы подтвердили: приложение работает.' : 'Вы отметили: приложение не работает.'}
@@ -679,7 +745,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant="primary"
-                  disabled={savingConfirmation}
+                  disabled={savingConfirmation || !canConfirm}
                   icon={<ThumbsUp className="w-4 h-4" />}
                   onClick={() => void saveConfirmation(true)}
                 >
@@ -687,7 +753,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                 </Button>
                 <Button
                   variant="outline"
-                  disabled={savingConfirmation}
+                  disabled={savingConfirmation || !canConfirm}
                   icon={<ThumbsDown className="w-4 h-4" />}
                   onClick={() => void saveConfirmation(false)}
                 >

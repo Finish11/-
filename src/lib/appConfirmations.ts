@@ -62,9 +62,9 @@ export function recommendConfirmedNodes(
     const latest = [...latestByService.values()];
     const works = latest.filter((item) => item.works).length;
     const failures = latest.length - works;
-    const latency = profile.latency_ms != null && Number.isFinite(profile.latency_ms)
-      ? Math.max(0, profile.latency_ms)
-      : 600;
+    const comparable = profile.latency_kind === 'tcp_connect' && profile.latency_route === 'direct'
+      && profile.latency_trusted === true && profile.latency_ms != null && Number.isFinite(profile.latency_ms);
+    const latency = comparable ? Math.max(0, profile.latency_ms!) : 600;
     const statusScore = profile.status === 'online' ? 20 : profile.status === 'blocked' ? -100 : 0;
     const score = Math.round(works * 110 - failures * 90 + (works / Math.max(1, latest.length)) * 40 - Math.min(latency, 1200) / 25 + statusScore);
     return { profile, works, failures, score };
@@ -74,6 +74,16 @@ export function recommendConfirmedNodes(
       b.works - a.works ||
       a.failures - b.failures ||
       b.score - a.score ||
-      (a.profile.latency_ms ?? Infinity) - (b.profile.latency_ms ?? Infinity)
+      (a.profile.latency_trusted ? a.profile.latency_ms ?? Infinity : Infinity) - (b.profile.latency_trusted ? b.profile.latency_ms ?? Infinity : Infinity)
     );
+}
+
+/** Совпадают системный маршрут, свежий IP, выбранный узел и VPN-клиент. */
+export function confirmationRouteStillValid(
+  before: { networkKey: string; exitIp: string; nodeKey: string; vpnPackage?: string },
+  after: { networkKey: string; exitIp: string; nodeKey: string; vpnPackage?: string }
+): boolean {
+  return Boolean(after.exitIp) && before.networkKey === after.networkKey
+    && before.exitIp === after.exitIp && before.nodeKey === after.nodeKey
+    && (before.vpnPackage || '') === (after.vpnPackage || '');
 }

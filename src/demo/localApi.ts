@@ -24,6 +24,7 @@ interface DemoState {
   incidents: Row[];
   subscriptions: Row[];
   confirmations: Row[];
+  confirmationProfileId?: number | null;
 }
 
 const native = isNativeApp();
@@ -78,6 +79,7 @@ function bootstrap() {
     incidents: state.incidents,
     subscriptions: state.subscriptions,
     confirmations: state.confirmations,
+    confirmationProfileId: state.confirmationProfileId ?? null,
   };
 }
 
@@ -129,6 +131,7 @@ async function restoreState(): Promise<void> {
     if (Array.isArray(saved.incidents)) state.incidents = saved.incidents;
     if (Array.isArray(saved.subscriptions)) state.subscriptions = saved.subscriptions;
     if (Array.isArray(saved.confirmations)) state.confirmations = saved.confirmations;
+    state.confirmationProfileId = typeof saved.confirmationProfileId === 'number' ? saved.confirmationProfileId : null;
 
     const ids = [state.sites, state.scans, state.profiles, state.incidents, state.subscriptions, state.confirmations]
       .flat()
@@ -599,6 +602,7 @@ async function handle(path: string, method: string, body: any): Promise<Response
     }
     if (parts.length === 2 && method === 'DELETE') {
       state.profiles = state.profiles.filter((p) => p.id !== id);
+      if (state.confirmationProfileId === id) state.confirmationProfileId = null;
       await sleep(150);
       return json({ ok: true });
     }
@@ -809,6 +813,14 @@ async function handle(path: string, method: string, body: any): Promise<Response
   // ---------- INCIDENTS ----------
   // ---------- РУЧНЫЕ ПОДТВЕРЖДЕНИЯ ПРИЛОЖЕНИЙ ДЛЯ VPN/IP ----------
   if (parts[0] === 'app-confirmations') {
+    if (parts[1] === 'route') {
+      if (method === 'GET') return json({ profileId: state.confirmationProfileId ?? null });
+      if (method === 'PUT') {
+        const id = body?.profile_id == null ? null : Number(body.profile_id);
+        if (id !== null && !state.profiles.some((p) => p.id === id)) return json({ error: 'Узел не найден' }, 404);
+        state.confirmationProfileId = id; return json({ profileId: id });
+      }
+    }
     if (parts.length === 1 && method === 'GET') return json({ confirmations: state.confirmations });
     if (parts.length === 1 && method === 'POST') {
       const serviceId = String(body?.service_id || '').trim();
@@ -828,6 +840,8 @@ async function handle(path: string, method: string, body: any): Promise<Response
         profile_id: body.profile_id == null ? null : Number(body.profile_id),
         profile_name: String(body.profile_name || 'Прямое подключение'),
         exit_ip: exitIp,
+        vpn_package: String(body.vpn_package || ''),
+        route_source: body.route_source === 'browser-manual' ? 'browser-manual' : 'system',
         works: Boolean(body.works),
         confirmed_at: new Date().toISOString(),
       };

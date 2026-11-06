@@ -61,6 +61,10 @@ export interface Site {
   last_status: SiteStatus;
   last_latency_ms: number | null;
   last_checked_at: string | null;
+  last_proof?: SiteProof | null;
+  last_note?: string | null;
+  last_http_status?: number | null;
+  last_probe_url?: string | null;
   description: string;
   created_at: string;
 }
@@ -78,6 +82,8 @@ export interface AppConfirmation {
   exit_ip: string;
   works: boolean;
   confirmed_at: string;
+  vpn_package?: string;
+  route_source?: 'system' | 'browser-manual';
 }
 
 export interface ScanSiteResult {
@@ -91,6 +97,11 @@ export interface ScanSiteResult {
   /** Фактическая веб-проба до справочной политики сервиса — для каталога сайтов. */
   network_status?: 'ok' | 'slow' | 'blocked';
   network_latency_ms?: number | null;
+  network_proof?: SiteProof;
+  network_note?: string;
+  http_status?: number | null;
+  probe_url?: string;
+  checked_at?: string;
   /** Почему не открылось — показываем в детальном списке */
   block_reason?: SiteBlockReason;
   /** Ответила заглушка/подмена TLS, а не сам сайт */
@@ -162,6 +173,9 @@ export interface VpnProfile {
   raw_link?: string;
   last_checked_at: string | null;
   last_latency_all?: number | null;
+  latency_kind?: 'tcp_connect' | 'browser_relay';
+  latency_route?: 'vpn' | 'direct' | 'unknown';
+  latency_trusted?: boolean;
   created_at: string;
 }
 
@@ -211,6 +225,12 @@ export interface Incident {
   client_id?: string;
   sync_state?: 'local' | 'pending' | 'synced' | 'error';
   sync_error?: string;
+  sync_dirty?: boolean;
+  vote_dirty?: boolean;
+  desired_upvote?: boolean;
+  pending_delete?: boolean;
+  sync_endpoint?: string;
+  updated_at?: string;
 }
 
 export interface ClientConnectionInfo {
@@ -231,6 +251,8 @@ export interface ClientConnectionInfo {
   operator?: string;
   /** Системный Network ID через монотонный sequence: отличает два разных Wi-Fi. */
   native_sequence?: number;
+  vpn_package?: string;
+  vpn_app_name?: string;
   vpn_detected: boolean;
   vpn_confidence: 'high' | 'medium' | 'none';
   /** system — факт Android; ip — только приблизительная браузерная оценка. */

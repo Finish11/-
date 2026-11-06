@@ -24,6 +24,7 @@ export interface AuthBootstrapPayload {
   incidents?: Incident[];
   subscriptions?: VpnSubscription[];
   confirmations?: AppConfirmation[];
+  confirmationProfileId?: number | null;
 }
 
 interface AuthViewProps {

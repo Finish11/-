@@ -27,7 +27,8 @@ export interface NetworkContext {
   splitTunnel: boolean;
   nativeSequence?: number;
   nativeCarrier?: string;
-  /** Сеть изменилась во время GeoIP: такой ответ нельзя применять как свежий. */
+  vpnPackage?: string;
+  vpnAppName?: string;
   changedDuringCheck: boolean;
   geoError?: string;
 }
@@ -57,7 +58,7 @@ export function emptyGeo(): GeoInfo {
 }
 
 export function networkSnapshotKey(state: NativeNetworkState): string {
-  const transport = `${state.connected ? 1 : 0}|${state.kind}|${state.vpn ? 1 : 0}`;
+  const transport = `${state.connected ? 1 : 0}|${state.kind}|${state.vpn ? 1 : 0}|${state.vpnPackage || ''}`;
   // Два разных Wi-Fi или две сотовые сети имеют одинаковый транспорт. Системный
   // sequence различает Network ID; у старых bridge его может не быть — тогда
   // сохраняем прежнее поведение, а не выдумываем идентификатор.
@@ -204,6 +205,8 @@ export function buildNetworkContext(
     splitTunnel: false,
     nativeSequence: native.sequence,
     nativeCarrier: operator,
+    vpnPackage: native.vpnPackage,
+    vpnAppName: native.vpnAppName,
     changedDuringCheck: false,
   };
 }
@@ -262,7 +265,8 @@ export function hasSameNetworkAttribution(
     before.native_sequence == null ||
     after.native_sequence == null ||
     before.native_sequence === after.native_sequence;
-  return sameNativeNetwork && before.connection_kind === after.connection_kind && systemVpn(before) === systemVpn(after);
+  return sameNativeNetwork && before.connection_kind === after.connection_kind && systemVpn(before) === systemVpn(after)
+    && (before.vpn_package || '') === (after.vpn_package || '');
 }
 
 export function toClientConnection(ctx: NetworkContext): ClientConnectionInfo {
@@ -282,6 +286,8 @@ export function toClientConnection(ctx: NetworkContext): ClientConnectionInfo {
     connection_kind: ctx.networkKind,
     operator: ctx.nativeCarrier || g.isp,
     native_sequence: ctx.nativeSequence,
+    vpn_package: ctx.vpnPackage,
+    vpn_app_name: ctx.vpnAppName,
     vpn_detected: ctx.vpnLikely,
     vpn_confidence: ctx.vpnSource === 'system' ? 'high' : ctx.vpnSource === 'ip' ? 'medium' : 'none',
     vpn_source: ctx.vpnSource,

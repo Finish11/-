@@ -191,6 +191,20 @@ function addColumnIfMissing(table: string, column: string, definition: string): 
 
 addColumnIfMissing('sites', 'accessibility', "TEXT NOT NULL DEFAULT 'ok'");
 addColumnIfMissing('sites', 'blocked_since', 'TEXT');
+addColumnIfMissing('sites', 'last_proof', 'TEXT');
+addColumnIfMissing('sites', 'last_note', 'TEXT');
+addColumnIfMissing('sites', 'last_http_status', 'INTEGER');
+addColumnIfMissing('sites', 'last_probe_url', 'TEXT');
+addColumnIfMissing('app_confirmations', 'vpn_package', "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('app_confirmations', 'route_source', "TEXT NOT NULL DEFAULT 'system'");
+addColumnIfMissing('vpn_profiles', 'latency_kind', 'TEXT');
+addColumnIfMissing('vpn_profiles', 'latency_route', 'TEXT');
+addColumnIfMissing('vpn_profiles', 'latency_trusted', 'INTEGER');
+addColumnIfMissing('incidents', 'updated_at', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS app_confirmation_route (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  profile_id INTEGER REFERENCES vpn_profiles(id) ON DELETE SET NULL
+)`);
 addColumnIfMissing('vpn_profiles', 'subscription_id', 'INTEGER');
 addColumnIfMissing('vpn_profiles', 'group_name', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('vpn_profiles', 'raw_link', "TEXT NOT NULL DEFAULT ''");

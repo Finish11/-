@@ -63,6 +63,8 @@ interface ScannerViewProps {
   vpnProfiles: VpnProfile[];
   confirmations: AppConfirmation[];
   onConfirmationSaved: (confirmation: AppConfirmation) => void;
+  confirmationProfileId: number | null;
+  onConfirmationRoute: (id: number | null) => Promise<void>;
   onConnectionDetected: (c: ClientConnectionInfo) => void;
   onScanSaved: (scan: ScanRecord) => void;
   onQuickReportIncident: (scan: ScanRecord) => void;
@@ -147,6 +149,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   vpnProfiles,
   confirmations,
   onConfirmationSaved,
+  confirmationProfileId,
+  onConfirmationRoute,
   onConnectionDetected,
   onScanSaved,
   onQuickReportIncident,
@@ -878,6 +882,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         profiles={vpnProfiles}
         confirmations={confirmations}
         onConfirmationSaved={onConfirmationSaved}
+        confirmationProfileId={confirmationProfileId}
+        onConfirmationRoute={onConfirmationRoute}
       />
 
       {/* ======================= ПОЛНЫЙ ОТЧЁТ ======================= */}

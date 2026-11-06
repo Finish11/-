@@ -146,7 +146,8 @@ async function startServer() {
       works: Boolean(row.works),
     }));
 
-    return { sites, scans, profiles, incidents, subscriptions, confirmations };
+    const route = db.prepare('SELECT profile_id FROM app_confirmation_route WHERE user_id = ?').get(userId) as { profile_id: number | null } | undefined;
+    return { sites, scans, profiles, incidents, subscriptions, confirmations, confirmationProfileId: route?.profile_id ?? null };
   }
 
   // ==================== AUTH ROUTES ====================
@@ -1035,6 +1036,19 @@ async function startServer() {
   });
 
   // ==================== MANUAL APP CONFIRMATIONS ====================
+  app.get('/api/app-confirmations/route', requireAuth, (req: AuthedRequest, res) => {
+    const row = db.prepare('SELECT profile_id FROM app_confirmation_route WHERE user_id = ?').get(req.user!.id) as { profile_id: number | null } | undefined;
+    res.json({ profileId: row?.profile_id ?? null });
+  });
+  app.put('/api/app-confirmations/route', requireAuth, (req: AuthedRequest, res) => {
+    const id = req.body?.profile_id == null ? null : Number(req.body.profile_id);
+    if (id !== null && (!Number.isInteger(id) || !db.prepare('SELECT 1 FROM vpn_profiles WHERE id = ? AND user_id = ?').get(id, req.user!.id))) {
+      res.status(404).json({ error: 'Узел не найден' }); return;
+    }
+    db.prepare('INSERT INTO app_confirmation_route (user_id, profile_id) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET profile_id = excluded.profile_id').run(req.user!.id, id);
+    res.json({ profileId: id });
+  });
+
   app.get('/api/app-confirmations', requireAuth, (req: AuthedRequest, res) => {
     const rows = db.prepare(
       'SELECT * FROM app_confirmations WHERE user_id = ? ORDER BY confirmed_at DESC'
@@ -1053,12 +1067,12 @@ async function startServer() {
     }
     const now = new Date().toISOString();
     db.prepare(`INSERT INTO app_confirmations (
-        user_id, service_id, domain, node_key, profile_id, profile_name, exit_ip, works, confirmed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        user_id, service_id, domain, node_key, profile_id, profile_name, exit_ip, works, confirmed_at, vpn_package, route_source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, service_id, node_key, exit_ip) DO UPDATE SET
         domain = excluded.domain, profile_id = excluded.profile_id,
         profile_name = excluded.profile_name, works = excluded.works,
-        confirmed_at = excluded.confirmed_at`
+        confirmed_at = excluded.confirmed_at, vpn_package = excluded.vpn_package, route_source = excluded.route_source`
     ).run(
       req.user!.id,
       serviceId,
@@ -1068,7 +1082,8 @@ async function startServer() {
       String(b.profile_name || 'Прямое подключение').slice(0, 160),
       String(b.exit_ip || '').trim().toLowerCase().slice(0, 80),
       b.works ? 1 : 0,
-      now
+      now, String(b.vpn_package || '').slice(0, 160),
+      b.route_source === 'browser-manual' ? 'browser-manual' : 'system'
     );
     const row = db.prepare(
       'SELECT * FROM app_confirmations WHERE user_id = ? AND service_id = ? AND node_key = ? AND exit_ip = ?'

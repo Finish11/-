@@ -52,6 +52,7 @@ export function App() {
   const [subscriptions, setSubscriptions] = useState<VpnSubscription[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [confirmations, setConfirmations] = useState<AppConfirmation[]>([]);
+  const [confirmationProfileId, setConfirmationProfileId] = useState<number | null>(null);
 
   const [connection, setConnection] = useState<ClientConnectionInfo | null>(null);
   const [connLoading, setConnLoading] = useState(false);
@@ -165,6 +166,7 @@ export function App() {
       if (payload.subscriptions) setSubscriptions(payload.subscriptions);
       if (payload.incidents) setIncidents(payload.incidents);
       if (payload.confirmations) setConfirmations(payload.confirmations);
+      setConfirmationProfileId(payload.confirmationProfileId ?? null);
       refreshConnection();
     },
     [refreshConnection]
@@ -173,13 +175,14 @@ export function App() {
   const loadWorkspaceData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [sitesRes, scansRes, vpnRes, incRes, subRes, confirmationsRes] = await Promise.all([
+      const [sitesRes, scansRes, vpnRes, incRes, subRes, confirmationsRes, routeRes] = await Promise.all([
         apiFetch<{ sites: Site[] }>('/api/sites'),
         apiFetch<{ scans: ScanRecord[] }>('/api/scans'),
         apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles'),
         apiFetch<{ incidents: Incident[] }>('/api/incidents'),
         apiFetch<{ subscriptions: VpnSubscription[] }>('/api/vpn-subscriptions'),
         apiFetch<{ confirmations: AppConfirmation[] }>('/api/app-confirmations'),
+        apiFetch<{ profileId: number | null }>('/api/app-confirmations/route'),
       ]);
       setSites(sitesRes.sites);
       setScans(scansRes.scans);
@@ -187,6 +190,7 @@ export function App() {
       setIncidents(incRes.incidents);
       setSubscriptions(subRes.subscriptions);
       setConfirmations(confirmationsRes.confirmations);
+      setConfirmationProfileId(routeRes.profileId);
     } catch (err) {
       const status = (err as Error & { status?: number })?.status;
       if (status === 401) {
@@ -258,6 +262,7 @@ export function App() {
     setIncidents([]);
     setSubscriptions([]);
     setConfirmations([]);
+    setConfirmationProfileId(null);
     showToast('info', 'Вы вышли из аккаунта');
   };
 
@@ -296,6 +301,13 @@ export function App() {
         ? prev.map((item) => item.id === confirmation.id ? confirmation : item)
         : [confirmation, ...prev];
     });
+  };
+
+  const handleConfirmationRoute = async (profileId: number | null) => {
+    const res = await apiFetch<{ profileId: number | null }>('/api/app-confirmations/route', {
+      method: 'PUT', body: JSON.stringify({ profile_id: profileId }),
+    });
+    setConfirmationProfileId(res.profileId);
   };
 
   const handleQuickReportIncident = (scan: ScanRecord) => {
@@ -371,6 +383,8 @@ export function App() {
                 vpnProfiles={vpnProfiles}
                 confirmations={confirmations}
                 onConfirmationSaved={handleConfirmationSaved}
+                confirmationProfileId={confirmationProfileId}
+                onConfirmationRoute={handleConfirmationRoute}
                 onConnectionDetected={() => { void refreshConnection(); }}
                 onScanSaved={handleScanSaved}
                 onQuickReportIncident={handleQuickReportIncident}

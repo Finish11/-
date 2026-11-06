@@ -30,6 +30,8 @@ export interface NativeNetworkState {
   carrier?: string;
   /** Монотонный номер системного события для отбрасывания старых колбэков. */
   sequence?: number;
+  vpnPackage?: string;
+  vpnAppName?: string;
 }
 
 interface NetworkBridgePlugin {
@@ -52,6 +54,8 @@ export async function getNativeNetworkState(): Promise<NativeNetworkState> {
     vpn: Boolean(state.connected && state.vpn),
     carrier: typeof state.carrier === 'string' ? state.carrier : '',
     sequence: typeof state.sequence === 'number' ? state.sequence : undefined,
+    vpnPackage: typeof state.vpnPackage === 'string' ? state.vpnPackage : '',
+    vpnAppName: typeof state.vpnAppName === 'string' ? state.vpnAppName : '',
   };
 }
 
@@ -318,7 +322,7 @@ export async function tcpPing(
   host: string,
   port: number,
   timeout = 5000
-): Promise<{ ok: boolean; latency_ms: number | null; latency_us?: number | null; error?: string }> {
+): Promise<{ ok: boolean; latency_ms: number | null; latency_us?: number | null; dns_us?: number | null; route?: 'vpn' | 'direct'; vpn_package?: string; error?: string }> {
   if (!isNativeApp()) return { ok: false, latency_ms: null, error: 'только в приложении' };
   try {
     const res = await (ApkPlugin as unknown as {
@@ -326,6 +330,9 @@ export async function tcpPing(
         ok: boolean;
         latency_ms?: number;
         latency_us?: number;
+        dns_us?: number;
+        route?: 'vpn' | 'direct';
+        vpn_package?: string;
         error?: string;
       }>;
     }).tcpProbe({ host, port, timeout });
@@ -337,8 +344,21 @@ export async function tcpPing(
       : typeof res.latency_ms === 'number' && Number.isFinite(res.latency_ms)
       ? Math.max(0, res.latency_ms)
       : null;
-    return { ok: Boolean(res.ok), latency_ms: millis, latency_us: micros, error: res.error };
+    return { ok: Boolean(res.ok), latency_ms: millis, latency_us: micros,
+      dns_us: typeof res.dns_us === 'number' ? res.dns_us : null,
+      route: res.route, vpn_package: res.vpn_package, error: res.error };
   } catch (err) {
     return { ok: false, latency_ms: null, error: err instanceof Error ? err.message : 'ошибка' };
   }
+}
+
+export interface NativeHttpProbe {
+  ok: boolean; status?: number; url?: string; content_type?: string; data_base64?: string;
+  truncated?: boolean; latency_ms?: number; route?: 'vpn' | 'direct'; vpn_package?: string; error?: string;
+}
+export async function httpProbe(url: string, timeoutMs = 8000,
+  plugin: { httpProbe(o: { url: string; timeoutMs: number }): Promise<unknown> } = ApkPlugin as never): Promise<NativeHttpProbe> {
+  if (!isNativeApp()) return { ok: false, error: 'Нативная HTTP-проба доступна только в APK' };
+  try { return await plugin.httpProbe({ url, timeoutMs }) as NativeHttpProbe; }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 }

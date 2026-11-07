@@ -224,7 +224,14 @@ export interface SpeedTestOptions extends SpeedServerOptions {
   downloadMs?: number;
   uploadMs?: number;
   pingSamples?: number;
+  /** Экономный режим: короче фазы и меньше трафика на мобильном тарифе. */
+  lite?: boolean;
 }
+
+export const SPEED_TRAFFIC = {
+  full: { downloadMs: 10000, uploadMs: 8000, download: SPEED_BYTE_BUDGET.download, upload: SPEED_BYTE_BUDGET.upload },
+  lite: { downloadMs: 5000, uploadMs: 4000, download: 25 * 1024 * 1024, upload: 8 * 1024 * 1024 },
+};
 
 export interface SpeedTestResult {
   ok: boolean;
@@ -252,6 +259,9 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
   const result: SpeedTestResult = { ok: false, server: null, download: EMPTY_AGGREGATE, upload: EMPTY_AGGREGATE,
     pingMs: null, jitterMs: null, pingSamples: [], route: 'unknown', error: '', finishedAt: new Date().toISOString() };
 
+  const budget = options.lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full;
+  const downloadMs = options.downloadMs ?? budget.downloadMs;
+  const uploadMs = options.uploadMs ?? budget.uploadMs;
   const candidates = options.server ? [options.server] : availableSpeedServers(options);
   let server: SpeedServer | null = null;
   let pingSamples: number[] = [];
@@ -291,9 +301,9 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     const download = await transport.phase({
       runId: `${runId}-down`, direction: 'download',
       urls: Array.from({ length: connections }, () => server!.download(chunkBytes)),
-      connections, durationMs: options.downloadMs ?? 10000, chunkBytes,
-      maxBytes: SPEED_BYTE_BUDGET.download, signal: options.signal,
-      onSample: (slice) => report('download', bytesToMbps(slice.confirmed, slice.t), 'Загрузка…', server, Math.min(1, slice.t / (options.downloadMs ?? 10000))),
+      connections, durationMs: downloadMs, chunkBytes,
+      maxBytes: budget.download, signal: options.signal,
+      onSample: (slice) => report('download', bytesToMbps(slice.confirmed, slice.t), 'Загрузка…', server, Math.min(1, slice.t / downloadMs)),
     });
     result.download = aggregateSpeed(download.slices);
     result.route = download.route ?? 'unknown';
@@ -306,14 +316,15 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     if (!options.signal?.aborted) {
       const uploadConnections = Math.max(2, Math.min(4, connections));
       report('upload', 0, `Отдача · ${uploadConnections} соединений`, server, 0);
-      const uploadChunk = Math.max(262_144, Math.min(2 * 1024 * 1024, Math.round(chunkBytes / 4)));
+      // Мелкие куски: подтверждение сервера приходит чаще, итог ближе к реальности.
+      const uploadChunk = Math.max(262_144, Math.min(512 * 1024, Math.round(chunkBytes / 4)));
       const upload = await transport.phase({
         runId: `${runId}-up`, direction: 'upload', urls: Array.from({ length: uploadConnections }, () => server!.upload),
-        connections: uploadConnections, durationMs: options.uploadMs ?? 8000, chunkBytes: uploadChunk,
-        maxBytes: SPEED_BYTE_BUDGET.upload, signal: options.signal,
-        onSample: (slice) => report('upload', bytesToMbps(slice.bytes, slice.t), 'Отдача…', server, Math.min(1, slice.t / (options.uploadMs ?? 8000))),
+        connections: uploadConnections, durationMs: uploadMs, chunkBytes: uploadChunk,
+        maxBytes: budget.upload, signal: options.signal,
+        onSample: (slice) => report('upload', bytesToMbps(slice.bytes, slice.t), 'Отдача…', server, Math.min(1, slice.t / uploadMs)),
       });
-      result.upload = aggregateSpeed(upload.slices);
+      result.upload = aggregateSpeed(upload.slices, { field: 'bytes' });
       if (!upload.confirmed && upload.errors.length) result.error = speedEndpointError(upload.errors, server);
     }
     result.ok = result.download.bytes > 0;

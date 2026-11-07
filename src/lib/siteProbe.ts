@@ -6,6 +6,8 @@ export type ProbeVerdict = 'ok' | 'slow' | 'blocked' | 'intercepted' | 'offline'
 export interface SiteProbeResult {
   verdict: ProbeVerdict; latencyMs: number | null; httpStatus?: number; reason?: string; detail?: string;
   proof?: SiteProof; networkStatus?: 'ok' | 'slow' | 'blocked'; probeUrl?: string; attempts?: number;
+  /** Сайт ответил капчей/проверкой браузера — сеть до него есть. */
+  challenge?: boolean;
 }
 export interface ProbeOptions {
   timeoutMs?: number; verifyContent?: boolean;
@@ -63,7 +65,8 @@ export async function probeSite(url: string, options: ProbeOptions = {}): Promis
     const base = { latencyMs: ms, httpStatus: res.status, probeUrl: finalUrl,
       detail: `${finalUrl !== url ? `редирект на ${finalUrl.slice(0, 100)} · ` : ''}${res.truncated ? 'прочитаны первые 256 KiB' : 'ответ прочитан'}` };
     if (content && !content.own) return { ...base, verdict: content.intercepted ? 'intercepted' : 'blocked',
-      networkStatus: content.intercepted ? 'blocked' : webSpeed(ms), proof: 'opaque', reason: content.reason || 'сайт не открыл своё содержимое' };
+      networkStatus: content.intercepted ? 'blocked' : webSpeed(ms), proof: 'opaque',
+      challenge: content.challenge === true, reason: content.reason || 'сайт не открыл своё содержимое' };
     const own = res.status === 204 || Boolean(content?.own);
     return { ...base, verdict: own ? webSpeed(ms) : 'blocked', networkStatus: webSpeed(ms),
       proof: res.status === 204 ? 'endpoint' : content?.proof || 'opaque',

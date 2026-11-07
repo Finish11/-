@@ -166,3 +166,21 @@ test('ссылка-приглашение подключает сервер у �
   assert.equal(readCommunityInvite('#tab=incidents'), '');
   assert.equal(readCommunityInvite(''), '');
 });
+
+test('капча и проверка браузера не превращают живой сайт в «не открыт»', async () => {
+  const { assessSiteContent } = await import('../src/lib/siteContent.ts');
+  const { siteResultFromProbe } = await import('../src/lib/siteMeasurement.ts');
+  const challenge = assessSiteContent('https://example.com/', '<html>Just a moment... Checking your browser</html>', 403, 'text/html');
+  assert.equal(challenge.own, false);
+  assert.equal(challenge.challenge, true);
+  const site = { id: 1, user_id: 1, name: 'Example', domain: 'example.com', probe_url: 'https://example.com/',
+    category: 'global_infra', marker_role: 'global_neutral', enabled: 1, last_status: 'unknown', last_latency_ms: null,
+    last_checked_at: null, description: '', created_at: '' } as any;
+  const result = siteResultFromProbe(site, { verdict: 'blocked', latencyMs: 120, httpStatus: 403,
+    challenge: true, networkStatus: 'ok', proof: 'opaque', reason: challenge.reason });
+  assert.equal(result.access_scope, 'app_unconfirmed');
+  assert.equal(result.network_status, 'ok', 'сеть до сайта есть');
+  const stub = assessSiteContent('https://example.com/', '<html>Доступ ограничен Роскомнадзор</html>', 200, 'text/html');
+  assert.equal(stub.intercepted, true);
+  assert.notEqual(stub.challenge, true);
+});

@@ -13,6 +13,9 @@ export function siteResultFromProbe(site: Site, probe: SiteProbeResult, checkedA
     network_proof: probe.proof ?? 'opaque', network_note: probe.reason, http_status: probe.httpStatus,
     probe_url: probe.probeUrl, checked_at: checkedAt, proof: probe.proof ?? 'opaque',
     intercepted: probe.verdict === 'intercepted',
+    // Капча и «проверка браузера» — не блокировка: сервис ответил, но приложение
+    // таким ответом не подтвердить. Иначе живые сайты попадали в «не открыт».
+    access_scope: probe.challenge ? 'app_unconfirmed' : undefined,
     block_reason: probe.verdict === 'intercepted' ? 'throttled' : probe.verdict === 'blocked' ? (answered ? 'unknown' : 'network') : undefined,
     note: probe.reason,
   };

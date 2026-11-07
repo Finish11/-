@@ -164,3 +164,27 @@ test('выбор сервера: свой раньше публичного, о�
   assert.match(speedEndpointError(['HTTP 429 Retry-After 3566'], CLOUDFLARE_SPEED), /ограничил частоту/);
   assert.match(speedEndpointError(['HTTP 404'], community), /нет точек замера/);
 });
+
+test('экономный режим тратит заметно меньше трафика и времени', async () => {
+  const { SPEED_TRAFFIC } = await import('../src/lib/speedRunner.ts');
+  assert.ok(SPEED_TRAFFIC.lite.download < SPEED_TRAFFIC.full.download / 3);
+  assert.ok(SPEED_TRAFFIC.lite.upload < SPEED_TRAFFIC.full.upload / 3);
+  assert.ok(SPEED_TRAFFIC.lite.downloadMs < SPEED_TRAFFIC.full.downloadMs);
+  assert.ok(SPEED_TRAFFIC.lite.download >= 20 * 1024 * 1024, 'слишком маленький объём даст ненадёжный результат');
+});
+
+test('отдача считается по записанным байтам: крупные куски не обнуляют результат', async () => {
+  // Медленный канал 5 Мбит/с и крупный кусок 2 МБ: сервер подтверждает раз в
+  // 3.3 секунды, за фазу успевают пройти всего два подтверждения.
+  const slices: SpeedSlice[] = [{ t: 0, bytes: 0, confirmed: 0 }];
+  for (let t = 100; t <= 8000; t += 100) {
+    const written = Math.round((5 * 1_000_000 / 8) * (t / 1000));
+    slices.push({ t, bytes: written, confirmed: Math.floor(t / 3300) * 2_097_152 });
+  }
+  const byConfirmed = aggregateSpeed(slices);
+  const byWritten = aggregateSpeed(slices, { field: 'bytes' });
+  assert.ok(byWritten.mbps > 4.5 && byWritten.mbps < 5.5, `ожидалось ~5 Мбит/с, получено ${byWritten.mbps}`);
+  // Крупные редкие подтверждения отбрасываются как «быстрые срезы», и скорость
+  // превращается в ноль. Поэтому отдача считается по записанным байтам.
+  assert.ok(byConfirmed.mbps < 1, `ожидался провал методики на подтверждениях, получено ${byConfirmed.mbps}`);
+});

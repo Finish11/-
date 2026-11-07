@@ -433,7 +433,7 @@ test('проверка Cloudflare не считается работающим C
   );
   assert.equal(assessment.own, false);
   assert.equal(assessment.intercepted, false);
-  assert.match(assessment.reason || '', /проверку или отказ доступа/);
+  assert.match(assessment.reason || '', /проверкой браузера или отказом доступа/);
 });
 
 test('HTTP 403 не считается успехом даже при наличии ресурсов ChatGPT', () => {

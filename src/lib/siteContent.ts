@@ -9,6 +9,8 @@ export interface SiteContentAssessment {
   own: boolean;
   /** Ответ пришёл, но принадлежит заглушке/посреднику, а не запрошенному сайту. */
   intercepted: boolean;
+  /** Сайт жив и ответил проверкой браузера/капчей: это не «сайт не работает». */
+  challenge?: boolean;
   reason?: string;
   proof?: SiteProof;
 }
@@ -150,7 +152,8 @@ export function assessSiteContent(
     return {
       own: false,
       intercepted: false,
-      reason: 'сервис вернул проверку или отказ доступа, а не приложение',
+      challenge: true,
+      reason: 'сервис ответил проверкой браузера или отказом доступа: сайт жив, но приложение так не проверить',
     };
   }
   if (STUB_MARKERS.some((marker) => lower.includes(marker))) {

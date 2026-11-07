@@ -4,7 +4,7 @@ import { apiFetch } from '../lib/api';
 import { communityEndpoint } from '../lib/community';
 import { isNativeApp } from '../lib/nativeBridge';
 import { routeFingerprint, suggestActiveNode } from '../lib/appConfirmations';
-import { runSpeedTest, type SpeedProgress, type SpeedTestResult } from '../lib/speedRunner';
+import { runSpeedTest, SPEED_TRAFFIC, type SpeedProgress, type SpeedTestResult } from '../lib/speedRunner';
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
   compareConfigs, formatBytes, formatSpeed, guessSpeedCap, speedGaugeFraction, speedUsageVerdict,
@@ -107,6 +107,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [profileId, setProfileId] = useState<number | null>(confirmationProfileId);
   const [serverId, setServerId] = useState<string>('auto');
+  const [lite, setLite] = useState(false);
   const [autoNote, setAutoNote] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -157,6 +158,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         communityEndpoint: communityEndpoint() || undefined,
         signal: controller.signal,
         onProgress: setProgress,
+        lite,
       });
       setResult(measurement);
       setProgress((prev) => ({ ...prev, phase: measurement.ok ? 'done' : 'error', mbps: measurement.download.mbps, progress: 1,
@@ -182,7 +184,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         profile_id: activeProfile?.id ?? null,
         profile_name: activeProfile?.name || '',
         reliable: measurement.download.reliable,
-        note: measurement.download.reason,
+        note: `${lite ? 'Экономный замер. ' : ''}${measurement.download.reason}`,
       };
       const saved = await apiFetch<{ run: SpeedRun }>('/api/speed-tests', { method: 'POST', body: JSON.stringify(payload) });
       setRuns((prev) => [saved.run, ...prev].slice(0, 200));
@@ -236,8 +238,12 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           )}
         </div>
 
-        <div className="mt-2 text-[10.5px] leading-relaxed text-center" style={{ color: 'var(--text-muted)' }}>
-          {running ? progress.message : 'Замер передаёт реальные данные: до ~120 МБ на загрузку и ~40 МБ на отдачу. На мобильном интернете учитывайте тариф.'}
+        <label className="mt-3 flex items-center gap-2 text-[11.5px] cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+          <input type="checkbox" checked={lite} disabled={running} onChange={(event) => setLite(event.target.checked)} className="w-4 h-4 accent-[rgb(var(--accent))]" />
+          Экономный замер (меньше трафика, чуть ниже точность)
+        </label>
+        <div className="mt-1.5 text-[10.5px] leading-relaxed text-center" style={{ color: 'var(--text-muted)' }}>
+          {running ? progress.message : `Замер передаёт реальные данные: до ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).download / 1024 / 1024)} МБ на загрузку и ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).upload / 1024 / 1024)} МБ на отдачу. На мобильном интернете учитывайте тариф.`}
         </div>
       </div>
 

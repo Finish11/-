@@ -40,6 +40,12 @@ export const SPEED_METHODOLOGY = {
   trimSlowest: 0.3,
   minDurationMs: 2500,
   minBytes: 200_000,
+  /**
+   * Загрузка считается по подтверждённым байтам, отдача — по записанным в сокет
+   * (как прогресс XHR в LibreSpeed): подтверждение приходит только после целого
+   * куска, и на медленном канале редкие подтверждения занизили бы скорость.
+   */
+  field: 'confirmed' as 'confirmed' | 'bytes',
 };
 
 export function bytesToMbps(bytes: number, ms: number): number {
@@ -70,11 +76,11 @@ export function aggregateSpeed(slices: SpeedSlice[], options: Partial<typeof SPE
   const config = { ...SPEED_METHODOLOGY, ...options };
   const ordered = [...slices].filter((s) => Number.isFinite(s.t)).sort((a, b) => a.t - b.t);
   const last = ordered[ordered.length - 1];
-  const bytes = last ? Math.max(0, last.confirmed) : 0;
+  const bytes = last ? Math.max(0, last[config.field]) : 0;
   const durationMs = last ? Math.max(0, last.t) : 0;
   const averageMbps = bytesToMbps(bytes, durationMs);
-  const rates = sliceRates(ordered).filter((rate) => rate.t >= config.warmupMs);
-  const usable = rates.length >= 4 ? rates : sliceRates(ordered);
+  const rates = sliceRates(ordered, config.field).filter((rate) => rate.t >= config.warmupMs);
+  const usable = rates.length >= 4 ? rates : sliceRates(ordered, config.field);
   if (usable.length < 3 || bytes < config.minBytes || durationMs < config.minDurationMs) {
     return { mbps: averageMbps, averageMbps, peakMbps: usable.reduce((max, r) => Math.max(max, r.mbps), 0),
       bytes, durationMs, usedIntervals: usable.length, totalIntervals: rates.length, reliable: false,

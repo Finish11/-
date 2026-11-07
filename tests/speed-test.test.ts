@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -271,4 +271,44 @@ test('сравнение конфигов показывает задержку 
   const summaries = summarizeByConfig(runs);
   assert.equal(summaries.find((item) => item.key === 'profile:3')?.medianLoadedPing, 300);
   assert.equal(summaries.find((item) => item.key === 'profile:4')?.medianLoadedPing, null, 'нет данных — нет выдумки');
+});
+
+test('срезанная отдача видна даже при полной загрузке', () => {
+  const runs = [
+    { id: 1, route: 'direct', network_kind: 'wifi', download_mbps: 100, upload_mbps: 50, ping_ms: 10, created_at: '2026-11-08T10:00:00.000Z' },
+    { id: 2, profile_id: 9, profile_name: 'Узкий выход', route: 'vpn', network_kind: 'wifi', download_mbps: 95,
+      upload_mbps: 5, ping_ms: 20, created_at: '2026-11-08T11:00:00.000Z' },
+  ] as SpeedRun[];
+  const verdict = compareConfigs(runs, 'wifi').verdicts.find((item) => item.key === 'profile:9')!;
+  assert.match(verdict.text, /Почти без потерь/);
+  assert.match(verdict.text, /Отдача проседает сильнее: 10%/);
+  assert.equal(verdict.tone, 'warn', 'молчать о срезанной отдаче нельзя');
+});
+
+test('сводка по подписке считает, сколько конфигов режут канал', () => {
+  const profiles = [
+    { id: 1, subscription_id: 5 }, { id: 2, subscription_id: 5 }, { id: 3, subscription_id: 5 },
+    { id: 4, subscription_id: 6 }, { id: 5, group_name: 'Ручные' },
+  ];
+  const runs = [
+    { id: 10, route: 'direct', network_kind: 'wifi', download_mbps: 100, upload_mbps: 40, created_at: '2026-11-08T10:00:00.000Z' },
+    { id: 11, profile_id: 1, profile_name: 'A', route: 'vpn', network_kind: 'wifi', download_mbps: 95, upload_mbps: 35, loaded_ping_ms: 40, created_at: '2026-11-08T11:00:00.000Z' },
+    { id: 12, profile_id: 2, profile_name: 'B', route: 'vpn', network_kind: 'wifi', download_mbps: 30, upload_mbps: 10, loaded_ping_ms: 300, created_at: '2026-11-08T11:10:00.000Z' },
+    { id: 13, profile_id: 4, profile_name: 'C', route: 'vpn', network_kind: 'wifi', download_mbps: 70, upload_mbps: 20, created_at: '2026-11-08T11:20:00.000Z' },
+    { id: 14, profile_id: 5, profile_name: 'D', route: 'vpn', network_kind: 'cellular', download_mbps: 10, upload_mbps: 2, created_at: '2026-11-08T11:30:00.000Z' },
+  ] as SpeedRun[];
+  const rows = subscriptionSpeedRows(runs, profiles, { 5: 'Мой провайдер', 6: 'Второй' }, 'wifi');
+  const main = rows.find((row) => row.key === 'sub:5')!;
+  assert.equal(main.label, 'Мой провайдер');
+  assert.equal(main.totalConfigs, 3);
+  assert.equal(main.measured, 2, 'неизмеренный конфиг не считается измеренным');
+  assert.equal(main.limiting, 1);
+  assert.equal(main.medianLoadedPing, 170);
+  assert.equal(rows.find((row) => row.key === 'sub:6')?.slowing, 1);
+  assert.ok(!rows.some((row) => row.key === 'group:Ручные'), 'замер на другой сети не попал в сводку');
+
+  // Без прямого замера числа «режут» не выдумываются.
+  const noBase = subscriptionSpeedRows(runs.filter((run) => run.route !== 'direct'), profiles, {}, 'wifi');
+  assert.equal(noBase.find((row) => row.key === 'sub:5')?.limiting, 0);
+  assert.equal(noBase.find((row) => row.key === 'sub:5')?.measured, 2);
 });

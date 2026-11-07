@@ -51,6 +51,9 @@ test('замер скорости показывает результат и с�
   // Задержка под нагрузкой измерена и показана, а не выдумана.
   await expect(page.getByText(/под нагрузкой \d+ мс/).first()).toBeVisible();
   await expect(page.getByText(/Выбор точки:/).first()).toBeVisible();
+  // Сводка по подписке отвечает на вопрос «какие конфиги режут канал».
+  await expect(page.getByText('Подписки: где теряется скорость')).toBeVisible();
+  await expect(page.getByText(/измерено \d+ из \d+/).first()).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

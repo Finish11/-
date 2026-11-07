@@ -9,15 +9,17 @@ import { normalizeSpeedRunPayload } from '../lib/speedPayload';
 import { queuePendingSpeedRun, readPendingSpeedRuns, SPEED_PENDING_KEY } from '../lib/speedPending';
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
-  bufferbloatVerdict, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, networkKindLabel, speedGaugeFraction, speedTraceGeometry, speedUsageVerdict,
+  bufferbloatVerdict, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, networkKindLabel, speedGaugeFraction,
+  speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows,
   GAUGE_TICKS, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
-import type { ClientConnectionInfo, VpnProfile } from '../types';
+import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
 import { Button, Chip, EmptyState, Notice, SectionTitle } from './ui/kit';
 
 interface SpeedTestViewProps {
   connection: ClientConnectionInfo | null;
   profiles: VpnProfile[];
+  subscriptions?: VpnSubscription[];
   confirmationProfileId: number | null;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
@@ -123,7 +125,7 @@ const MetricCard: React.FC<{ icon: React.ReactNode; label: string; value: string
   </div>
 );
 
-export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profiles, confirmationProfileId, showToast }) => {
+export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profiles, subscriptions = [], confirmationProfileId, showToast }) => {
   const [progress, setProgress] = useState<SpeedProgress>({ phase: 'select', mbps: 0, progress: 0, message: '' });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SpeedTestResult | null>(null);
@@ -192,6 +194,9 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const comparison = useMemo(() => compareConfigs(runs, networkKind === 'unknown' ? undefined : networkKind), [runs, networkKind]);
   const capGuess = result ? guessSpeedCap(result.download) : null;
   const responsiveness = bufferbloatVerdict(result?.pingMs, result?.loadedPingMs);
+  const subscriptionRows = useMemo(() => subscriptionSpeedRows(runs, profiles,
+    Object.fromEntries(subscriptions.map((item) => [item.id, item.name])),
+    networkKind === 'unknown' ? undefined : networkKind), [runs, profiles, subscriptions, networkKind]);
 
   const handleProgress = useCallback((next: SpeedProgress) => {
     setProgress(next);
@@ -429,6 +434,39 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           </div>
         )}
       </div>
+
+      {subscriptionRows.length > 0 && (
+        <div className="rounded-3xl border p-4 space-y-3" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+          <div className="text-[12.5px] font-bold">Подписки: где теряется скорость</div>
+          <div className="space-y-2">
+            {subscriptionRows.map((row) => (
+              <div key={row.key} className="rounded-2xl border p-3" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[12px] font-bold truncate">{row.label}</div>
+                  <div className="text-[12px] font-black tabular-nums shrink-0">{formatSpeed(row.medianMbps)} ↓</div>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+                  <span>измерено {row.measured} из {row.totalConfigs}</span>
+                  {row.bestMbps != null && <span>лучший {formatSpeed(row.bestMbps)}</span>}
+                  {row.worstMbps != null && <span>худший {formatSpeed(row.worstMbps)}</span>}
+                  {row.medianLoadedPing != null && <span>под нагрузкой {Math.round(row.medianLoadedPing)} мс</span>}
+                </div>
+                <div className="mt-1 text-[10.5px] font-semibold" style={{
+                  color: !comparison.baseline ? 'var(--text-muted)' : row.limiting ? 'rgb(var(--danger))' : row.slowing ? 'rgb(var(--warning))' : 'rgb(var(--success))',
+                }}>
+                  {!comparison.baseline ? 'Нужен замер без VPN на этой сети — тогда будет видно, какие конфиги режут канал'
+                    : row.limiting ? `Режут канал: ${row.limiting} ${row.limiting === 1 ? 'конфиг' : 'конфигов'} ниже половины прямого канала`
+                    : row.slowing ? `Проседают: ${row.slowing} ${row.slowing === 1 ? 'конфиг' : 'конфигов'}`
+                    : 'Все измеренные конфиги держат скорость'}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+            Считаются только замеры на текущем типе сети. Неизмеренные конфиги в статистику не попадают.
+          </div>
+        </div>
+      )}
 
       <div className="rounded-3xl border p-4 space-y-2" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
         <div className="text-[12.5px] font-bold">История замеров</div>

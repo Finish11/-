@@ -295,9 +295,16 @@ export function compareConfigs(runs: SpeedRun[], networkKind?: string): ConfigCo
     if (!baseline || baseline.medianDownload <= 0)
       return { key: item.key, text: 'Нет замера без VPN на этой сети — сравнить потери нельзя', tone: 'warn' as const };
     const ratio = item.medianDownload / baseline.medianDownload;
-    if (ratio >= 0.85) return { key: item.key, text: `Почти без потерь: ${Math.round(ratio * 100)}% от прямого канала`, tone: 'ok' as const };
-    if (ratio >= 0.5) return { key: item.key, text: `Теряет ${Math.round((1 - ratio) * 100)}% скорости относительно прямого подключения`, tone: 'warn' as const };
-    return { key: item.key, text: `Сильно ограничивает: ${Math.round(ratio * 100)}% от прямого канала`, tone: 'bad' as const };
+    // Отдача может быть срезана отдельно: у части прокси быстрый вход и узкий
+    // выход. Молчать об этом нельзя — человек выбирает конфиг и для звонков.
+    const uploadRatio = baseline.medianUpload > 0 && item.medianUpload > 0
+      ? item.medianUpload / baseline.medianUpload : null;
+    const uploadNote = uploadRatio != null && uploadRatio < 0.6 && uploadRatio < ratio - 0.2
+      ? ` Отдача проседает сильнее: ${Math.round(uploadRatio * 100)}% от прямого канала.` : '';
+    if (ratio >= 0.85) return { key: item.key, text: `Почти без потерь: ${Math.round(ratio * 100)}% от прямого канала.${uploadNote}`,
+      tone: uploadNote ? 'warn' as const : 'ok' as const };
+    if (ratio >= 0.5) return { key: item.key, text: `Теряет ${Math.round((1 - ratio) * 100)}% скорости относительно прямого подключения.${uploadNote}`, tone: 'warn' as const };
+    return { key: item.key, text: `Сильно ограничивает: ${Math.round(ratio * 100)}% от прямого канала.${uploadNote}`, tone: 'bad' as const };
   });
   return { baseline, baselineOtherNetwork, ranked, verdicts };
 }
@@ -377,4 +384,82 @@ export function bufferbloatVerdict(idleMs: number | null | undefined, loadedMs: 
   if (deltaMs <= 30) return { grade: 'ok', deltaMs, text: `Отзывчивый канал: под нагрузкой задержка выросла всего на ${deltaMs} мс` };
   if (deltaMs <= 100) return { grade: 'warn', deltaMs, text: `Под нагрузкой задержка растёт на ${deltaMs} мс — звонки могут подтормаживать при активной загрузке` };
   return { grade: 'bad', deltaMs, text: `Сильный bufferbloat: +${deltaMs} мс под нагрузкой. Игры и звонки будут лагать, пока идёт загрузка` };
+}
+
+
+/** Строка сводки по подписке: сколько конфигов измерено и сколько из них режут канал. */
+export interface SubscriptionSpeedRow {
+  key: string;
+  label: string;
+  totalConfigs: number;
+  measured: number;
+  /** configs ниже 50% прямого канала. */
+  limiting: number;
+  /** Конфигов в диапазоне 50–85%. */
+  slowing: number;
+  medianMbps: number | null;
+  bestMbps: number | null;
+  worstMbps: number | null;
+  medianLoadedPing: number | null;
+}
+
+export interface SubscriptionProfileLike {
+  id: number;
+  subscription_id?: number | null;
+  group_name?: string;
+}
+
+/**
+ * Отвечает на вопрос «какая подписка подсела»: конфиги группируются по подписке
+ * (или по группе, если подписки нет), считаются только замеры на той же сети.
+ * Без прямого замера числа «режут» не выдумываются — они остаются нулями.
+ */
+export function subscriptionSpeedRows(
+  runs: SpeedRun[],
+  profiles: SubscriptionProfileLike[],
+  labels: Record<number, string> = {},
+  networkKind?: string
+): SubscriptionSpeedRow[] {
+  const comparison = compareConfigs(runs, networkKind);
+  const byProfile = new Map(profiles.map((profile) => [profile.id, profile]));
+  const groups = new Map<string, { label: string; total: number; summaries: ConfigSpeedSummary[] }>();
+  const keyOf = (profile: SubscriptionProfileLike) => profile.subscription_id != null
+    ? `sub:${profile.subscription_id}` : profile.group_name ? `group:${profile.group_name}` : 'none';
+  const labelOf = (profile: SubscriptionProfileLike) => profile.subscription_id != null
+    ? labels[profile.subscription_id] || `Подписка №${profile.subscription_id}`
+    : profile.group_name || 'Без подписки';
+  for (const profile of profiles) {
+    const key = keyOf(profile);
+    const entry = groups.get(key) || { label: labelOf(profile), total: 0, summaries: [] };
+    entry.total += 1;
+    groups.set(key, entry);
+  }
+  for (const summary of comparison.ranked) {
+    if (summary.profileId == null) continue;
+    const profile = byProfile.get(summary.profileId);
+    if (!profile) continue;
+    groups.get(keyOf(profile))?.summaries.push(summary);
+  }
+  const baseline = comparison.baseline;
+  return [...groups.entries()]
+    .filter(([, entry]) => entry.summaries.length > 0)
+    .map(([key, entry]) => {
+      const downloads = entry.summaries.map((item) => item.medianDownload).filter((value) => value > 0);
+      const loaded = entry.summaries.map((item) => item.medianLoadedPing)
+        .filter((value): value is number => value != null && Number.isFinite(value));
+      const ratioOf = (value: number) => baseline && baseline.medianDownload > 0 ? value / baseline.medianDownload : null;
+      return {
+        key,
+        label: entry.label,
+        totalConfigs: entry.total,
+        measured: entry.summaries.length,
+        limiting: entry.summaries.filter((item) => { const ratio = ratioOf(item.medianDownload); return ratio != null && ratio < 0.5; }).length,
+        slowing: entry.summaries.filter((item) => { const ratio = ratioOf(item.medianDownload); return ratio != null && ratio >= 0.5 && ratio < 0.85; }).length,
+        medianMbps: downloads.length ? median(downloads) : null,
+        bestMbps: downloads.length ? Math.max(...downloads) : null,
+        worstMbps: downloads.length ? Math.min(...downloads) : null,
+        medianLoadedPing: loaded.length ? median(loaded) : null,
+      };
+    })
+    .sort((a, b) => (b.medianMbps ?? 0) - (a.medianMbps ?? 0));
 }

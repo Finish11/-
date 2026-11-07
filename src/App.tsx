@@ -420,6 +420,7 @@ export function App() {
               <SpeedTestView
                 connection={connection}
                 profiles={vpnProfiles}
+                subscriptions={subscriptions}
                 confirmationProfileId={confirmationProfileId}
                 showToast={showToast}
               />

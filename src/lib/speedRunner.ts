@@ -354,8 +354,10 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     };
     loadedCleanup = () => { loadedController.abort(); options.signal?.removeEventListener('abort', onOuterAbort); };
     const finishLoadedProbe = async () => {
+      // Проба крошечная (нулевое тело): даём ей до 900 мс доехать, иначе на
+      // быстром канале фаза кончается раньше ответа и цифра пропадает.
+      await Promise.race([loadedTask, waitMs(900, options.signal)]);
       loadedController.abort();
-      await Promise.race([loadedTask, waitMs(1200)]);
       options.signal?.removeEventListener('abort', onOuterAbort);
       result.loadedPingMs = loadedPingMs;
     };
@@ -382,7 +384,10 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
 
     if (!options.signal?.aborted) {
       const uploadConnections = Math.max(2, Math.min(4, connections));
-      if (!native) startLoadedProbe(Math.min(1000, Math.round(uploadMs * 0.25)));
+      // Без задержки: на быстром канале бюджет байт выбирается за доли секунды,
+      // и отложенная проба не успела бы пройти. Первый запрос пробы и так
+      // отбрасывается как разогрев, поэтому измеряется уже нагруженный канал.
+      if (!native) startLoadedProbe(0);
       report('upload', 0, `Отдача · ${uploadConnections} соединений`, server, 0);
       // Мелкие куски: подтверждение сервера приходит чаще, итог ближе к реальности.
       const uploadChunk = Math.max(262_144, Math.min(512 * 1024, Math.round(chunkBytes / 4)));

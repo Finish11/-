@@ -294,7 +294,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           <MetricCard icon={<ArrowUp className="w-3.5 h-3.5" />} label="Отдача" value={formatSpeed(result?.upload.mbps)} unit="Мбит/с"
             hint={result ? formatBytes(result.upload.bytes) : undefined} />
           <MetricCard icon={<Activity className="w-3.5 h-3.5" />} label="Задержка" value={result?.pingMs != null ? String(Math.round(result.pingMs)) : '—'} unit="мс"
-            hint={result?.loadedPingMs != null ? `под нагрузкой ${Math.round(result.loadedPingMs)} мс` : undefined} />
+            hint={result ? (result.loadedPingMs != null ? `под нагрузкой ${Math.round(result.loadedPingMs)} мс` : 'под нагрузкой не измерена') : undefined} />
           <MetricCard icon={<Waves className="w-3.5 h-3.5" />} label="Джиттер" value={result?.jitterMs != null ? String(Math.round(result.jitterMs)) : '—'} unit="мс" />
         </div>
 

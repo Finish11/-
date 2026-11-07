@@ -17,7 +17,12 @@ test('замер скорости показывает результат и с�
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
     const url = new URL(request.url());
-    if (url.pathname === '/__up') return route.fulfill({ status: 200, headers: CORS, json: { ok: true } });
+    if (url.pathname === '/__up') {
+      // Реальный канал не отвечает мгновенно: без этой паузы фаза отдачи
+      // кончается за доли секунды и вести себя как настоящий замер не может.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return route.fulfill({ status: 200, headers: CORS, json: { ok: true } });
+    }
     const bytes = Math.min(Number(url.searchParams.get('bytes') || 0), 2_000_000);
     return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/octet-stream' }, body: Buffer.alloc(bytes, 7) });
   });

@@ -56,6 +56,12 @@
 | `src/demo/localApi.ts` | мок-сервер: перехват `window.fetch` для `/api/*` |
 | `src/demo/realSubscription.ts` | настоящая загрузка подписки в APK (нативный HTTP) |
 | `src/demo/bundle-data.json` | снимок данных для демо (75 сайтов, 5 замеров, 8 инцидентов) |
+| `src/lib/speedTest.ts` | чистая методика замера: срезы, отбрасывание, потолок, сравнение конфигов |
+| `src/lib/speedRunner.ts` | оркестратор фаз и транспорты (нативный стриминг / fetch+XHR) |
+| `src/lib/speedEndpoints.ts` | выбор сервера замера: свой → общий → Cloudflare |
+| `src/components/SpeedTestView.tsx` | вкладка «Скорость»: шкала, результат, история, сравнение |
+| `src/lib/incidentShare.ts` | обмен отчётами пакетом и ссылка-приглашение на общий сервер |
+| `docs/diagnostics.md` | что означает каждая цифра и что Android измерить не может |
 
 ## Инфраструктура
 
@@ -67,6 +73,14 @@
 | `playwright.config.ts`, `tests/e2e/` | mobile/desktop smoke через bundled Chromium |
 | `tests/sync-hardening.test.ts` | outbox: доводящий PATCH, защита ключа, очередь по серверу, счётчик id |
 | `tests/community-quota.test.ts` | суточные квоты устройства/IP, окна очистки лимитов, `TRUST_PROXY` |
+| `tests/native-contract.test.ts` | каждый метод моста реализован в Java, плагины зарегистрированы, манифест полон |
+| `tests/speed-test.test.ts` | методика Ookla: срезы, разгон, джиттер, потолок канала, сравнение конфигов |
+| `tests/speed-endpoints.test.ts` | реальные HTTP-точки замера на Express и в Worker/D1 |
+| `tests/routes-and-sharing.test.ts` | раздельный туннель, отзывы по узлу, автоопределение, обмен отчётами |
+| `tests/e2e/speed-and-confirmations.spec.ts` | сквозные сценарии: замер, подтверждение на узле, импорт пакета |
+| `server/speed.ts` | точки `/api/speed/ping\|down\|up` с лимитами по IP |
+| `android/.../NetworkProbePlugin.java` | HTTP-проба, TCP мимо VPN, реальная задержка, фазы замера скорости |
+| `android/.../NetUtil.java` | сети Android: физическая сеть под VPN, владелец VPN, always-on |
 | `.github/workflows/deploy-demo-pages.yml` | публикация демо на GitHub Pages |
 | `.github/workflows/android-apk.yml` | сборка debug APK на раннере: артефакт + публикация в Releases (тег `android-latest`) |
 | `capacitor.config.ts` | Capacitor: `appId`, `appName`, `webDir: demo-dist`, `server.url` для боевого режима |
@@ -81,7 +95,8 @@
 ## Проверки
 
 `npm run typecheck` · `npm run typecheck:community` · `npm run test:core` ·
-`npm run test:regressions` · `npm run test:sync` · `npm run test:worker` · `npm run build` ·
+`npm run test:regressions` · `npm run test:sync` · `npm run test:native` ·
+`npm run test:speed` · `npm run test:routes` · `npm run test:worker` · `npm run build` ·
 `npm run build:demo` · `npm run test:e2e` — должны быть зелёными.
 `npm audit --omit=dev` не должен находить известных уязвимостей.
 

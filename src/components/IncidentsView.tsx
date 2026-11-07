@@ -29,6 +29,7 @@ import {
 } from '../types';
 import { apiFetch } from '../lib/api';
 import { shareText } from '../lib/shareText';
+import { communityInviteLink, exportIncidentBundle, importIncidentBundle, readCommunityInvite } from '../lib/incidentShare';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import {
   communitySyncChanged,
@@ -46,7 +47,7 @@ import {
 } from '../lib/community';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
-import { Button, Chip, EmptyState } from './ui/kit';
+import { Button, Chip, EmptyState, Notice } from './ui/kit';
 import {
   loadFavorites,
   placeKey,
@@ -111,6 +112,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [communityUrl, setCommunityUrl] = useState(getCommunityEndpoint);
   const [communityDraft, setCommunityDraft] = useState(getCommunityEndpoint);
   const [communitySettingsOpen, setCommunitySettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importReport, setImportReport] = useState('');
+  const [invite, setInvite] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [syncError, setSyncError] = useState('');
@@ -405,6 +410,38 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   };
 
   const visibleIncidents = incidents.filter((inc) => !inc.pending_delete);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const invited = readCommunityInvite(window.location.hash);
+    if (!invited || invited === getCommunityEndpoint()) return;
+    setInvite(invited);
+    setCommunityDraft(invited);
+    setCommunitySettingsOpen(true);
+  }, []);
+
+  const exportBundle = async () => {
+    const payload = exportIncidentBundle(incidentsRef.current, { endpoint: communityUrl || undefined, author: user.name });
+    const shared = await shareText('Отчёты о сбоях «ПульсСети»', payload);
+    if (!shared) showToast('info', 'Пакет скопирован: отправьте его участникам в чат');
+  };
+
+  const runImport = async () => {
+    const result = importIncidentBundle(importText, incidentsRef.current, { userId: user.id });
+    if (!result.ok) { setImportReport(result.error); showToast('error', result.error); return; }
+    await persistLocal(result.incidents);
+    setImportReport(`Добавлено ${result.added}, обновлено ${result.updated}, пропущено ${result.skipped}${result.removed ? `, удалено ${result.removed}` : ''}`);
+    setImportText('');
+    showToast('success', 'Отчёты участников загружены');
+    if (communityUrl) void syncNow();
+  };
+
+  const copyInvite = async () => {
+    if (!communityUrl) return;
+    const link = communityInviteLink(communityUrl, typeof window === 'undefined' ? '' : window.location.href);
+    await shareText('Общий сервер сбоев «ПульсСети»', link);
+    showToast('success', 'Ссылка-приглашение скопирована');
+  };
+
   const isForeignEndpoint = (inc: Incident) => Boolean(communityUrl && inc.sync_endpoint && !belongsToEndpoint(inc, communityUrl));
   const foreignEndpointCount = visibleIncidents.filter(isForeignEndpoint).length;
   const pendingSync = pendingCommunityCount(visibleIncidents, communityUrl || undefined);
@@ -457,6 +494,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                   Синхронизировать
                 </Button>
               )}
+              <Button variant="outline" size="md" icon={<Share2 className="w-4 h-4" />} onClick={() => setShareOpen(true)}>
+                Обмен
+              </Button>
               <Button variant="soft" size="md" icon={<Settings2 className="w-4 h-4" />} onClick={() => setCommunitySettingsOpen(true)}>
                 {communityUrl ? 'Общий сервер' : 'Подключить сервер'}
               </Button>
@@ -1110,6 +1150,59 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             Отправляются только регион, оператор, текст отчёта и технический ID устройства. Внешний IP,
             VPN-конфиги и подтверждения приложений на общий сервер не передаются. Повторная синхронизация
             не создаёт дубли; свои отчёты может изменить только то же устройство.
+          </div>
+          {invite && <Notice tone="info">Вас пригласили на сервер <span className="font-mono break-all">{invite}</span>. Нажмите «Проверить и подключить».</Notice>}
+          {communityUrl && (
+            <Button variant="outline" block icon={<Share2 className="w-4 h-4" />} onClick={() => void copyInvite()}>
+              Скопировать ссылку-приглашение
+            </Button>
+          )}
+          <div className="rounded-xl border p-3 space-y-1.5 text-[11px] leading-relaxed text-dim" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+            <div className="font-bold text-[11.5px]" style={{ color: 'var(--text)' }}>Как отчёты доходят до вас</div>
+            <div>1. Разверните сервер: в GitHub откройте Actions → «Deploy community API» → Run workflow. Нужны два секрета репозитория: CLOUDFLARE_API_TOKEN и CLOUDFLARE_ACCOUNT_ID (бесплатный тариф Cloudflare).</div>
+            <div>2. Workflow напечатает адрес вида <span className="font-mono">https://pulsenet-community.&lt;аккаунт&gt;.workers.dev</span>. Вставьте его сюда.</div>
+            <div>3. Отправьте участникам ссылку-приглашение — у них адрес подставится сам. Дальше отчёты приходят автоматически при открытии вкладки и каждые 60 секунд.</div>
+            <div>Без Cloudflare подойдёт свой сервер из этого репозитория (Docker): у него тот же <span className="font-mono">/api/community</span>.</div>
+            <div>Совсем без сервера — вкладка «Обмен»: пакет отчётов можно передать файлом или текстом в мессенджере.</div>
+          </div>
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        title="Обмен отчётами"
+        subtitle="Работает даже без общего сервера"
+        size="sm"
+        icon={<Share2 className="w-5 h-5" style={{ color: 'rgb(var(--accent))' }} />}
+      >
+        <div className="space-y-3">
+          <div className="rounded-xl border p-3 text-[11px] leading-relaxed text-dim" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+            {communityUrl
+              ? <>Сейчас отчёты уходят на общий сервер <span className="font-mono break-all">{communityUrl}</span> и приходят всем, у кого подключён тот же адрес.</>
+              : <>Общий сервер не подключён: отчёты видите только вы. Их можно передать пакетом — участник нажмёт «Загрузить» и увидит ваши отчёты у себя.</>}
+          </div>
+          <Button variant="primary" block icon={<Share2 className="w-4 h-4" />} onClick={() => void exportBundle()}>
+            Поделиться своими отчётами
+          </Button>
+          <label className="block">
+            <span className="block text-[11.5px] font-semibold text-dim mb-1.5">Вставить пакет от другого участника</span>
+            <textarea
+              value={importText}
+              onChange={(event) => setImportText(event.target.value)}
+              rows={5}
+              placeholder='{"pulsenet":"incidents","version":1,…}'
+              className={`${input} font-mono text-[11px]`}
+              style={inputStyle}
+            />
+          </label>
+          <Button variant="soft" block disabled={!importText.trim()} onClick={() => void runImport()}>
+            Загрузить отчёты
+          </Button>
+          {importReport && <Notice tone="info">{importReport}</Notice>}
+          <div className="text-[10.5px] leading-relaxed text-dim">
+            Слияние по client_id: дубли не создаются, побеждает более свежая правка, удалённые отчёты не возвращаются.
+            В пакет не попадают ключи устройства и ваши голоса.
           </div>
         </div>
       </Sheet>

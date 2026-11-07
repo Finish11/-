@@ -39,6 +39,19 @@
   хранятся в одной таблице, но чистятся разными порогами (`rateLimitCleanup`).
 - Старые `incidents.community=1` мигрируют в отдельную таблицу и не попадают в личную ленту.
 
+## Замер скорости
+
+Рядом с общим API живут публичные точки замера — те же пути обслуживает и
+Express-версия (`server/speed.ts`):
+
+- `GET /api/speed/ping` → `204`;
+- `GET /api/speed/down?bytes=N` → ровно N несжимаемых байт (лимит 32 МиБ в Worker,
+  64 МиБ в Express);
+- `POST /api/speed/up` → `{ ok: true, received: N }`, тело принимается до 8 МиБ.
+
+Лимит: 400 запросов/мин на IP в Worker, 600/мин и 4 ГиБ/час в Express. Ключ
+устройства для этих точек не нужен. Методика расчёта — в [`diagnostics.md`](diagnostics.md).
+
 ## Деплой
 
 Секреты только в окружении/GitHub Secrets: `CLOUDFLARE_API_TOKEN`,

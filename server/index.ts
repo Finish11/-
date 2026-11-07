@@ -792,6 +792,24 @@ async function startServer() {
     });
   });
 
+  app.post('/api/vpn-profiles/:id/real-delay', requireAuth, (req: AuthedRequest, res) => {
+    const id = Number(req.params.id);
+    const latency = Number(req.body?.latency_ms);
+    if (!Number.isFinite(latency) || latency < 0 || latency > 60000) {
+      res.status(400).json({ error: 'Некорректная задержка' }); return;
+    }
+    const checkedAt = typeof req.body?.checked_at === 'string' && Number.isFinite(Date.parse(req.body.checked_at))
+      ? req.body.checked_at : new Date().toISOString();
+    const route = ['vpn', 'direct', 'unknown'].includes(String(req.body?.route)) ? String(req.body.route) : 'unknown';
+    const info = db.prepare(`UPDATE vpn_profiles SET real_delay_ms = ?, real_delay_at = ?, real_delay_route = ?,
+      real_delay_exit_ip = ?, real_delay_vpn_package = ? WHERE id = ? AND user_id = ?`).run(
+      latency, checkedAt, route, String(req.body?.exit_ip || '').slice(0, 80),
+      String(req.body?.vpn_package || '').slice(0, 160), id, req.user!.id);
+    if (!info.changes) { res.status(404).json({ error: 'VPN-профиль не найден' }); return; }
+    const row = db.prepare('SELECT * FROM vpn_profiles WHERE id = ?').get(id) as Record<string, unknown>;
+    res.json({ profile: { ...row, whitelist_bypass: Boolean(row.whitelist_bypass), is_primary: Boolean(row.is_primary) } });
+  });
+
   app.post('/api/vpn-profiles/:id/check', requireAuth, async (req: AuthedRequest, res) => {
     const userId = req.user!.id;
     const id = Number(req.params.id);
@@ -839,15 +857,18 @@ async function startServer() {
     if (supplied && (req.query.demo === '1' || req.get('x-pulsenet-demo') === '1')) {
       const allowed = new Set(rows.map((row) => Number(row.id)));
       const update = db.prepare(`UPDATE vpn_profiles SET status = ?, latency_ms = ?, notes = ?, last_checked_at = ?,
-        latency_kind = 'tcp_connect', latency_route = ?, latency_trusted = ? WHERE id = ? AND user_id = ?`);
+        latency_kind = 'tcp_connect', latency_route = ?, latency_trusted = ?, latency_bypassed = ?,
+        server_ip = COALESCE(?, server_ip) WHERE id = ? AND user_id = ?`);
       db.transaction(() => { for (const item of supplied.slice(0, 500)) {
         const id = Number(item?.id); if (!allowed.has(id) || !['online', 'degraded', 'blocked'].includes(item.status)) continue;
         const route = ['vpn', 'direct', 'unknown'].includes(item.route) ? item.route : 'unknown';
         const latency = item.latencyMs == null ? null : Number(item.latencyMs);
         if (latency != null && (!Number.isFinite(latency) || latency < 0 || latency > 60000)) continue;
         const checkedAt = typeof item.checkedAt === 'string' && Number.isFinite(Date.parse(item.checkedAt)) ? item.checkedAt : now;
+        const serverIp = typeof item.serverIp === 'string' && /^[0-9a-fA-F:.]{3,45}$/.test(item.serverIp) ? item.serverIp : null;
         update.run(item.status, latency, String(item.reason || '').slice(0, 500), checkedAt, route,
-          route === 'direct' && item.trusted === true && latency != null && latency >= 1 ? 1 : 0, id, userId);
+          route === 'direct' && item.trusted === true && latency != null && latency >= 1 ? 1 : 0,
+          item.bypassed === true ? 1 : 0, serverIp, id, userId);
       } })();
     } else await Promise.all(
       rows.map(async (r) => {

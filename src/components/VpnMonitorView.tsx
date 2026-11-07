@@ -39,7 +39,8 @@ import {
 import { apiFetch } from '../lib/api';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { isNativeApp } from '../lib/nativeBridge';
-import { applyNodeMeasurements, formatTcpLatency, nodeLatencyLabel, pingAllNodes, tcpLatencyIsComparable } from '../lib/nodePing';
+import { applyNodeMeasurements, formatTcpLatency, measureRealDelay, nodeLatencyLabel, nodeRealDelayLabel, pingAllNodes, tcpLatencyIsComparable, type RealDelayMeasurement } from '../lib/nodePing';
+import { suggestActiveNode } from '../lib/appConfirmations';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { ExpandableText } from './ui/ExpandableText';
@@ -341,7 +342,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
             ? {
                 ...item,
                 ...applyNodeMeasurements([item], [{ id: item.id, status: r.status, latencyMs: r.latencyMs,
-                  reason: r.reason, checkedAt: new Date().toISOString(), route: r.route, trusted: r.trusted }])[0],
+                  reason: r.reason, checkedAt: new Date().toISOString(), route: r.route, trusted: r.trusted,
+                  bypassed: r.bypassed, serverIp: r.address }])[0],
               }
             : item
         )
@@ -387,6 +389,40 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   };
 
   /** Массовый TCP в APK идёт с живым прогрессом и одним сохранением всей партии. */
+  const [realDelay, setRealDelay] = useState<RealDelayMeasurement | null>(null);
+  const [realDelayBusy, setRealDelayBusy] = useState(false);
+  const [realDelayProfileId, setRealDelayProfileId] = useState<number | null>(null);
+
+  /**
+   * «Реальная задержка» активного подключения — как real delay в v2rayNG:
+   * HTTP 204 сквозь туннель. Это единственный честный способ проверить
+   * включённый конфиг, не переключая чужой VPN.
+   */
+  const handleRealDelay = async () => {
+    setRealDelayBusy(true);
+    try {
+      const measurement = await measureRealDelay();
+      setRealDelay(measurement);
+      if (!measurement.ok) { showToast('warning', measurement.reason); return; }
+      const suggested = realDelayProfileId != null
+        ? profiles.find((profile) => profile.id === realDelayProfileId) || null
+        : suggestActiveNode(profiles, { vpnPackage: connection?.vpn_package, exitIp: connection?.ip })?.profile || null;
+      if (suggested && measurement.latencyMs != null) {
+        const saved = await apiFetch<{ profile: VpnProfile }>(`/api/vpn-profiles/${suggested.id}/real-delay`, {
+          method: 'POST',
+          body: JSON.stringify({ latency_ms: measurement.latencyMs, route: measurement.route,
+            checked_at: measurement.checkedAt, exit_ip: connection?.ip || '', vpn_package: connection?.vpn_package || '' }),
+        });
+        setProfiles((prev) => prev.map((profile) => profile.id === suggested.id ? { ...profile, ...saved.profile } : profile));
+        showToast('success', `Реальная задержка ${formatTcpLatency(measurement.latencyMs)} · ${suggested.name}`);
+      } else {
+        showToast('info', `Реальная задержка ${formatTcpLatency(measurement.latencyMs)}. Выберите конфиг ниже, чтобы сохранить её для узла.`);
+      }
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Не удалось измерить реальную задержку');
+    } finally { setRealDelayBusy(false); }
+  };
+
   const handleCheckAll = async (options?: { silent?: boolean; targets?: VpnProfile[] }) => {
     const targetProfiles = options?.targets || profiles;
     setCheckingAll(true);
@@ -406,6 +442,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               latencyMs: result.latencyMs,
               reason: result.reason || '',
               checkedAt: new Date().toISOString(), route: result.route, trusted: result.trusted,
+              bypassed: result.bypassed, serverIp: result.address,
             }]));
           }
         );
@@ -415,7 +452,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           status: results[index].status,
           latencyMs: results[index].latencyMs,
           reason: results[index].reason || '', route: results[index].route, trusted: results[index].trusted,
-          checkedAt,
+          bypassed: results[index].bypassed, serverIp: results[index].address, checkedAt,
         }));
         setProfiles((prev) => applyNodeMeasurements(prev, measurements));
         try {
@@ -1192,10 +1229,54 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
           </div>
           {connection?.vpn_detected && (
             <Notice tone="info" icon={<Info className="w-4 h-4" />}>
-              Сейчас включён VPN. TCP может приниматься локально VPN-клиентом. Такие числа не сортируются
-              как скорость серверов и не доказывают работу туннеля. Для TCP-сравнения выключите VPN.
-              Задержку конкретного конфига через прокси-ядро эта версия не измеряет: используйте real delay в VPN-клиенте.
+              Включён VPN, поэтому проверка узлов идёт через физическую сеть в обход туннеля — иначе TCP
+              принимал бы сам VPN-клиент и все серверы показывали одинаковые миллисекунды. Если система
+              запрещает прямой доступ, число не выдумывается: выключите VPN и повторите.
             </Notice>
+          )}
+          {connection?.split_tunnel && (
+            <Notice tone="warn" icon={<Info className="w-4 h-4" />}>
+              VPN включён, но Android пускает трафик «ПульсСети» мимо туннеля (раздельный туннель в клиенте).
+              Проверки сайтов и скорости в таком режиме показывают обычный интернет. Добавьте приложение
+              в проксируемые в настройках VPN-клиента.
+            </Notice>
+          )}
+          {isNativeApp() && (
+            <div className="rounded-2xl border p-3 space-y-2" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12.5px] font-bold leading-tight">Реальная задержка подключения</div>
+                  <div className="text-[10.5px] text-muted leading-snug mt-0.5">
+                    HTTP 204 через активное подключение, медиана прогретых запросов — как real delay в v2rayNG и NekoBox.
+                    Проверяет весь путь, включая выход сервера, а не только открытый порт.
+                  </div>
+                </div>
+                <Button variant="soft" size="sm" loading={realDelayBusy} icon={<Zap className="w-3.5 h-3.5" />} onClick={() => void handleRealDelay()}>
+                  Измерить
+                </Button>
+              </div>
+              {realDelay && (
+                <div className="text-[11.5px] font-semibold" style={{ color: realDelay.ok ? 'rgb(var(--success))' : 'rgb(var(--warning))' }}>
+                  {realDelay.ok ? `${formatTcpLatency(realDelay.latencyMs)} · ${realDelay.route === 'vpn' ? 'через VPN' : 'напрямую'}` : realDelay.reason}
+                  {realDelay.ok && realDelay.minMs != null && realDelay.maxMs != null
+                    ? ` · разброс ${formatTcpLatency(realDelay.minMs)}…${formatTcpLatency(realDelay.maxMs)}` : ''}
+                </div>
+              )}
+              {profiles.length > 0 && (
+                <label className="block text-[10.5px] text-dim">
+                  Для какого конфига сохранить замер
+                  <select
+                    value={realDelayProfileId ?? ''}
+                    onChange={(event) => setRealDelayProfileId(event.target.value ? Number(event.target.value) : null)}
+                    className="mt-1 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
+                    style={{ borderColor: 'var(--line)', background: 'var(--surface-2)', color: 'var(--text)' }}
+                  >
+                    <option value="">Определить по выходному IP</option>
+                    {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
           )}
           {grouped.map(([groupName, nodes]) => {
             const isCollapsed = collapsed[groupName];
@@ -1277,7 +1358,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                               style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
                             >
                               <StatusIcon status={p.status} className="w-3 h-3" />
-                              {nodeLatencyLabel(p)}
+                              {nodeRealDelayLabel(p) || nodeLatencyLabel(p)}
                             </span>
                           </div>
 

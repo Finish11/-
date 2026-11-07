@@ -577,10 +577,35 @@ async function handle(path: string, method: string, body: any): Promise<Response
       if (body?.is_primary) {
         state.profiles = state.profiles.map((p) => ({ ...p, is_primary: p.id === id }));
       }
-      state.profiles = state.profiles.map((p) => (p.id === id ? { ...p, ...body,
-        status: 'unknown', latency_ms: null, last_checked_at: null, latency_kind: undefined, latency_route: undefined, latency_trusted: false } : p));
-      if (state.confirmationProfileId === id) state.confirmationProfileId = null;
+      const before = state.profiles.find((p) => p.id === id);
+      // Сбрасывать замеры и отзыв имеет смысл только если изменился сам сервер:
+      // переименование или «основной» не делают узел другим маршрутом.
+      const endpointChanged = before && ['host', 'port', 'raw_link'].some((field) =>
+        body?.[field] !== undefined && String(body[field]) !== String(before[field]));
+      const reset = endpointChanged
+        ? { status: 'unknown', latency_ms: null, last_checked_at: null, latency_kind: undefined,
+            latency_route: undefined, latency_trusted: false, real_delay_ms: null, real_delay_at: null, server_ip: undefined }
+        : {};
+      state.profiles = state.profiles.map((p) => (p.id === id ? { ...p, ...body, ...reset } : p));
+      if (endpointChanged && state.confirmationProfileId === id) state.confirmationProfileId = null;
       await sleep(150);
+      return json({ profile: state.profiles.find((p) => p.id === id) });
+    }
+
+    if (parts[2] === 'real-delay' && method === 'POST') {
+      const profile = state.profiles.find((p) => p.id === id);
+      if (!profile) return json({ error: 'Узел не найден' }, 404);
+      const latency = Number(body?.latency_ms);
+      if (!Number.isFinite(latency) || latency < 0 || latency > 60000)
+        return json({ error: 'Некорректная задержка' }, 400);
+      const patch = {
+        real_delay_ms: latency,
+        real_delay_at: typeof body?.checked_at === 'string' ? body.checked_at : new Date().toISOString(),
+        real_delay_route: ['vpn', 'direct', 'unknown'].includes(String(body?.route)) ? String(body.route) : 'unknown',
+        real_delay_exit_ip: String(body?.exit_ip || '').slice(0, 80),
+        real_delay_vpn_package: String(body?.vpn_package || '').slice(0, 160),
+      };
+      state.profiles = state.profiles.map((p) => p.id === id ? { ...p, ...patch } : p);
       return json({ profile: state.profiles.find((p) => p.id === id) });
     }
     if (parts.length === 2 && method === 'DELETE') {

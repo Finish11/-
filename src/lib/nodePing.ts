@@ -28,12 +28,15 @@ export interface NodePingResult {
   vpnPackage?: string;
   /** Замер выполнен мимо включённого VPN — число снова означает RTT до сервера. */
   bypassed?: boolean;
+  /** IP, в который разрезолвился адрес узла: помогает узнать активный конфиг. */
+  address?: string;
 }
 
 const PORT_TIMEOUT = 4000;
 
 export interface NodeMeasurement {
   id: number;
+  serverIp?: string;
   status: NodeProbe['status'];
   latencyMs: number | null;
   reason: string;
@@ -51,6 +54,7 @@ export function applyNodeMeasurements<
     latency_ms: number | null;
     notes: string;
     last_checked_at: string | null;
+    server_ip?: string;
   }
 >(profiles: T[], measurements: NodeMeasurement[]): T[] {
   const byId = new Map<number, NodeMeasurement>();
@@ -75,6 +79,7 @@ export function applyNodeMeasurements<
       last_checked_at: measurement.checkedAt,
       latency_kind: 'tcp_connect', latency_route: measurement.route || 'unknown', latency_trusted: measurement.trusted === true,
       latency_bypassed: measurement.bypassed === true,
+      server_ip: measurement.serverIp || profile.server_ip,
     };
   });
 }
@@ -121,18 +126,19 @@ export async function pingNode(host: string, port: number, knownRoute?: NodePing
     // так же, как tcping в v2rayNG работает до подключения туннеля.
     const bypass = startRoute === 'vpn';
     const samples: number[] = []; let route = startRoute; let vpnPackage: string | undefined;
-    let lastError = ''; let bypassed = false; let localAccept = false;
+    let lastError = ''; let bypassed = false; let localAccept = false; let address: string | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await tcpPing(host, port, PORT_TIMEOUT, bypass);
       if (!bypass && res.route && knownRoute && res.route !== knownRoute) return { status: 'blocked', latencyMs: null, attempts: attempt + 1,
         trusted: false, reason: 'Сеть изменилась во время проверки. Повторите на стабильном маршруте.' };
       route = res.route || route; vpnPackage = res.vpn_package || vpnPackage;
       bypassed = bypassed || res.bypassed === true; localAccept = localAccept || res.local_accept === true;
+      address = res.address || address;
       if (res.ok && !res.local_accept && res.latency_ms != null && Number.isFinite(res.latency_ms)) samples.push(res.latency_ms);
       else lastError = res.error || 'нет соединения';
     }
     const median = medianSamples(samples);
-    if (median != null && samples.length >= 2) return successResult(median, samples.length, bypassed ? 'direct' : route, vpnPackage, bypassed);
+    if (median != null && samples.length >= 2) return { ...successResult(median, samples.length, bypassed ? 'direct' : route, vpnPackage, bypassed), address };
     if (bypass && /permission denied|lockdown|物理|физическая/i.test(lastError))
       return { status: 'blocked', latencyMs: null, attempts: 3, route: 'unknown', trusted: false, vpnPackage,
         reason: 'Система не даёт приложению выйти напрямую мимо VPN (постоянный VPN или раздельный туннель). Выключите VPN в клиенте и повторите — иначе цифры были бы выдуманными.' };

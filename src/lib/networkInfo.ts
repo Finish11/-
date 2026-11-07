@@ -54,6 +54,8 @@ export interface NetworkContextOptions {
   networkTypeOverride?: string;
   nativeStatus?: NativeNetworkState;
   skipGeo?: boolean;
+  /** Явная платформа для тестов системных фактов без Android. */
+  nativePlatform?: boolean;
 }
 
 export function emptyGeo(): GeoInfo {
@@ -215,7 +217,7 @@ export function buildNetworkContext(
   geo: GeoInfo | null,
   options: NetworkContextOptions = {}
 ): NetworkContext {
-  const nativePlatform = isNativeApp();
+  const nativePlatform = options.nativePlatform ?? isNativeApp();
   const vpn = resolveVpnStatus(native, geo || emptyGeo(), nativePlatform);
   let browserKind: NetworkContext['networkKind'] = 'unknown';
   if (!nativePlatform && typeof navigator !== 'undefined') {

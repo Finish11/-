@@ -175,7 +175,13 @@ export function browserTransport(): SpeedTransport {
                   if (delta > 0) bytes += delta;
                 };
                 xhr.onload = () => {
-                  if (xhr.status >= 200 && xhr.status < 300) { confirmed += counted; resolve(); }
+                  if (xhr.status >= 200 && xhr.status < 300) {
+                    // Некоторые WebView не присылают upload.onprogress. Ответ 2xx на
+                    // POST фиксированной длины означает, что тело получено целиком.
+                    if (counted === 0) { counted = request.chunkBytes; bytes += counted; }
+                    confirmed += counted;
+                    resolve();
+                  }
                   else { errors.push(`HTTP ${xhr.status}${xhr.getResponseHeader('Retry-After') ? ` Retry-After ${xhr.getResponseHeader('Retry-After')}` : ''}`); reject(new Error(`HTTP ${xhr.status}`)); }
                 };
                 xhr.onerror = () => { errors.push('Соединение прервано'); reject(new Error('upload failed')); };

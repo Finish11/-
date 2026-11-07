@@ -186,6 +186,7 @@ export interface VpnProfile {
   real_delay_vpn_package?: string;
   /** IP сервера из последней DNS-резолюции: помогает угадать активный узел по выходному IP. */
   server_ip?: string;
+  
   created_at: string;
 }
 
@@ -209,7 +210,10 @@ export interface VpnSubscription {
   created_at: string;
 }
 
-export interface Incident {
+/** Метаданные обмена: когда отчёт получен из пакета другого участника. */
+export interface IncidentImportMeta { imported_at?: string }
+
+export interface Incident extends IncidentImportMeta {
   id: number;
   user_id: number | null;
   author_name: string;

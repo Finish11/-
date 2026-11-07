@@ -1,4 +1,4 @@
-import { httpProbe, isNativeApp, type NativeHttpProbe } from './nativeBridge';
+import { httpProbe, isNativeApp, tcpPing, type NativeHttpProbe } from './nativeBridge';
 import { assessSiteContent } from './siteContent';
 import type { SiteProof } from '../types';
 
@@ -24,6 +24,11 @@ export function canonicalServiceProbeUrl(value: string): string {
 }
 function classifyError(message: string): { verdict: ProbeVerdict; reason: string } {
   const m = message.toLowerCase();
+  // Молчаливый отказ моста нельзя выдавать за блокировку сайта.
+  if (/not implemented|unimplemented|не реализован/.test(m))
+    return { verdict: 'offline', reason: 'Эта сборка приложения не умеет проверять сайты. Обновите APK — сайт при этом может работать.' };
+  if (/permission denied|lockdown/.test(m))
+    return { verdict: 'offline', reason: 'Система запретила приложению этот маршрут (постоянный VPN). Проверка не выполнена.' };
   if (/timeout|timed out|deadline/.test(m)) return { verdict: 'blocked', reason: 'сервер не ответил (таймаут)' };
   if (/certificate|ssl|cert|handshake|tls|trust anchor|hostname/.test(m))
     return { verdict: 'blocked', reason: 'Ошибка TLS/сертификата: страница не открыта; причина не установлена' };
@@ -84,6 +89,13 @@ export async function probeSiteResilient(url: string, options: ProbeOptions = {}
   if (!signal?.aborted && first.verdict === 'blocked' && first.httpStatus == null && !/TLS/i.test(first.reason || '')) {
     const second = await probeSite(first.probeUrl || url, { ...options, timeoutMs }); attempts++;
     if (second.verdict === 'ok' || second.verdict === 'slow') return { ...second, attempts };
+    // «Пинг идёт, а сайт не открывается» — разные вещи. Проверяем TCP 443, чтобы
+    // честно сказать: маршрут до сервера есть, но страница не отдалась.
+    if (isNativeApp() && !signal?.aborted) {
+      const tcp = await tcpPing(parsed.hostname, parsed.port ? Number(parsed.port) : 443, 4000);
+      if (tcp.ok) return { ...first, attempts,
+        reason: `${first.reason || 'Страница не открылась'} · TCP-порт отвечает: маршрут до сервера есть, но HTTP-ответ не получен (защита от ботов, DPI или блокировка страницы)` };
+    }
     return { ...first, attempts, reason: `${first.reason || 'Нет ответа'} · повторная проверка не помогла` };
   }
   return { ...first, attempts };

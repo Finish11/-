@@ -17,7 +17,9 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
-  reporter: [['list']],
+  // В CI ошибки должны быть видны прямо в аннотациях GitHub: логи раннера
+  // недоступны из песочницы, а аннотации читаются через API.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',

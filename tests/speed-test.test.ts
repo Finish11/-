@@ -327,3 +327,14 @@ test('догадка по IP не отменяет системный факт �
   assert.equal(recordedSpeedRoute('unknown', 'unknown', true), 'vpn', 'выбран конфиг — значит VPN');
   assert.equal(recordedSpeedRoute('unknown', 'unknown', false), 'direct', 'выбрано «без VPN» — точка отсчёта');
 });
+
+test('конфиг быстрее прямого канала не называется «потерей 131%»', () => {
+  const runs = [
+    { id: 1, route: 'direct', network_kind: 'wifi', download_mbps: 70, upload_mbps: 30, created_at: '2026-11-08T10:00:00.000Z' },
+    { id: 2, profile_id: 4, profile_name: 'Быстрый', route: 'vpn', network_kind: 'wifi', download_mbps: 92,
+      upload_mbps: 30, created_at: '2026-11-08T11:00:00.000Z' },
+  ] as SpeedRun[];
+  const verdict = compareConfigs(runs, 'wifi').verdicts.find((item) => item.key === 'profile:4')!;
+  assert.match(verdict.text, /Не медленнее прямого канала/);
+  assert.equal(verdict.tone, 'ok');
+});

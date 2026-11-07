@@ -301,6 +301,8 @@ export function compareConfigs(runs: SpeedRun[], networkKind?: string): ConfigCo
       ? item.medianUpload / baseline.medianUpload : null;
     const uploadNote = uploadRatio != null && uploadRatio < 0.6 && uploadRatio < ratio - 0.2
       ? ` Отдача проседает сильнее: ${Math.round(uploadRatio * 100)}% от прямого канала.` : '';
+    if (ratio > 1.05) return { key: item.key, text: `Не медленнее прямого канала: ${Math.round(ratio * 100)}% от него.${uploadNote}`,
+      tone: uploadNote ? 'warn' as const : 'ok' as const };
     if (ratio >= 0.85) return { key: item.key, text: `Почти без потерь: ${Math.round(ratio * 100)}% от прямого канала.${uploadNote}`,
       tone: uploadNote ? 'warn' as const : 'ok' as const };
     if (ratio >= 0.5) return { key: item.key, text: `Теряет ${Math.round((1 - ratio) * 100)}% скорости относительно прямого подключения.${uploadNote}`, tone: 'warn' as const };

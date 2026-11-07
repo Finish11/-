@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildNetworkContext, emptyGeo, resolveVpnStatus } from '../src/lib/networkInfo.ts';
-import { findAppConfirmation, routeFingerprint, routeIdentity, suggestActiveNode } from '../src/lib/appConfirmations.ts';
+import { mapLimit } from '../src/lib/nativeBridge.ts';
+import {
+  confirmationAgeDays, confirmationAgeLabel, confirmationFreshness, confirmationWeight,
+  findAppConfirmation, recommendConfirmedNodes, routeFingerprint, routeIdentity, suggestActiveNode,
+} from '../src/lib/appConfirmations.ts';
 import { communityInviteLink, exportIncidentBundle, importIncidentBundle, readCommunityInvite } from '../src/lib/incidentShare.ts';
 import type { AppConfirmation, Incident, VpnProfile } from '../src/types.ts';
 
@@ -183,4 +187,70 @@ test('капча и проверка браузера не превращают 
   const stub = assessSiteContent('https://example.com/', '<html>Доступ ограничен Роскомнадзор</html>', 200, 'text/html');
   assert.equal(stub.intercepted, true);
   assert.notEqual(stub.challenge, true);
+});
+
+test('партию проб можно остановить: новые задачи не запускаются, отказ один', async () => {
+  const controller = new AbortController();
+  const started: number[] = [];
+  const pending = mapLimit([1, 2, 3, 4, 5, 6, 7, 8], 2, async (item) => {
+    started.push(item);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (item === 2) controller.abort();
+    return item;
+  }, controller.signal);
+  await assert.rejects(pending, (error: Error) => error.name === 'AbortError');
+  assert.ok(started.length < 8, `после остановки не должны стартовать все задачи: ${started.join(',')}`);
+  assert.ok(started.includes(1) && started.includes(2));
+});
+
+test('без отмены партия выполняется полностью и в исходном порядке', async () => {
+  const results = await mapLimit([1, 2, 3, 4, 5], 2, async (item) => {
+    await new Promise((resolve) => setTimeout(resolve, 5 - item));
+    return item * 10;
+  });
+  assert.deepEqual(results, [10, 20, 30, 40, 50]);
+});
+
+test('уже отменённая партия не запускает ни одной пробы', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let calls = 0;
+  await assert.rejects(mapLimit([1, 2], 2, async () => { calls += 1; }, controller.signal),
+    (error: Error) => error.name === 'AbortError');
+  assert.equal(calls, 0);
+});
+
+const NOW = Date.parse('2026-11-08T12:00:00.000Z');
+const daysAgo = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
+
+test('свежесть отзыва: неделя свежий, месяц стареет, дальше давний', () => {
+  assert.equal(confirmationFreshness(daysAgo(0), NOW), 'fresh');
+  assert.equal(confirmationFreshness(daysAgo(7), NOW), 'fresh');
+  assert.equal(confirmationFreshness(daysAgo(8), NOW), 'aging');
+  assert.equal(confirmationFreshness(daysAgo(30), NOW), 'aging');
+  assert.equal(confirmationFreshness(daysAgo(31), NOW), 'stale');
+  assert.equal(confirmationFreshness('мусор', NOW), 'unknown');
+  assert.equal(confirmationFreshness(null, NOW), 'unknown');
+  assert.equal(confirmationAgeDays(daysAgo(-3), NOW), 0, 'часы устройства могут спешить');
+  assert.equal(confirmationWeight(daysAgo(1), NOW), 1);
+  assert.ok(confirmationWeight(daysAgo(45), NOW) < confirmationWeight(daysAgo(10), NOW));
+  assert.equal(confirmationAgeLabel(daysAgo(0), NOW), 'подтверждено сегодня');
+  assert.equal(confirmationAgeLabel(daysAgo(1), NOW), 'подтверждено вчера');
+  assert.match(confirmationAgeLabel(daysAgo(45), NOW), /больше месяца/);
+});
+
+test('давний отзыв не поднимает узел выше свежего', () => {
+  const oldNode = profile(1, { name: 'Давно подтверждён' });
+  const freshNode = profile(2, { name: 'Подтверждён вчера' });
+  const confirmation = (node: typeof oldNode, age: number, service: string): AppConfirmation => ({
+    id: node.id * 10, user_id: 1, service_id: service, profile_id: node.id, node_key: `vpn:${node.id}`,
+    profile_name: node.name, exit_ip: '203.0.113.5', works: true, confirmed_at: daysAgo(age),
+  } as AppConfirmation);
+  const ranked = recommendConfirmedNodes([oldNode, freshNode], [
+    confirmation(oldNode, 60, 'chatgpt'),
+    confirmation(freshNode, 1, 'chatgpt'),
+  ]);
+  assert.equal(ranked[0].profile.id, freshNode.id, 'свежий отзыв важнее давнего');
+  assert.equal(ranked.find((item) => item.profile.id === oldNode.id)?.freshWorks, 0);
+  assert.equal(ranked.find((item) => item.profile.id === freshNode.id)?.freshWorks, 1);
 });

@@ -3,7 +3,7 @@ import { Check, ChevronRight, ExternalLink, GripVertical, Info, Loader2, Plus, S
 import { getVpnDiagnostics, isNativeApp, openInstalledApp as launchInstalledApp, tcpPing, type VpnDiagnostics } from '../lib/nativeBridge';
 import { apiFetch } from '../lib/api';
 import { detectNetworkContext, networkSnapshotKey, toClientConnection, verifyTunnelBypass } from '../lib/networkInfo';
-import { confirmationRouteStillValid, routeFingerprint, routeIdentity, suggestActiveNode } from '../lib/appConfirmations';
+import { confirmationRouteStillValid, routeFingerprint, routeIdentity, suggestActiveNode, confirmationFreshness, confirmationAgeLabel } from '../lib/appConfirmations';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
 import { confirmationNodeKey, findAppConfirmation, type ConfirmationMatch } from '../lib/appConfirmations';
 import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
@@ -112,11 +112,21 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean, confirmation?: Con
   if (confirmation) {
     if (confirmation.matchedBy === 'ip') return { bg: 'rgb(var(--warning) / 0.08)', fg: 'rgb(var(--warning))',
       label: 'отзыв другого узла с тем же IP', emojiBg: 'transparent' };
+    const freshness = confirmationFreshness(confirmation.confirmation.confirmed_at);
+    if (confirmation.confirmation.works && freshness === 'stale')
+      return {
+        bg: 'rgb(var(--warning) / 0.1)',
+        fg: 'rgb(var(--warning))',
+        label: 'приложение работало · отзыв давний',
+        emojiBg: 'transparent',
+      };
     return confirmation.confirmation.works
       ? {
           bg: 'rgb(var(--success) / 0.12)',
           fg: 'rgb(var(--success))',
-          label: 'приложение работает · подтверждено',
+          label: freshness === 'aging'
+            ? `приложение работает · ${confirmationAgeLabel(confirmation.confirmation.confirmed_at)}`
+            : 'приложение работает · подтверждено',
           emojiBg: 'transparent',
         }
       : {
@@ -789,6 +799,8 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                   {selectedMatch.confirmation.works ? 'Вы подтвердили: приложение работает.' : 'Вы отметили: приложение не работает.'}
                   {' '}{selectedMatch.matchedBy === 'ip' ? 'Совпадение найдено по внешнему IP, не по названию узла. '
                     : selectedMatch.ipChanged ? 'Выходной IP с тех пор изменился — отзыв относится к этому узлу. ' : ''}
+                  {confirmationFreshness(selectedMatch.confirmation.confirmed_at) !== 'fresh'
+                    ? 'Отзыв давний — ситуация могла измениться, перепроверьте. ' : ''}
                   {selectedMatch.confirmation.profile_name} · {new Date(selectedMatch.confirmation.confirmed_at).toLocaleString('ru-RU')}
                 </Notice>
               )}

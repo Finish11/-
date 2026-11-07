@@ -160,20 +160,29 @@ function classifyConnectError(message: string): string {
   return 'узел не отвечает';
 }
 
+export interface NodeBatchOptions {
+  /** Отмена партии: уже начатые пробы дойдут, новые не запускаются. */
+  signal?: AbortSignal;
+  /** v2rayNG держит 5–10 параллельных проб; больше — риск потерь на слабом канале. */
+  concurrency?: number;
+}
+
 /** Проверка всех узлов: системный маршрут определяется один раз на партию. */
 export async function pingAllNodes<T extends { host: string; port: number }>(
   nodes: T[],
-  onProgress: (done: number, total: number, result: NodePingResult, index: number) => void
+  onProgress: (done: number, total: number, result: NodePingResult, index: number) => void,
+  options: NodeBatchOptions = {}
 ): Promise<NodePingResult[]> {
   const total = nodes.length;
   const route = await currentRoute();
   let done = 0;
-  return mapLimit(nodes, 4, async (node, index) => {
+  const concurrency = Math.max(1, Math.min(10, Math.round(options.concurrency ?? 6)));
+  return mapLimit(nodes, concurrency, async (node, index) => {
     const result = await pingNode(node.host, node.port, route);
     done += 1;
     onProgress(done, total, result, index);
     return result;
-  });
+  }, options.signal);
 }
 
 export function tcpLatencyIsComparable(profile: { latency_ms: number | null; latency_kind?: string; latency_route?: string; latency_trusted?: boolean }): boolean {

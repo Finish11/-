@@ -189,13 +189,21 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
         try { await saveMeasurement(site, siteMeasurementPatch(result)); } catch { failedSaves++; }
         done++; setCheckProgress(`${done} / ${targets.length}`);
       };
-      if (IS_DEMO_BUILD && !isNativeApp()) await mapLimit(targets, 6, async (site) => { await apply(await probeSingleSite(site, 'live')); });
-      else await runRealSiteScan(targets, (_done, _total, result) => { void apply(result); }, ctrl.signal, 8000,
+      // Записи результатов ждём до итога: иначе счётчик в уведомлении отстаёт
+      // от реально сохранённых сайтов, а уход с экрана обрывает сохранения.
+      const saving: Promise<void>[] = [];
+      if (IS_DEMO_BUILD && !isNativeApp())
+        await mapLimit(targets, 6, async (site) => { await apply(await probeSingleSite(site, 'live')); }, ctrl.signal);
+      else await runRealSiteScan(targets, (_done, _total, result) => { saving.push(apply(result)); }, ctrl.signal, 8000,
         { withVpn: ctx.vpnLikely, countryCode: ctx.geo?.country_code });
+      await Promise.all(saving);
       if (!ctrl.signal.aborted) showToast(failedSaves ? 'warning' : 'success', failedSaves
         ? `Проверено ${done}; не сохранено ${failedSaves}. Повторите проверку.` : `Проверено ${done} сайтов одним алгоритмом`);
-    } catch (error) { showToast('error', error instanceof Error ? error.message : 'Проверка не завершена'); }
-    finally { setCheckingAll(false); setCheckProgress(''); abortRef.current = null; }
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError' || ctrl.signal.aborted)
+        showToast('info', `Проверка остановлена: сохранено ${done} из ${targets.length}`);
+      else showToast('error', error instanceof Error ? error.message : 'Проверка не завершена');
+    } finally { setCheckingAll(false); setCheckProgress(''); abortRef.current = null; }
   };
 
   const handleResetDefaults = async () => {

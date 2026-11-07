@@ -7,6 +7,49 @@ export interface ConfirmationMatch {
   ipChanged?: boolean;
 }
 
+/** Блокировки меняются каждый день: отзыв не может держать узел зелёным вечно. */
+export const CONFIRMATION_FRESH_DAYS = 7;
+export const CONFIRMATION_STALE_DAYS = 30;
+
+export type ConfirmationFreshness = 'fresh' | 'aging' | 'stale' | 'unknown';
+
+const DAY_MS = 86_400_000;
+
+export function confirmationAgeDays(confirmedAt: string | null | undefined, now = Date.now()): number | null {
+  if (!confirmedAt) return null;
+  const at = Date.parse(confirmedAt);
+  if (!Number.isFinite(at)) return null;
+  // Часы устройства могут отставать: будущее считаем «сейчас», а не минусом.
+  return Math.max(0, (now - at) / DAY_MS);
+}
+
+export function confirmationFreshness(confirmedAt: string | null | undefined, now = Date.now()): ConfirmationFreshness {
+  const days = confirmationAgeDays(confirmedAt, now);
+  if (days == null) return 'unknown';
+  if (days <= CONFIRMATION_FRESH_DAYS) return 'fresh';
+  return days <= CONFIRMATION_STALE_DAYS ? 'aging' : 'stale';
+}
+
+/** Вес отзыва в рейтинге: свежий решает, старый только подсказывает. */
+export function confirmationWeight(confirmedAt: string | null | undefined, now = Date.now()): number {
+  const freshness = confirmationFreshness(confirmedAt, now);
+  if (freshness === 'fresh') return 1;
+  if (freshness === 'aging') return 0.6;
+  if (freshness === 'stale') return 0.25;
+  return 0.5;
+}
+
+export function confirmationAgeLabel(confirmedAt: string | null | undefined, now = Date.now()): string {
+  const days = confirmationAgeDays(confirmedAt, now);
+  if (days == null) return 'дата отзыва неизвестна';
+  if (days < 1) return 'подтверждено сегодня';
+  const whole = Math.floor(days);
+  if (whole === 1) return 'подтверждено вчера';
+  if (whole < 30) return `подтверждено ${whole} дн. назад`;
+  const months = Math.floor(whole / 30);
+  return `подтверждено больше ${months === 1 ? 'месяца' : `${months} месяцев`} назад`;
+}
+
 export function confirmationNodeKey(profile: Pick<VpnProfile, 'id'> | null): string {
   return profile ? `vpn:${profile.id}` : 'direct';
 }
@@ -89,6 +132,8 @@ export interface ConfirmedNodeRecommendation {
   works: number;
   failures: number;
   score: number;
+  /** Сколько отзывов свежее недели — старые не должны выглядеть как гарантия. */
+  freshWorks: number;
 }
 
 /** Рейтинг использует только отзывы, оставленные непосредственно для этого узла. */
@@ -108,16 +153,24 @@ export function recommendConfirmedNodes(
     const latest = [...latestByService.values()];
     const works = latest.filter((item) => item.works).length;
     const failures = latest.length - works;
+    const weightedWorks = latest.filter((item) => item.works)
+      .reduce((sum, item) => sum + confirmationWeight(item.confirmed_at), 0);
+    const weightedFailures = latest.filter((item) => !item.works)
+      .reduce((sum, item) => sum + confirmationWeight(item.confirmed_at), 0);
+    const freshWorks = latest.filter((item) => item.works
+      && confirmationFreshness(item.confirmed_at) === 'fresh').length;
     const comparable = profile.latency_kind === 'tcp_connect' && profile.latency_route === 'direct'
       && profile.latency_trusted === true && profile.latency_ms != null && Number.isFinite(profile.latency_ms);
     const latency = comparable ? Math.max(0, profile.latency_ms!) : 600;
     const statusScore = profile.status === 'online' ? 20 : profile.status === 'blocked' ? -100 : 0;
-    const score = Math.round(works * 110 - failures * 90 + (works / Math.max(1, latest.length)) * 40 - Math.min(latency, 1200) / 25 + statusScore);
-    return { profile, works, failures, score };
+    const score = Math.round(weightedWorks * 110 - weightedFailures * 90
+      + (weightedWorks / Math.max(1, latest.length)) * 40 - Math.min(latency, 1200) / 25 + statusScore);
+    return { profile, works, failures, score, freshWorks };
   })
     .filter((item) => item.works > 0)
     .sort((a, b) =>
       b.works - a.works ||
+      b.freshWorks - a.freshWorks ||
       a.failures - b.failures ||
       b.score - a.score ||
       (a.profile.latency_trusted ? a.profile.latency_ms ?? Infinity : Infinity) - (b.profile.latency_trusted ? b.profile.latency_ms ?? Infinity : Infinity)

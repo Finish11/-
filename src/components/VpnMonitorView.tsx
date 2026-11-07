@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Info,
   Shield,
@@ -25,6 +25,7 @@ import {
   Server,
   ArrowUpRight,
   Sparkles,
+  Square,
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import type { AppConfirmation, ClientConnectionInfo, ScanRecord, VpnProfile, VpnSubscription } from '../types';
@@ -186,6 +187,9 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   const onlineTotal = profiles.filter((p) => p.status === 'online' || p.status === 'degraded').length;
   const [checkingAll, setCheckingAll] = useState(false);
   const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
+  const checkAbortRef = useRef<AbortController | null>(null);
+  // Уход с экрана не оставляет партию проб висеть в фоне.
+  useEffect(() => () => { checkAbortRef.current?.abort(); }, []);
   const [checkingId, setCheckingId] = useState<number | null>(null);
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -424,15 +428,20 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
   };
 
   const handleCheckAll = async (options?: { silent?: boolean; targets?: VpnProfile[] }) => {
+    if (checkingAll) { checkAbortRef.current?.abort(); return; }
     const targetProfiles = options?.targets || profiles;
+    const controller = new AbortController();
+    checkAbortRef.current = controller;
     setCheckingAll(true);
     setCheckProgress({ done: 0, total: targetProfiles.length });
+    let processed = 0;
     try {
       if (isNativeApp()) {
         const base = targetProfiles;
         const results = await pingAllNodes(
           base.map((p) => ({ host: p.host, port: Number(p.port || 443) })),
           (done, total, result, index) => {
+            processed = done;
             setCheckProgress({ done, total });
             const target = base[index];
             if (!target) return;
@@ -444,7 +453,8 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               checkedAt: new Date().toISOString(), route: result.route, trusted: result.trusted,
               bypassed: result.bypassed, serverIp: result.address,
             }]));
-          }
+          },
+          { signal: controller.signal }
         );
         const checkedAt = new Date().toISOString();
         const measurements = base.map((profile, index) => ({
@@ -472,7 +482,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       }
 
       const res = await apiFetch<{ profiles: VpnProfile[] }>('/api/vpn-profiles/check-all', {
-        method: 'POST',
+        method: 'POST', signal: controller.signal,
       });
       setProfiles(res.profiles);
       if (!options?.silent) {
@@ -481,11 +491,15 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       }
     } catch (error) {
       if (!options?.silent) {
-        showToast('error', error instanceof Error ? error.message : 'Не удалось проверить узлы');
+        // Остановка — не ошибка: измеренное уже показано и сохранено по узлам.
+        if ((error as Error)?.name === 'AbortError' || controller.signal.aborted)
+          showToast('info', `Проверка остановлена: успели проверить ${processed} из ${targetProfiles.length}`);
+        else showToast('error', error instanceof Error ? error.message : 'Не удалось проверить узлы');
       }
     } finally {
       setCheckingAll(false);
       setCheckProgress(null);
+      checkAbortRef.current = null;
     }
   };
 
@@ -1218,13 +1232,12 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               </div>
             </div>
             <Button
-              variant="soft"
+              variant={checkingAll ? 'outline' : 'soft'}
               size="sm"
-              loading={checkingAll}
-              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              icon={checkingAll ? <Square className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
               onClick={() => void handleCheckAll()}
             >
-              Проверить
+              {checkingAll ? 'Остановить' : 'Проверить'}
             </Button>
           </div>
           {connection?.vpn_detected && (

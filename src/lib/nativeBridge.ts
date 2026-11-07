@@ -315,17 +315,26 @@ export async function probeNode(host: string, port: number): Promise<NodeProbe> 
 export async function mapLimit<T, R>(
   items: T[],
   limit: number,
-  fn: (item: T, index: number) => Promise<R>
+  fn: (item: T, index: number) => Promise<R>,
+  signal?: AbortSignal
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
   const workers = Array.from({ length: Math.min(limit, items.length || 1) }, async () => {
     while (cursor < items.length) {
+      // Отмена не бросает исключение внутри воркера: иначе Promise.all
+      // отклонился бы раньше остальных и оставил бы необработанные отказы.
+      if (signal?.aborted) return;
       const index = cursor++;
       results[index] = await fn(items[index], index);
     }
   });
   await Promise.all(workers);
+  if (signal?.aborted) {
+    const error = new Error('Проверка остановлена');
+    error.name = 'AbortError';
+    throw error;
+  }
   return results;
 }
 

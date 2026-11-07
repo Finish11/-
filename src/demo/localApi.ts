@@ -13,6 +13,7 @@ import { applyNodeMeasurements, pingNode, type NodeMeasurement } from '../lib/no
 import { readNativeStateFile, writeNativeStateFile } from '../lib/nativeStateStore';
 import { encodeStatePacket, reserveNextLocalId, selectNewestState } from './stateStorage';
 import type { VpnProfile } from '../types';
+import { normalizeSpeedRunPayload } from '../lib/speedPayload';
 
 type Row = Record<string, any>;
 
@@ -822,29 +823,11 @@ async function handle(path: string, method: string, body: any): Promise<Response
   if (parts[0] === 'speed-tests') {
     if (parts.length === 1 && method === 'GET') return json({ runs: state.speedTests });
     if (parts.length === 1 && method === 'POST') {
-      const down = Number(body?.download_mbps), up = Number(body?.upload_mbps);
-      if (!Number.isFinite(down) || down < 0 || !Number.isFinite(up) || up < 0)
-        return json({ error: 'Некорректные значения скорости' }, 400);
-      const profileId = body?.profile_id == null ? null : Number(body.profile_id);
-      if (profileId != null && !state.profiles.some((profile) => Number(profile.id) === profileId))
+      const parsed = normalizeSpeedRunPayload(body);
+      if (!parsed.ok) return json({ error: parsed.error }, 400);
+      if (parsed.run.profile_id != null && !state.profiles.some((profile) => Number(profile.id) === parsed.run.profile_id))
         return json({ error: 'Узел не найден' }, 404);
-      const run = {
-        id: genId(), user_id: state.user.id,
-        created_at: typeof body?.created_at === 'string' && body.created_at ? body.created_at : new Date().toISOString(),
-        download_mbps: down, upload_mbps: up,
-        ping_ms: body?.ping_ms == null ? null : Number(body.ping_ms),
-        jitter_ms: body?.jitter_ms == null ? null : Number(body.jitter_ms),
-        download_bytes: Math.max(0, Math.round(Number(body?.download_bytes) || 0)),
-        upload_bytes: Math.max(0, Math.round(Number(body?.upload_bytes) || 0)),
-        server: String(body?.server || '').slice(0, 200),
-        network_kind: String(body?.network_kind || 'unknown').slice(0, 20),
-        route: ['vpn', 'direct', 'unknown'].includes(String(body?.route)) ? String(body.route) : 'unknown',
-        vpn_package: String(body?.vpn_package || '').slice(0, 160),
-        vpn_app_name: String(body?.vpn_app_name || '').slice(0, 160),
-        exit_ip: String(body?.exit_ip || '').slice(0, 80),
-        profile_id: profileId, profile_name: String(body?.profile_name || '').slice(0, 160),
-        reliable: body?.reliable !== false, note: String(body?.note || '').slice(0, 400),
-      };
+      const run = { id: genId(), user_id: state.user.id, ...parsed.run };
       state.speedTests = [run, ...state.speedTests].slice(0, 200);
       return json({ run }, 201);
     }

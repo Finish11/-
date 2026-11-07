@@ -43,6 +43,9 @@ test('замер скорости показывает результат и с�
   await expect(page.getByText(/^0,00$/)).toHaveCount(0);
   // График и подписи фаз остаются после замера.
   await expect(page.getByText(/загрузка · /).first()).toBeVisible();
+  // Задержка под нагрузкой измерена и показана, а не выдумана.
+  await expect(page.getByText(/под нагрузкой \d+ мс/).first()).toBeVisible();
+  await expect(page.getByText(/Выбор точки:/).first()).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

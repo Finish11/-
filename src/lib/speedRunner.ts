@@ -1,5 +1,5 @@
 import { abortNativeSpeed, isNativeApp, nativeSpeedPhase, onNativeSpeedSample, realDelayProbe } from './nativeBridge';
-import { availableSpeedServers, speedEndpointError, type SpeedServer, type SpeedServerOptions } from './speedEndpoints';
+import { availableSpeedServers, pickSpeedServer, speedEndpointError, type SpeedServer, type SpeedServerOptions, type SpeedServerProbe } from './speedEndpoints';
 import {
   aggregateSpeed, bytesToMbps, latencyStats, planChunkBytes, planConnections,
   SPEED_BYTE_BUDGET, type SpeedAggregate, type SpeedSlice,
@@ -43,7 +43,7 @@ export interface SpeedPhaseResult {
 }
 
 export interface SpeedTransport {
-  latency(url: string, samples: number, signal?: AbortSignal): Promise<{ samples: number[]; error?: string }>;
+  latency(url: string, samples: number, signal?: AbortSignal, timeoutMs?: number): Promise<{ samples: number[]; error?: string }>;
   phase(request: SpeedPhaseRequest): Promise<SpeedPhaseResult>;
   abort(runId: string): void;
 }
@@ -54,8 +54,8 @@ const PHASE_WEIGHT: Record<SpeedPhaseName, number> = { select: 0.05, ping: 0.1, 
 
 export function nativeTransport(): SpeedTransport {
   return {
-    async latency(url, samples) {
-      const result = await realDelayProbe(url, 8000, Math.max(2, Math.min(7, samples)));
+    async latency(url, samples, _signal, timeoutMs) {
+      const result = await realDelayProbe(url, timeoutMs ?? 8000, Math.max(2, Math.min(7, samples)));
       if (!result.ok) return { samples: [], error: result.error || 'сервер не ответил' };
       return { samples: Array.isArray(result.samples) && result.samples.length ? result.samples : [result.latency_ms ?? 0] };
     },
@@ -100,22 +100,38 @@ export function browserTransport(): SpeedTransport {
   };
 
   return {
-    async latency(url, samples, signal) {
+    async latency(url, samples, signal, timeoutMs) {
       const values: number[] = [];
       let error = '';
+      let limited = '';
       for (let attempt = 0; attempt < samples + 1; attempt++) {
+        if (signal?.aborted) break;
         const started = performance.now();
+        // Без своего таймаута зависший сервер вешал весь замер на этапе выбора.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), Math.max(500, timeoutMs ?? 5000));
+        const onAbort = () => controller.abort();
+        signal?.addEventListener('abort', onAbort);
         try {
-          const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}pulse=${Date.now()}_${attempt}`, { cache: 'no-store', signal });
+          const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}pulse=${Date.now()}_${attempt}`, { cache: 'no-store', signal: controller.signal });
           await response.arrayBuffer();
-          if (!response.ok) { error = `HTTP ${response.status}`; continue; }
+          if (!response.ok) {
+            error = `HTTP ${response.status}`;
+            const retry = response.headers.get('Retry-After');
+            if (response.status === 429) limited = `HTTP 429${retry ? ` Retry-After ${retry}` : ''}`;
+            continue;
+          }
           if (attempt > 0) values.push(performance.now() - started);
         } catch (err) {
-          if ((err as Error)?.name === 'AbortError') break;
-          error = err instanceof Error ? err.message : String(err);
+          if (signal?.aborted) break;
+          error = (err as Error)?.name === 'AbortError' ? `таймаут ${Math.round((timeoutMs ?? 5000) / 1000)} с`
+            : err instanceof Error ? err.message : String(err);
+        } finally {
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', onAbort);
         }
       }
-      return { samples: values, error: values.length ? undefined : error || 'сервер не ответил' };
+      return { samples: values, error: limited || (values.length ? undefined : error || 'сервер не ответил') };
     },
     async phase(request) {
       const set = new Set<AbortController>();
@@ -241,9 +257,25 @@ export interface SpeedTestResult {
   pingMs: number | null;
   jitterMs: number | null;
   pingSamples: number[];
+  /** Медиана задержки во время загрузки (bufferbloat), null — не измерена. */
+  loadedPingMs: number | null;
+  /** Пользователь нажал «Остановить»: цифры есть, но замер неполный. */
+  aborted: boolean;
+  /** Почему выбрана эта точка замера. */
+  serverReason: string;
   route: 'vpn' | 'direct' | 'unknown';
   error: string;
   finishedAt: string;
+}
+
+/** Пауза, которая не переживает отмену и не держит таймер после неё. */
+function waitMs(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted || ms <= 0) { resolve(); return; }
+    const done = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done);
+  });
 }
 
 const EMPTY_AGGREGATE: SpeedAggregate = { mbps: 0, averageMbps: 0, peakMbps: 0, bytes: 0, durationMs: 0,
@@ -257,33 +289,38 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     options.onProgress?.({ phase, mbps, progress: Math.min(1, base + PHASE_WEIGHT[phase] * within), message, server });
   };
   const result: SpeedTestResult = { ok: false, server: null, download: EMPTY_AGGREGATE, upload: EMPTY_AGGREGATE,
-    pingMs: null, jitterMs: null, pingSamples: [], route: 'unknown', error: '', finishedAt: new Date().toISOString() };
+    pingMs: null, jitterMs: null, pingSamples: [], loadedPingMs: null, aborted: false, serverReason: '',
+    route: 'unknown', error: '', finishedAt: new Date().toISOString() };
 
   const budget = options.lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full;
   const downloadMs = options.downloadMs ?? budget.downloadMs;
   const uploadMs = options.uploadMs ?? budget.uploadMs;
   const candidates = options.server ? [options.server] : availableSpeedServers(options);
-  let server: SpeedServer | null = null;
-  let pingSamples: number[] = [];
-  const selectionErrors: string[] = [];
-  report('select', 0, 'Выбираем сервер замера…');
-  for (const candidate of candidates) {
-    if (options.signal?.aborted) break;
-    const probe = await transport.latency(candidate.ping, options.pingSamples ?? 5, options.signal);
-    if (probe.samples.length) { server = candidate; pingSamples = probe.samples; break; }
-    selectionErrors.push(`${candidate.label}: ${probe.error || 'нет ответа'}`);
-  }
+  report('select', 0, candidates.length > 1 ? `Сравниваем задержку до ${candidates.length} точек…` : 'Проверяем точку замера…');
+  // Параллельно и с таймаутом: медленная точка не задерживает выбор, а выбор
+  // идёт по задержке, а не по порядку в списке.
+  const probes: SpeedServerProbe[] = await Promise.all(candidates.map(async (candidate) => {
+    const probe = await transport.latency(candidate.ping, options.pingSamples ?? 5, options.signal, 4000);
+    const stats = latencyStats(probe.samples);
+    return { server: candidate, pingMs: stats.pingMs, samples: probe.samples, error: probe.error };
+  }));
+  const choice = pickSpeedServer(probes);
+  const server = choice.server;
   if (!server) {
-    result.error = `Нет доступного сервера замера. ${selectionErrors.join(' · ')}`;
+    result.aborted = Boolean(options.signal?.aborted);
+    result.error = result.aborted ? 'Замер остановлен' : `Нет доступного сервера замера. ${choice.reason}`;
     report('error', 0, result.error);
     return result;
   }
+  const pingSamples = choice.samples;
   result.server = server;
+  result.serverReason = choice.reason;
   const stats = latencyStats(pingSamples);
   result.pingMs = stats.pingMs;
   result.jitterMs = stats.jitterMs;
   result.pingSamples = pingSamples;
-  report('ping', 0, `Сервер: ${server.label}`, server);
+  report('ping', 0, `${server.label} · ${choice.reason}`, server);
+  let loadedCleanup: (() => void) | null = null;
 
   try {
     // Разогрев: небольшая загрузка даёт оценку канала для числа соединений и размера куска.
@@ -297,6 +334,34 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     const connections = planConnections(estimate);
     const chunkBytes = planChunkBytes(estimate);
 
+    // Задержка под нагрузкой: маленькие запросы идут параллельно основной фазе и
+    // показывают очередь в буферах. В браузере пробуем во время отдачи: там
+    // всего 2–4 соединения, и проба не стоит в очереди за шестью загрузками
+    // (лимит пула на хост иначе выдал бы её ожидание за лаг канала). В APK
+    // сокеты свои, поэтому мерим прямо во время загрузки.
+    let loadedPingMs: number | null = null;
+    const loadedController = new AbortController();
+    const onOuterAbort = () => loadedController.abort();
+    options.signal?.addEventListener('abort', onOuterAbort);
+    let loadedTask: Promise<void> = Promise.resolve();
+    const startLoadedProbe = (delayMs: number) => {
+      loadedTask = (async () => {
+        await waitMs(delayMs, loadedController.signal);
+        if (loadedController.signal.aborted) return;
+        const probe = await transport.latency(server!.ping, options.lite ? 2 : 3, loadedController.signal, 2500);
+        loadedPingMs = latencyStats(probe.samples).pingMs;
+      })().catch(() => {});
+    };
+    loadedCleanup = () => { loadedController.abort(); options.signal?.removeEventListener('abort', onOuterAbort); };
+    const finishLoadedProbe = async () => {
+      loadedController.abort();
+      await Promise.race([loadedTask, waitMs(1200)]);
+      options.signal?.removeEventListener('abort', onOuterAbort);
+      result.loadedPingMs = loadedPingMs;
+    };
+    const native = isNativeApp();
+    if (native) startLoadedProbe(Math.min(1200, Math.round(downloadMs * 0.2)));
+
     report('download', 0, `Загрузка · ${connections} соединений`, server, 0);
     const download = await transport.phase({
       runId: `${runId}-down`, direction: 'download',
@@ -307,7 +372,9 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
     });
     result.download = aggregateSpeed(download.slices);
     result.route = download.route ?? 'unknown';
+    result.aborted = Boolean(options.signal?.aborted);
     if (!download.confirmed) {
+      await finishLoadedProbe();
       result.error = speedEndpointError(download.errors, server);
       report('error', 0, result.error, server);
       return result;
@@ -315,6 +382,7 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
 
     if (!options.signal?.aborted) {
       const uploadConnections = Math.max(2, Math.min(4, connections));
+      if (!native) startLoadedProbe(Math.min(1000, Math.round(uploadMs * 0.25)));
       report('upload', 0, `Отдача · ${uploadConnections} соединений`, server, 0);
       // Мелкие куски: подтверждение сервера приходит чаще, итог ближе к реальности.
       const uploadChunk = Math.max(262_144, Math.min(512 * 1024, Math.round(chunkBytes / 4)));
@@ -327,15 +395,20 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
       result.upload = aggregateSpeed(upload.slices, { field: 'bytes' });
       if (!upload.confirmed && upload.errors.length) result.error = speedEndpointError(upload.errors, server);
     }
+    await finishLoadedProbe();
     result.ok = result.download.bytes > 0;
+    result.aborted = Boolean(options.signal?.aborted);
+    if (result.aborted) result.download = { ...result.download, reliable: false,
+      reason: 'Замер остановлен вручную — цифра приблизительная' };
     result.finishedAt = new Date().toISOString();
-    report('done', result.download.mbps, result.error || 'Замер завершён', server);
+    report('done', result.download.mbps, result.error || (result.aborted ? 'Замер остановлен' : 'Замер завершён'), server);
     return result;
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
     report('error', 0, result.error, server);
     return result;
   } finally {
+    loadedCleanup?.();
     transport.abort(`${runId}-down`);
     transport.abort(`${runId}-up`);
     transport.abort(`${runId}-warmup`);

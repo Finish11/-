@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -245,4 +245,30 @@ test('прямой замер на другой сети не выдаётся �
   assert.ok(same.baseline);
   assert.equal(same.baselineOtherNetwork, null);
   assert.match(same.verdicts.find((entry) => entry.key === 'profile:5')?.text || '', /Сильно ограничивает: 20%/);
+});
+
+test('отзывчивость под нагрузкой считается по росту задержки, а не по абсолюту', () => {
+  assert.equal(bufferbloatVerdict(20, 25).grade, 'ok');
+  assert.equal(bufferbloatVerdict(20, 25).deltaMs, 5);
+  assert.equal(bufferbloatVerdict(120, 150).grade, 'ok', 'высокий базовый ping сам по себе не bufferbloat');
+  assert.equal(bufferbloatVerdict(20, 80).grade, 'warn');
+  assert.equal(bufferbloatVerdict(20, 400).grade, 'bad');
+  assert.match(bufferbloatVerdict(20, 400).text, /380 мс/);
+  assert.equal(bufferbloatVerdict(20, null).grade, 'unknown');
+  assert.equal(bufferbloatVerdict(null, 100).grade, 'unknown');
+  assert.equal(bufferbloatVerdict(20, 10).deltaMs, 0, 'отрицательная разница не показывается как рост');
+});
+
+test('сравнение конфигов показывает задержку под нагрузкой', () => {
+  const runs = [
+    { id: 1, profile_id: 3, profile_name: 'Быстрый, но лагает', route: 'vpn', network_kind: 'wifi', download_mbps: 90,
+      upload_mbps: 30, ping_ms: 20, loaded_ping_ms: 320, created_at: '2026-11-08T10:00:00.000Z' },
+    { id: 2, profile_id: 3, profile_name: 'Быстрый, но лагает', route: 'vpn', network_kind: 'wifi', download_mbps: 110,
+      upload_mbps: 30, ping_ms: 24, loaded_ping_ms: 280, created_at: '2026-11-08T11:00:00.000Z' },
+    { id: 3, profile_id: 4, profile_name: 'Старый замер', route: 'vpn', network_kind: 'wifi', download_mbps: 50,
+      upload_mbps: 10, ping_ms: 30, created_at: '2026-11-08T09:00:00.000Z' },
+  ] as SpeedRun[];
+  const summaries = summarizeByConfig(runs);
+  assert.equal(summaries.find((item) => item.key === 'profile:3')?.medianLoadedPing, 300);
+  assert.equal(summaries.find((item) => item.key === 'profile:4')?.medianLoadedPing, null, 'нет данных — нет выдумки');
 });

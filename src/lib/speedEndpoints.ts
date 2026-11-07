@@ -71,3 +71,52 @@ export function speedEndpointError(errors: string[], server: SpeedServer): strin
   if (/timeout|timed out/i.test(joined)) return `Сервер замера не отвечает: ${joined}`;
   return joined || 'Замер не состоялся';
 }
+
+/** Результат пробы кандидата: медиана задержки и причина отказа, если он был. */
+export interface SpeedServerProbe {
+  server: SpeedServer;
+  pingMs: number | null;
+  samples: number[];
+  error?: string;
+}
+
+export interface SpeedServerChoice {
+  server: SpeedServer | null;
+  pingMs: number | null;
+  samples: number[];
+  /** Почему выбрана именно эта точка — показывается пользователю. */
+  reason: string;
+  /** Сколько точек ответили: нужно, чтобы «ближайшая» была честной. */
+  reachable: number;
+}
+
+const RATE_LIMITED = /429|Retry-After/i;
+
+/**
+ * Выбор точки замера по задержке — как Speedtest, а не «первая ответившая».
+ *
+ * Своя точка предпочтительнее при близкой задержке: у публичной есть чужие
+ * лимиты (429 на час), и гоняться за 5 мс ценой отказа замера незачем. Если своя
+ * заметно медленнее, берём быструю и честно пишем, почему.
+ */
+export function pickSpeedServer(probes: SpeedServerProbe[], tolerance = 1.25): SpeedServerChoice {
+  const answered = probes.filter((probe) =>
+    probe.pingMs != null && Number.isFinite(probe.pingMs) && probe.pingMs >= 0 && probe.samples.length > 0);
+  const usable = answered.filter((probe) => !RATE_LIMITED.test(probe.error || ''));
+  if (!usable.length) {
+    const details = probes.map((probe) => `${probe.server.label}: ${probe.error || 'нет ответа'}`).join(' · ');
+    return { server: null, pingMs: null, samples: [], reachable: 0,
+      reason: details || 'Нет доступных точек замера' };
+  }
+  const sorted = [...usable].sort((a, b) => (a.pingMs as number) - (b.pingMs as number));
+  const fastest = sorted[0];
+  const own = sorted.find((probe) => probe.server.source !== 'cloudflare'
+    && (probe.pingMs as number) <= (fastest.pingMs as number) * Math.max(1, tolerance));
+  const chosen = own || fastest;
+  const ping = Math.round(chosen.pingMs as number);
+  let reason: string;
+  if (usable.length === 1) reason = `Единственная доступная точка · ${ping} мс`;
+  else if (chosen === fastest) reason = `Ближайшая из ${usable.length} точек · ${ping} мс`;
+  else reason = `Своя точка без чужих лимитов · ${ping} мс (быстрее только ${fastest.server.label} — ${Math.round(fastest.pingMs as number)} мс)`;
+  return { server: chosen.server, pingMs: chosen.pingMs, samples: chosen.samples, reason, reachable: usable.length };
+}

@@ -179,6 +179,8 @@ export interface SpeedRun {
   upload_mbps: number;
   ping_ms: number | null;
   jitter_ms: number | null;
+  /** Задержка во время нагрузки: рост относительно ping_ms = bufferbloat. */
+  loaded_ping_ms?: number | null;
   download_bytes: number;
   upload_bytes: number;
   server: string;
@@ -203,6 +205,8 @@ export interface ConfigSpeedSummary {
   medianDownload: number;
   medianUpload: number;
   medianPing: number | null;
+  /** Медиана задержки под нагрузкой: конфиг может быть быстрым, но «лагать». */
+  medianLoadedPing: number | null;
   lastAt: string;
   route: SpeedRun['route'];
 }
@@ -246,6 +250,7 @@ export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
     const downloads = list.map((run) => run.download_mbps).filter((value) => Number.isFinite(value) && value > 0);
     const uploads = list.map((run) => run.upload_mbps).filter((value) => Number.isFinite(value) && value > 0);
     const pings = list.map((run) => run.ping_ms).filter((value): value is number => value != null && Number.isFinite(value));
+    const loadedPings = list.map((run) => run.loaded_ping_ms).filter((value): value is number => value != null && Number.isFinite(value));
     return {
       key,
       label: configLabel(newest),
@@ -255,6 +260,7 @@ export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
       medianDownload: median(downloads),
       medianUpload: median(uploads),
       medianPing: pings.length ? median(pings) : null,
+      medianLoadedPing: loadedPings.length ? median(loadedPings) : null,
       lastAt: newest.created_at,
       route: newest.route,
     };
@@ -356,4 +362,19 @@ export function speedTraceGeometry(points: SpeedTracePoint[], width: number, hei
     return parts.join(' ');
   };
   return { download: build('download'), upload: build('upload'), max };
+}
+
+/**
+ * Отзывчивость канала под нагрузкой (bufferbloat) — то, что Ookla показывает как
+ * «задержка при загрузке». Разница важнее абсолютных цифр: именно она портит
+ * звонки и игры, когда рядом идёт большая загрузка.
+ */
+export function bufferbloatVerdict(idleMs: number | null | undefined, loadedMs: number | null | undefined):
+  { grade: 'ok' | 'warn' | 'bad' | 'unknown'; deltaMs: number | null; text: string } {
+  if (idleMs == null || loadedMs == null || !Number.isFinite(idleMs) || !Number.isFinite(loadedMs) || idleMs < 0 || loadedMs < 0)
+    return { grade: 'unknown', deltaMs: null, text: 'Задержка под нагрузкой не измерена' };
+  const deltaMs = Math.max(0, Math.round(loadedMs - idleMs));
+  if (deltaMs <= 30) return { grade: 'ok', deltaMs, text: `Отзывчивый канал: под нагрузкой задержка выросла всего на ${deltaMs} мс` };
+  if (deltaMs <= 100) return { grade: 'warn', deltaMs, text: `Под нагрузкой задержка растёт на ${deltaMs} мс — звонки могут подтормаживать при активной загрузке` };
+  return { grade: 'bad', deltaMs, text: `Сильный bufferbloat: +${deltaMs} мс под нагрузкой. Игры и звонки будут лагать, пока идёт загрузка` };
 }

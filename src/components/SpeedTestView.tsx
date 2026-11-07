@@ -5,9 +5,11 @@ import { communityEndpoint } from '../lib/community';
 import { isNativeApp } from '../lib/nativeBridge';
 import { routeFingerprint, suggestActiveNode } from '../lib/appConfirmations';
 import { runSpeedTest, SPEED_TRAFFIC, type SpeedProgress, type SpeedTestResult } from '../lib/speedRunner';
+import { normalizeSpeedRunPayload } from '../lib/speedPayload';
+import { queuePendingSpeedRun, readPendingSpeedRuns, SPEED_PENDING_KEY } from '../lib/speedPending';
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
-  compareConfigs, formatBytes, formatSpeed, guessSpeedCap, networkKindLabel, speedGaugeFraction, speedTraceGeometry, speedUsageVerdict,
+  bufferbloatVerdict, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, networkKindLabel, speedGaugeFraction, speedTraceGeometry, speedUsageVerdict,
   GAUGE_TICKS, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile } from '../types';
@@ -131,20 +133,42 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const [serverId, setServerId] = useState<string>('auto');
   const [lite, setLite] = useState(false);
   const [trace, setTrace] = useState<SpeedTracePoint[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   const [autoNote, setAutoNote] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
   const servers = useMemo(() => availableSpeedServers({ communityEndpoint: communityEndpoint() || undefined }), []);
   const selectedServer: SpeedServer | undefined = serverId === 'auto' ? undefined : servers.find((item) => item.id === serverId);
 
+  /** Отправляет замеры, которые не удалось сохранить раньше (сервер был недоступен). */
+  const flushPending = useCallback(async () => {
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(SPEED_PENDING_KEY); } catch { return 0; }
+    const pending = readPendingSpeedRuns(raw);
+    if (!pending.length) { setPendingCount(0); return 0; }
+    const failed: typeof pending = [];
+    let sent = 0;
+    for (const run of pending) {
+      try {
+        await apiFetch('/api/speed-tests', { method: 'POST', body: JSON.stringify(run) });
+        sent += 1;
+      } catch { failed.push(run); }
+    }
+    try { localStorage.setItem(SPEED_PENDING_KEY, JSON.stringify(failed)); } catch { /* приватный режим */ }
+    setPendingCount(failed.length);
+    return sent;
+  }, []);
+
   const loadHistory = useCallback(async () => {
     try {
+      const sent = await flushPending();
+      if (sent) showToast('info', `Отправлено замеров с устройства: ${sent}`);
       const res = await apiFetch<{ runs: SpeedRun[] }>('/api/speed-tests');
       setRuns(Array.isArray(res.runs) ? res.runs : []);
     } catch (error) {
       showToast('warning', error instanceof Error ? error.message : 'История замеров недоступна');
     } finally { setLoadingHistory(false); }
-  }, [showToast]);
+  }, [showToast, flushPending]);
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
   useEffect(() => { setProfileId(confirmationProfileId); }, [confirmationProfileId]);
@@ -167,6 +191,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const networkKind = connection?.connection_kind || 'unknown';
   const comparison = useMemo(() => compareConfigs(runs, networkKind === 'unknown' ? undefined : networkKind), [runs, networkKind]);
   const capGuess = result ? guessSpeedCap(result.download) : null;
+  const responsiveness = bufferbloatVerdict(result?.pingMs, result?.loadedPingMs);
 
   const handleProgress = useCallback((next: SpeedProgress) => {
     setProgress(next);
@@ -198,12 +223,13 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         showToast('error', measurement.error || 'Замер не состоялся');
         return;
       }
-      const payload = {
+      const parsed = normalizeSpeedRunPayload({
         created_at: measurement.finishedAt,
         download_mbps: Number(measurement.download.mbps.toFixed(3)),
         upload_mbps: Number(measurement.upload.mbps.toFixed(3)),
         ping_ms: measurement.pingMs == null ? null : Number(measurement.pingMs.toFixed(1)),
         jitter_ms: measurement.jitterMs == null ? null : Number(measurement.jitterMs.toFixed(1)),
+        loaded_ping_ms: measurement.loadedPingMs == null ? null : Number(measurement.loadedPingMs.toFixed(1)),
         download_bytes: measurement.download.bytes,
         upload_bytes: measurement.upload.bytes,
         server: measurement.server?.label || '',
@@ -215,11 +241,23 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         profile_id: activeProfile?.id ?? null,
         profile_name: activeProfile?.name || '',
         reliable: measurement.download.reliable,
-        note: `${lite ? 'Экономный замер. ' : ''}${measurement.download.reason}`,
-      };
-      const saved = await apiFetch<{ run: SpeedRun }>('/api/speed-tests', { method: 'POST', body: JSON.stringify(payload) });
-      setRuns((prev) => [saved.run, ...prev].slice(0, 200));
-      showToast('success', `Замер сохранён: ${formatSpeed(saved.run.download_mbps)} ↓ / ${formatSpeed(saved.run.upload_mbps)} ↑`);
+        note: `${measurement.aborted ? 'Остановлен вручную. ' : ''}${lite ? 'Экономный замер. ' : ''}${measurement.serverReason ? `${measurement.serverReason}. ` : ''}${measurement.download.reason}`.slice(0, 400),
+      });
+      if (!parsed.ok) { showToast('error', parsed.error); return; }
+      try {
+        const saved = await apiFetch<{ run: SpeedRun }>('/api/speed-tests', { method: 'POST', body: JSON.stringify(parsed.run) });
+        setRuns((prev) => [saved.run, ...prev].slice(0, 200));
+        showToast('success', `Замер сохранён: ${formatSpeed(saved.run.download_mbps)} ↓ / ${formatSpeed(saved.run.upload_mbps)} ↑`);
+      } catch {
+        // Замер уже потрачен: держим его на устройстве и отправим позже.
+        try {
+          const queued = queuePendingSpeedRun(localStorage.getItem(SPEED_PENDING_KEY), parsed.run);
+          localStorage.setItem(SPEED_PENDING_KEY, JSON.stringify(queued));
+          setPendingCount(queued.length);
+        } catch { /* приватный режим — очередь недоступна */ }
+        setRuns((prev) => [{ ...parsed.run, id: -Date.now() } as SpeedRun, ...prev].slice(0, 200));
+        showToast('warning', 'История недоступна — замер сохранён на устройстве и отправится при следующем открытии');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setProgress((prev) => ({ ...prev, phase: 'error', message }));
@@ -255,7 +293,8 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
             hint={result ? formatBytes(result.download.bytes) : undefined} />
           <MetricCard icon={<ArrowUp className="w-3.5 h-3.5" />} label="Отдача" value={formatSpeed(result?.upload.mbps)} unit="Мбит/с"
             hint={result ? formatBytes(result.upload.bytes) : undefined} />
-          <MetricCard icon={<Activity className="w-3.5 h-3.5" />} label="Задержка" value={result?.pingMs != null ? String(Math.round(result.pingMs)) : '—'} unit="мс" />
+          <MetricCard icon={<Activity className="w-3.5 h-3.5" />} label="Задержка" value={result?.pingMs != null ? String(Math.round(result.pingMs)) : '—'} unit="мс"
+            hint={result?.loadedPingMs != null ? `под нагрузкой ${Math.round(result.loadedPingMs)} мс` : undefined} />
           <MetricCard icon={<Waves className="w-3.5 h-3.5" />} label="Джиттер" value={result?.jitterMs != null ? String(Math.round(result.jitterMs)) : '—'} unit="мс" />
         </div>
 
@@ -284,6 +323,16 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         <Notice tone="ok">
           {speedUsageVerdict(result.download.mbps, result.upload.mbps, result.pingMs)}
           {result.download.reliable ? '' : ` · ${result.download.reason}`}
+        </Notice>
+      )}
+      {result?.aborted && <Notice tone="warn">Замер остановлен вручную: цифра посчитана по неполной фазе и сохранена как приблизительная.</Notice>}
+      {result?.ok && responsiveness.grade !== 'unknown' && (
+        <Notice tone={responsiveness.grade === 'ok' ? 'ok' : responsiveness.grade === 'warn' ? 'warn' : 'bad'}>{responsiveness.text}</Notice>
+      )}
+      {pendingCount > 0 && (
+        <Notice tone="warn">
+          На устройстве ждут отправки {pendingCount} {pendingCount === 1 ? 'замер' : 'замеров'}.{' '}
+          <button type="button" className="underline font-semibold" onClick={() => void loadHistory()}>Отправить сейчас</button>
         </Notice>
       )}
       {result && !result.ok && <Notice tone="bad">{result.error || 'Замер не состоялся'}</Notice>}
@@ -331,6 +380,9 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
             {servers.map((server) => <option key={server.id} value={server.id}>{server.label}</option>)}
           </select>
         </label>
+        {result?.serverReason && (
+          <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>Выбор точки: {result.serverReason}</div>
+        )}
         <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
           Чтобы сравнить конфиги, замерьте скорость без VPN, затем включайте по одному конфигу в своём клиенте и
           повторяйте замер, выбирая его в списке. Приложение не может переключать чужой VPN — Android это запрещает.
@@ -361,6 +413,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
                     <span>{formatSpeed(item.medianUpload)} ↑</span>
                     {item.medianPing != null && <span>{Math.round(item.medianPing)} мс</span>}
+                    {item.medianLoadedPing != null && <span>под нагрузкой {Math.round(item.medianLoadedPing)} мс</span>}
                     <span>лучший {formatSpeed(item.bestDownload)}</span>
                     <span>{item.runs} {item.runs === 1 ? 'замер' : 'замеров'}</span>
                     <span>{new Date(item.lastAt).toLocaleString('ru-RU')}</span>

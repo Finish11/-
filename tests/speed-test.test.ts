@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -218,4 +218,31 @@ test('живой график переживает нули, отрицател�
   assert.ok(geometry.download.includes('18.0'), geometry.download);
   const single = speedTraceGeometry([{ mbps: 10, phase: 'upload' }, { mbps: Number.NaN, phase: 'upload' }], 100, 20);
   assert.equal(single.upload, '', 'одной валидной точки мало для линии');
+});
+
+test('имя группы замера не выдумывает выход без данных', () => {
+  const base = { profile_name: '', exit_ip: '', vpn_app_name: '', route: 'unknown' } as SpeedRun;
+  assert.equal(configLabel(base), 'Маршрут неизвестен');
+  assert.equal(configLabel({ ...base, route: 'direct' }), 'Без VPN (прямой)');
+  assert.equal(configLabel({ ...base, exit_ip: '203.0.113.7' }), 'Выход 203.0.113.7');
+  assert.equal(configLabel({ ...base, exit_ip: '203.0.113.7', vpn_app_name: 'v2rayNG' }), 'v2rayNG · 203.0.113.7');
+  assert.equal(configLabel({ ...base, profile_name: 'NL-AMS' }), 'NL-AMS');
+  assert.equal(networkKindLabel('cellular'), 'мобильная сеть');
+  assert.equal(networkKindLabel(undefined), 'неизвестная сеть');
+});
+
+test('прямой замер на другой сети не выдаётся за точку отсчёта', () => {
+  const directWifi = { id: 1, profile_id: null, route: 'direct', network_kind: 'wifi',
+    download_mbps: 200, upload_mbps: 100, ping_ms: 10, created_at: '2026-11-08T10:00:00.000Z' } as SpeedRun;
+  const vpnCell = { id: 2, profile_id: 5, profile_name: 'NL-AMS', route: 'vpn', network_kind: 'cellular',
+    download_mbps: 40, upload_mbps: 20, ping_ms: 40, created_at: '2026-11-08T11:00:00.000Z' } as SpeedRun;
+  const comparison = compareConfigs([directWifi, vpnCell], 'cellular');
+  assert.equal(comparison.baseline, null, 'Wi-Fi нельзя брать за базу для мобильной сети');
+  assert.equal(comparison.baselineOtherNetwork?.networkKind, 'wifi');
+  assert.ok(!comparison.verdicts.some((entry) => /% от прямого/.test(entry.text)), 'потери не выдумываются');
+  // На той же сети база появляется, и вывод о потерях становится законным.
+  const same = compareConfigs([{ ...directWifi, network_kind: 'cellular' }, vpnCell], 'cellular');
+  assert.ok(same.baseline);
+  assert.equal(same.baselineOtherNetwork, null);
+  assert.match(same.verdicts.find((entry) => entry.key === 'profile:5')?.text || '', /Сильно ограничивает: 20%/);
 });

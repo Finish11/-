@@ -7,7 +7,7 @@ import { routeFingerprint, suggestActiveNode } from '../lib/appConfirmations';
 import { runSpeedTest, SPEED_TRAFFIC, type SpeedProgress, type SpeedTestResult } from '../lib/speedRunner';
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
-  compareConfigs, formatBytes, formatSpeed, guessSpeedCap, speedGaugeFraction, speedTraceGeometry, speedUsageVerdict,
+  compareConfigs, formatBytes, formatSpeed, guessSpeedCap, networkKindLabel, speedGaugeFraction, speedTraceGeometry, speedUsageVerdict,
   GAUGE_TICKS, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile } from '../types';
@@ -52,6 +52,13 @@ const SpeedGauge: React.FC<{ mbps: number; running: boolean; phase: string; prog
           fill="none" stroke="rgb(var(--accent))" strokeWidth="14" strokeLinecap="round"
           style={{ transition: 'stroke-dasharray 0.3s ease' }}
         />
+        <line
+          x1={center} y1={center} x2={needle.x} y2={needle.y}
+          stroke={running ? 'rgb(var(--accent))' : 'var(--text-muted)'} strokeWidth="3.5" strokeLinecap="round"
+          style={{ transition: 'all 0.35s cubic-bezier(0.22, 1, 0.36, 1)' }}
+        />
+        <circle cx={center} cy={center} r="7" fill="var(--surface)" stroke="var(--line)" strokeWidth="2" />
+
         {GAUGE_TICKS.map((tick) => {
           const tickFraction = speedGaugeFraction(tick);
           const tickAngle = startAngle + sweep * tickFraction;
@@ -65,12 +72,6 @@ const SpeedGauge: React.FC<{ mbps: number; running: boolean; phase: string; prog
             </g>
           );
         })}
-        <line
-          x1={center} y1={center} x2={needle.x} y2={needle.y}
-          stroke={running ? 'rgb(var(--accent))' : 'var(--text-muted)'} strokeWidth="3.5" strokeLinecap="round"
-          style={{ transition: 'all 0.35s cubic-bezier(0.22, 1, 0.36, 1)' }}
-        />
-        <circle cx={center} cy={center} r="7" fill="var(--surface)" stroke="var(--line)" strokeWidth="2" />
       </svg>
       <div className="absolute inset-x-0 text-center" style={{ top: 138 }}>
         <div className="text-[34px] font-black leading-none tabular-nums" style={{ color: 'var(--text)' }}>{formatSpeed(mbps)}</div>
@@ -94,10 +95,10 @@ const SpeedTrace: React.FC<{ points: SpeedTracePoint[] }> = ({ points }) => {
   if (!geometry.download && !geometry.upload) return null;
   return (
     <div className="mt-2" aria-hidden="true">
-      <svg viewBox="0 0 300 44" className="w-full" style={{ height: 44 }}>
+      <svg viewBox="0 0 300 44" preserveAspectRatio="none" className="w-full" style={{ height: 44 }}>
         <line x1="0" y1="42" x2="300" y2="42" stroke="var(--line)" strokeWidth="1" />
-        {geometry.download && <path d={geometry.download} fill="none" stroke="rgb(var(--accent))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
-        {geometry.upload && <path d={geometry.upload} fill="none" stroke="rgb(var(--success))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+        {geometry.download && <path d={geometry.download} fill="none" stroke="rgb(var(--accent))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+        {geometry.upload && <path d={geometry.upload} fill="none" stroke="rgb(var(--success))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="flex items-center justify-between text-[9.5px]" style={{ color: 'var(--text-muted)' }}>
         <span><span style={{ color: 'rgb(var(--accent))' }}>━</span> загрузка · <span style={{ color: 'rgb(var(--success))' }}>━</span> отдача</span>
@@ -293,7 +294,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         <div className="text-[12.5px] font-bold">Что именно измеряется</div>
         <div className="flex flex-wrap gap-1.5">
           <Chip>{route === 'vpn' ? 'Через VPN' : route === 'direct' ? 'Напрямую, без VPN' : 'Маршрут неизвестен'}</Chip>
-          <Chip>{networkKind === 'wifi' ? 'Wi-Fi' : networkKind === 'cellular' ? 'Мобильная сеть' : networkKind === 'ethernet' ? 'Проводная' : 'Сеть не определена'}</Chip>
+          <Chip>{networkKind === 'unknown' ? 'Сеть не определена' : networkKindLabel(networkKind).replace(/^./, (letter) => letter.toUpperCase())}</Chip>
           {connection?.vpn_app_name && <Chip>{connection.vpn_app_name}</Chip>}
           {connection?.ip && <Chip>IP {connection.ip}</Chip>}
         </div>
@@ -342,7 +343,13 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           <div className="text-[11.5px]" style={{ color: 'var(--text-muted)' }}>Пока нет замеров. Первый замер появится здесь автоматически.</div>
         ) : (
           <div className="space-y-2">
-            {!comparison.baseline && <Notice tone="warn">Нет замера без VPN на этой сети — сравнить потери скорости пока нельзя.</Notice>}
+            {!comparison.baseline && (
+              <Notice tone="warn">
+                {comparison.baselineOtherNetwork
+                  ? `Замер без VPN есть, но на другой сети (${networkKindLabel(comparison.baselineOtherNetwork.networkKind)}). Сейчас ${networkKindLabel(networkKind)} — сравните на одной сети, иначе разница покажет смену канала, а не потери конфига.`
+                  : 'Нет замера без VPN на этой сети — сравнить потери скорости пока нельзя. Выключите VPN и нажмите «Замерить».'}
+              </Notice>
+            )}
             {comparison.ranked.map((item, index) => {
               const verdict = comparison.verdicts.find((entry) => entry.key === item.key);
               return (
@@ -358,7 +365,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
                     <span>{item.runs} {item.runs === 1 ? 'замер' : 'замеров'}</span>
                     <span>{new Date(item.lastAt).toLocaleString('ru-RU')}</span>
                   </div>
-                  {verdict && (
+                  {verdict && (comparison.baseline || item.key === 'direct') && (
                     <div className="mt-1 text-[10.5px] font-semibold" style={{ color: verdict.tone === 'ok' ? 'rgb(var(--success))' : verdict.tone === 'bad' ? 'rgb(var(--danger))' : 'rgb(var(--warning))' }}>
                       {verdict.text}
                     </div>

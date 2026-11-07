@@ -215,6 +215,23 @@ function median(values: number[]): number {
 }
 
 /** Сравнение конфигов подписки: медиана устойчивее одного удачного замера. */
+/** Человекочитаемое имя группы замера: конфиг → прямой канал → клиент → IP. */
+export function configLabel(run: SpeedRun): string {
+  if (run.profile_name) return run.profile_name;
+  if (run.route === 'direct') return 'Без VPN (прямой)';
+  if (run.exit_ip) return run.vpn_app_name ? `${run.vpn_app_name} · ${run.exit_ip}` : `Выход ${run.exit_ip}`;
+  if (run.vpn_app_name) return run.vpn_app_name;
+  return 'Маршрут неизвестен';
+}
+
+/** Тип сети словами: сравнение честно только внутри одного типа. */
+export function networkKindLabel(kind: string | null | undefined): string {
+  if (kind === 'wifi') return 'Wi-Fi';
+  if (kind === 'cellular') return 'мобильная сеть';
+  if (kind === 'ethernet') return 'проводная сеть';
+  return 'неизвестная сеть';
+}
+
 export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
   const groups = new Map<string, SpeedRun[]>();
   for (const run of runs) {
@@ -231,7 +248,7 @@ export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
     const pings = list.map((run) => run.ping_ms).filter((value): value is number => value != null && Number.isFinite(value));
     return {
       key,
-      label: newest.profile_name || (newest.route === 'direct' ? 'Без VPN (прямой)' : newest.vpn_app_name || `Выход ${newest.exit_ip || '—'}`),
+      label: configLabel(newest),
       profileId: newest.profile_id ?? null,
       runs: list.length,
       bestDownload: downloads.length ? Math.max(...downloads) : 0,
@@ -246,6 +263,8 @@ export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
 
 export interface ConfigComparison {
   baseline: ConfigSpeedSummary | null;
+  /** Прямой замер есть, но на другом типе сети — сравнивать с ним нельзя. */
+  baselineOtherNetwork: (ConfigSpeedSummary & { networkKind: string }) | null;
   ranked: ConfigSpeedSummary[];
   verdicts: Array<{ key: string; text: string; tone: 'ok' | 'warn' | 'bad' }>;
 }
@@ -259,6 +278,11 @@ export function compareConfigs(runs: SpeedRun[], networkKind?: string): ConfigCo
   const relevant = networkKind ? runs.filter((run) => run.network_kind === networkKind) : runs;
   const summaries = summarizeByConfig(relevant);
   const baseline = summaries.find((item) => item.key === 'direct') || null;
+  let baselineOtherNetwork: ConfigComparison['baselineOtherNetwork'] = null;
+  if (!baseline && networkKind) {
+    const other = runs.find((run) => run.route === 'direct' && run.profile_id == null && run.network_kind !== networkKind);
+    if (other) baselineOtherNetwork = { ...summarizeByConfig([other])[0], networkKind: other.network_kind };
+  }
   const ranked = summaries;
   const verdicts = summaries.map((item) => {
     if (item.key === 'direct') return { key: item.key, text: 'Прямое подключение — точка отсчёта', tone: 'ok' as const };
@@ -269,7 +293,7 @@ export function compareConfigs(runs: SpeedRun[], networkKind?: string): ConfigCo
     if (ratio >= 0.5) return { key: item.key, text: `Теряет ${Math.round((1 - ratio) * 100)}% скорости относительно прямого подключения`, tone: 'warn' as const };
     return { key: item.key, text: `Сильно ограничивает: ${Math.round(ratio * 100)}% от прямого канала`, tone: 'bad' as const };
   });
-  return { baseline, ranked, verdicts };
+  return { baseline, baselineOtherNetwork, ranked, verdicts };
 }
 
 export function speedUsageVerdict(downloadMbps: number, uploadMbps: number, pingMs: number | null): string {
@@ -281,7 +305,7 @@ export function speedUsageVerdict(downloadMbps: number, uploadMbps: number, ping
 }
 
 /** Логарифмическая шкала стрелки, как в Speedtest: 0…1000 Мбит/с в 240°. */
-export const GAUGE_TICKS = [0, 1, 5, 10, 30, 50, 100, 250, 500, 1000];
+export const GAUGE_TICKS = [0, 1, 5, 10, 50, 100, 500, 1000];
 export function speedGaugeFraction(mbps: number | null | undefined): number {
   if (mbps == null || !Number.isFinite(mbps) || mbps <= 0) return 0;
   const clamped = Math.min(1000, mbps);

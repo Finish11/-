@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -311,4 +311,19 @@ test('сводка по подписке считает, сколько конф
   const noBase = subscriptionSpeedRows(runs.filter((run) => run.route !== 'direct'), profiles, {}, 'wifi');
   assert.equal(noBase.find((row) => row.key === 'sub:5')?.limiting, 0);
   assert.equal(noBase.find((row) => row.key === 'sub:5')?.measured, 2);
+});
+
+test('догадка по IP не отменяет системный факт и выбор пользователя', () => {
+  // Android сказал системно: VPN есть.
+  assert.equal(systemSpeedRoute({ vpn_detected: true, vpn_source: 'system' }, true), 'vpn');
+  // Android сказал: VPN нет — IP-догадка не в счёт.
+  assert.equal(systemSpeedRoute({ vpn_detected: true, vpn_source: 'ip' }, true), 'direct');
+  // Браузер: система молчит, решает пользователь.
+  assert.equal(systemSpeedRoute({ vpn_detected: true, vpn_source: 'ip' }, false), 'unknown');
+  assert.equal(systemSpeedRoute(null, false), 'unknown');
+
+  assert.equal(recordedSpeedRoute('vpn', 'direct', false), 'vpn', 'транспорт знает точнее');
+  assert.equal(recordedSpeedRoute('unknown', 'vpn', false), 'vpn');
+  assert.equal(recordedSpeedRoute('unknown', 'unknown', true), 'vpn', 'выбран конфиг — значит VPN');
+  assert.equal(recordedSpeedRoute('unknown', 'unknown', false), 'direct', 'выбрано «без VPN» — точка отсчёта');
 });

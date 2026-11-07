@@ -10,7 +10,7 @@ import { queuePendingSpeedRun, readPendingSpeedRuns, SPEED_PENDING_KEY } from '.
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
   bufferbloatVerdict, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, networkKindLabel, speedGaugeFraction,
-  speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows,
+  recordedSpeedRoute, speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows, systemSpeedRoute,
   GAUGE_TICKS, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
@@ -188,7 +188,15 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
     } catch { /* без памяти автоопределения просто нет */ }
   }, [profiles, connection?.ip, connection?.vpn_package, confirmationProfileId]);
 
-  const route: SpeedRun['route'] = connection?.vpn_detected ? 'vpn' : isNativeApp() ? 'direct' : 'unknown';
+  /**
+   * Авторитетен только системный факт VPN из Android. Догадка по IP («похоже на
+   * дата-центр») маршрутом не является: иначе корпоративный прокси или браузер на
+   * VPS навсегда лишали бы человека возможности записать точку отсчёта без VPN.
+   * В браузере решает выбор пользователя, а догадка показывается отдельной
+   * подсказкой и попадает в примечание к замеру.
+   */
+  const route: SpeedRun['route'] = systemSpeedRoute(connection, isNativeApp());
+  const ipLooksLikeVpn = Boolean(connection?.vpn_detected) && connection?.vpn_source !== 'system';
   const activeProfile = profiles.find((profile) => profile.id === profileId) || null;
   const networkKind = connection?.connection_kind || 'unknown';
   const comparison = useMemo(() => compareConfigs(runs, networkKind === 'unknown' ? undefined : networkKind), [runs, networkKind]);
@@ -239,14 +247,14 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         upload_bytes: measurement.upload.bytes,
         server: measurement.server?.label || '',
         network_kind: networkKind,
-        route: measurement.route !== 'unknown' ? measurement.route : route,
+        route: recordedSpeedRoute(measurement.route, route, Boolean(activeProfile)),
         vpn_package: connection?.vpn_package || '',
         vpn_app_name: connection?.vpn_app_name || '',
         exit_ip: connection?.ip || '',
         profile_id: activeProfile?.id ?? null,
         profile_name: activeProfile?.name || '',
         reliable: measurement.download.reliable,
-        note: `${measurement.aborted ? 'Остановлен вручную. ' : ''}${lite ? 'Экономный замер. ' : ''}${measurement.serverReason ? `${measurement.serverReason}. ` : ''}${measurement.download.reason}`.slice(0, 400),
+        note: `${measurement.route === 'unknown' && route === 'unknown' ? 'Маршрут указан вручную. ' : ''}${measurement.aborted ? 'Остановлен вручную. ' : ''}${lite ? 'Экономный замер. ' : ''}${measurement.serverReason ? `${measurement.serverReason}. ` : ''}${measurement.download.reason}`.slice(0, 400),
       });
       if (!parsed.ok) { showToast('error', parsed.error); return; }
       try {
@@ -352,6 +360,12 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           {connection?.vpn_app_name && <Chip>{connection.vpn_app_name}</Chip>}
           {connection?.ip && <Chip>IP {connection.ip}</Chip>}
         </div>
+        {ipLooksLikeVpn && (
+          <Notice tone="info">
+            По внешнему IP выход похож на VPN, прокси или дата-центр. Система этого не подтверждает, поэтому
+            маршрут берётся из вашего выбора ниже: «Без VPN» для точки отсчёта или конкретный конфиг.
+          </Notice>
+        )}
         {connection?.split_tunnel && (
           <Notice tone="warn">
             VPN включён, но это приложение Android пускает мимо туннеля. Такой замер показывает ваш обычный интернет.

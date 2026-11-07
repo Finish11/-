@@ -463,3 +463,28 @@ export function subscriptionSpeedRows(
     })
     .sort((a, b) => (b.medianMbps ?? 0) - (a.medianMbps ?? 0));
 }
+
+export type SpeedRouteKind = 'vpn' | 'direct' | 'unknown';
+
+/**
+ * Что приложение знает о маршруте само. Авторитетен только системный факт VPN
+ * из Android: догадка по IP («похоже на дата-центр») маршрутом не является.
+ */
+export function systemSpeedRoute(
+  connection: { vpn_detected?: boolean; vpn_source?: string } | null | undefined,
+  native: boolean
+): SpeedRouteKind {
+  if (connection?.vpn_detected && connection.vpn_source === 'system') return 'vpn';
+  return native ? 'direct' : 'unknown';
+}
+
+/**
+ * Маршрут, который попадает в историю: измеренный транспортом → системный →
+ * выбор пользователя. Без последнего шага сравнение конфигов не работало бы
+ * в браузере, где система о VPN молчит.
+ */
+export function recordedSpeedRoute(measured: SpeedRouteKind, system: SpeedRouteKind, declaredProfile: boolean): SpeedRouteKind {
+  if (measured !== 'unknown') return measured;
+  if (system !== 'unknown') return system;
+  return declaredProfile ? 'vpn' : 'direct';
+}

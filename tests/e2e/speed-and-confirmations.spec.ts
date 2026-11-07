@@ -11,8 +11,8 @@ const CORS = {
 };
 
 test('замер скорости показывает результат и сохраняет его в историю', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'длинный замер прогоняем один раз на десктопе');
-  test.setTimeout(120_000);
+  test.skip(isMobile, 'два замера прогоняем один раз на десктопе');
+  test.setTimeout(180_000);
   await page.route('**/speed.cloudflare.com/**', async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
@@ -26,6 +26,13 @@ test('замер скорости показывает результат и с�
     const bytes = Math.min(Number(url.searchParams.get('bytes') || 0), 2_000_000);
     return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/octet-stream' }, body: Buffer.alloc(bytes, 7) });
   });
+  // CI работает из дата-центра: IP выглядит как VPN. Проверка обязана проходить
+  // и в этом случае — догадка по IP не должна отменять выбор пользователя.
+  await page.route('**://ipwho.is/**', (route) => route.fulfill({
+    status: 200, headers: CORS,
+    json: { ip: '203.0.113.77', country_code: 'US', country_name: 'США', city: 'Ashburn',
+      connection: { isp: 'Microsoft Azure', asn: 8075 }, security: { hosting: true, proxy: true, vpn: true }, success: true },
+  }));
   await page.goto('/');
   await page.getByRole('button', { name: /Скорость/ }).first().click();
   await expect(page.getByText('Скорость интернета')).toBeVisible();
@@ -33,15 +40,25 @@ test('замер скорости показывает результат и с�
   await expect(page.getByText(/до ~120 МБ на загрузку/)).toBeVisible();
   await page.getByRole('checkbox').check();
   await expect(page.getByText(/до ~25 МБ на загрузку/)).toBeVisible();
-  await page.getByRole('button', { name: 'Замерить' }).click();
+
+  const runOnce = async () => {
+    await page.getByRole('button', { name: 'Замерить' }).click();
+    await expect(page.getByRole('button', { name: 'Остановить' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Замерить' })).toBeVisible({ timeout: 90_000 });
+  };
+
+  // Порядок как у пользователя: сначала точка отсчёта без VPN, потом конфиг.
+  // Догадка по IP показана как подсказка, но выбором не командует.
+  await expect(page.getByText(/По внешнему IP выход похож на VPN/)).toBeVisible({ timeout: 20_000 });
+  const configSelect = page.locator('select').first();
+  await configSelect.selectOption({ value: '' });
+  await runOnce();
   // Живой график появляется, как только пошли сэмплы загрузки.
-  await expect(page.getByText(/пик /).first()).toBeVisible({ timeout: 40_000 });
-  // Фаза загрузки идёт 10 секунд, отдачи — 8: ждём сохранения результата.
+  await expect(page.getByText(/пик /).first()).toBeVisible();
   await expect(page.getByText('Что именно измеряется')).toBeVisible();
-  // Ждём завершения обеих фаз: кнопка «Замерить» возвращается после сохранения.
-  await expect(page.getByRole('button', { name: 'Замерить' })).toBeVisible({ timeout: 90_000 });
   await expect(page.getByText('История замеров')).toBeVisible();
   await expect(page.getByText('Какие конфиги быстрее')).toBeVisible();
+  await expect(page.getByText('Без VPN (прямой)').first()).toBeVisible();
   const numbers = await page.locator('.tabular-nums').allTextContents();
   expect(numbers.some((text) => Number(text.replace(',', '.')) > 0)).toBeTruthy();
   // Отдача не должна быть нулём: это ловил реальный баг учёта байтов без progress-событий.
@@ -51,6 +68,10 @@ test('замер скорости показывает результат и с�
   // Задержка под нагрузкой измерена и показана, а не выдумана.
   await expect(page.getByText(/под нагрузкой \d+ мс/).first()).toBeVisible();
   await expect(page.getByText(/Выбор точки:/).first()).toBeVisible();
+  // Второй замер — с выбранным конфигом: только теперь сравнение законно.
+  await configSelect.selectOption({ index: 1 });
+  await runOnce();
+  await expect(page.getByText(/% от прямого канала|Теряет \d+%/).first()).toBeVisible();
   // Сводка по подписке отвечает на вопрос «какие конфиги режут канал».
   await expect(page.getByText('Подписки: где теряется скорость')).toBeVisible();
   await expect(page.getByText(/измерено \d+ из \d+/).first()).toBeVisible();

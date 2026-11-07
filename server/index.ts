@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { createServer as createViteServer } from 'vite';
 import { db, seedDefaultSitesForUser } from './db.ts';
 import { resolveTrustProxy } from './proxyTrust.ts';
+import { registerSpeedEndpoints } from './speed.ts';
 import {
   createSession,
   getUserFromRequest,
@@ -878,6 +879,45 @@ async function startServer() {
       res.status(404).json({ error: 'VPN-профиль не найден' });
       return;
     }
+    res.json({ ok: true });
+  });
+
+  // ==================== SPEED TEST (свои точки замера) ====================
+  registerSpeedEndpoints(app);
+
+  app.get('/api/speed-tests', requireAuth, (req: AuthedRequest, res) => {
+    const rows = db.prepare('SELECT * FROM speed_tests WHERE user_id = ? ORDER BY created_at DESC LIMIT 200').all(req.user!.id) as Array<Record<string, unknown>>;
+    res.json({ runs: rows.map((row) => ({ ...row, reliable: Boolean(row.reliable) })) });
+  });
+  app.post('/api/speed-tests', requireAuth, (req: AuthedRequest, res) => {
+    const b = req.body || {};
+    const down = Number(b.download_mbps), up = Number(b.upload_mbps);
+    if (!Number.isFinite(down) || down < 0 || !Number.isFinite(up) || up < 0) {
+      res.status(400).json({ error: 'Некорректные значения скорости' }); return;
+    }
+    const profileId = b.profile_id == null ? null : Number(b.profile_id);
+    if (profileId != null && !db.prepare('SELECT 1 FROM vpn_profiles WHERE id = ? AND user_id = ?').get(profileId, req.user!.id)) {
+      res.status(404).json({ error: 'Узел не найден' }); return;
+    }
+    const createdAt = typeof b.created_at === 'string' && b.created_at ? b.created_at : new Date().toISOString();
+    const info = db.prepare(`INSERT INTO speed_tests
+      (user_id, created_at, download_mbps, upload_mbps, ping_ms, jitter_ms, download_bytes, upload_bytes, server,
+       network_kind, route, vpn_package, vpn_app_name, exit_ip, profile_id, profile_name, reliable, note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      req.user!.id, createdAt, down, up,
+      b.ping_ms == null ? null : Number(b.ping_ms), b.jitter_ms == null ? null : Number(b.jitter_ms),
+      Math.max(0, Math.round(Number(b.download_bytes) || 0)), Math.max(0, Math.round(Number(b.upload_bytes) || 0)),
+      String(b.server || '').slice(0, 200), String(b.network_kind || 'unknown').slice(0, 20),
+      ['vpn', 'direct', 'unknown'].includes(String(b.route)) ? String(b.route) : 'unknown',
+      String(b.vpn_package || '').slice(0, 160), String(b.vpn_app_name || '').slice(0, 160),
+      String(b.exit_ip || '').slice(0, 80), profileId, String(b.profile_name || '').slice(0, 160),
+      b.reliable === false ? 0 : 1, String(b.note || '').slice(0, 400),
+    );
+    const row = db.prepare('SELECT * FROM speed_tests WHERE id = ?').get(info.lastInsertRowid) as Record<string, unknown>;
+    res.status(201).json({ run: { ...row, reliable: Boolean(row.reliable) } });
+  });
+  app.delete('/api/speed-tests/:id', requireAuth, (req: AuthedRequest, res) => {
+    db.prepare('DELETE FROM speed_tests WHERE id = ? AND user_id = ?').run(Number(req.params.id), req.user!.id);
     res.json({ ok: true });
   });
 

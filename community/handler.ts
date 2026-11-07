@@ -55,6 +55,10 @@ export async function handleCommunityRequest(request: Request, store: CommunityS
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (path === '/api/community/health' && request.method === 'GET')
       return json({ ok: true, service: COMMUNITY_SERVICE, version: COMMUNITY_VERSION });
+    // Точки замера скорости живут рядом с общим API: свой сервер снимает
+    // зависимость от публичных лимитов speed.cloudflare.com.
+    if (path === '/api/speed/ping' || path === '/api/speed/down' || path === '/api/speed/up')
+      return speedEndpoint(request, url, path, store, clientIp, now);
     if (!path.startsWith('/api/community/')) return json({ error: 'Неизвестный метод API' }, 404);
     const identity = deviceIdentity(request.headers.get('x-device-id'), request.headers.get('x-device-secret'));
     const hash = await hashDevice(identity.deviceId, identity.secret);
@@ -140,4 +144,42 @@ export async function handleCommunityRequest(request: Request, store: CommunityS
     }
     return json({ error: 'Неизвестный метод API' }, 405);
   } catch (error) { return fail(error); }
+}
+
+const SPEED_BLOCK = 65536;
+const SPEED_MAX_DOWNLOAD = 32 * 1024 * 1024;
+const SPEED_MAX_UPLOAD = 8 * 1024 * 1024;
+
+/** Несжимаемые случайные байты: иначе замер покажет скорость компрессии. */
+async function speedEndpoint(request: Request, url: URL, path: string, store: CommunityStore, clientIp: string, now: number): Promise<Response> {
+  const ipHash = await hashDevice('ip', clientIp.slice(0, 128));
+  if (!await limit(store, `speed:${ipHash}`, 400, now))
+    return json({ error: 'Слишком много запросов замера. Повторите через минуту.' }, 429, { 'Retry-After': '60' });
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  if (path === '/api/speed/ping') return new Response(null, { status: 204, headers: { ...CORS, 'Cache-Control': 'no-store' } });
+  if (path === '/api/speed/up' && request.method === 'POST') {
+    const declared = Number(request.headers.get('content-length') || 0);
+    if (declared > SPEED_MAX_UPLOAD) return json({ error: 'Слишком большое тело замера' }, 413);
+    const body = await request.arrayBuffer();
+    if (body.byteLength > SPEED_MAX_UPLOAD) return json({ error: 'Слишком большое тело замера' }, 413);
+    return json({ ok: true, received: body.byteLength });
+  }
+  if (path === '/api/speed/down' && request.method === 'GET') {
+    const requested = Number(url.searchParams.get('bytes') || 1048576);
+    const total = Math.max(0, Math.min(SPEED_MAX_DOWNLOAD, Number.isFinite(requested) ? Math.floor(requested) : 1048576));
+    const block = new Uint8Array(Math.min(SPEED_BLOCK, Math.max(1, total)));
+    crypto.getRandomValues(block);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= total) { controller.close(); return; }
+        const size = Math.min(block.length, total - sent);
+        sent += size;
+        controller.enqueue(size === block.length ? block : block.slice(0, size));
+      },
+    });
+    return new Response(stream, { headers: { ...CORS, 'Content-Type': 'application/octet-stream',
+      'Content-Length': String(total), 'Cache-Control': 'no-store', 'Content-Encoding': 'identity' } });
+  }
+  return json({ error: 'Неизвестный метод замера' }, 404);
 }

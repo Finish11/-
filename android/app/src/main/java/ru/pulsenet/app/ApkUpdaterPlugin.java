@@ -26,7 +26,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.util.Base64;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -348,13 +347,7 @@ public class ApkUpdaterPlugin extends Plugin {
 
     /** Владелец системного VPN — имя клиента, НЕ выбранный внутри него сервер. */
     private String vpnPackage(NetworkCapabilities caps) {
-        if (caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || Build.VERSION.SDK_INT < 29) return "";
-        try {
-            String[] packages = getContext().getPackageManager().getPackagesForUid(caps.getOwnerUid());
-            if (packages == null) return "";
-            for (String name : packages) if (name != null && !name.equals(getContext().getPackageName())) return name;
-        } catch (Exception ignored) { }
-        return "";
+        return NetUtil.vpnOwnerPackage(getContext(), caps);
     }
     private String vpnAppName(NetworkCapabilities caps) {
         String name = vpnPackage(caps); if (name.isEmpty()) return "";
@@ -394,8 +387,22 @@ public class ApkUpdaterPlugin extends Plugin {
             ret.put("kind", connected ? kind : "none");
             ret.put("vpn", connected && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
             ret.put("carrier", connected ? carrierName(kind) : "");
-            ret.put("vpnPackage", connected ? vpnPackage(caps) : "");
-            ret.put("vpnAppName", connected ? vpnAppName(caps) : "");
+            // Системный VPN и VPN для нашего процесса — разные факты: при
+            // per-app proxy клиент включён, но приложение идёт напрямую.
+            Network systemVpnNetwork = NetUtil.anyVpnNetwork(getContext());
+            boolean appUsesVpn = connected && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
+            boolean systemVpn = appUsesVpn || systemVpnNetwork != null;
+            String owner = connected ? vpnPackage(caps) : "";
+            if (owner.isEmpty() && systemVpnNetwork != null)
+                owner = NetUtil.vpnOwnerPackage(getContext(), NetUtil.caps(getContext(), systemVpnNetwork));
+            if (owner.isEmpty() && systemVpn) owner = NetUtil.alwaysOnVpnApp(getContext());
+            ret.put("vpnPackage", owner);
+            ret.put("vpnAppName", owner.isEmpty() ? "" : NetUtil.appLabel(getContext(), owner));
+            ret.put("appUsesVpn", appUsesVpn);
+            ret.put("systemVpn", systemVpn);
+            ret.put("splitTunnel", systemVpn && !appUsesVpn);
+            ret.put("lockdown", NetUtil.alwaysOnLockdown(getContext()));
+            ret.put("bypassAvailable", NetUtil.physicalNetwork(getContext()) != null);
             synchronized (networkLock) {
                 ret.put("sequence", networkSequence);
             }

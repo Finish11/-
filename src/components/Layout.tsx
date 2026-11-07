@@ -14,8 +14,7 @@ import {
   ChevronRight,
   Signal,
   Wifi,
-  Info,
-} from 'lucide-react';
+  Info, Gauge } from 'lucide-react';
 import {
   RUSSIAN_CARRIERS,
   RUSSIAN_REGIONS,
@@ -30,7 +29,7 @@ import { SettingsSheet } from './SettingsSheet';
 import { Sheet } from './ui/Sheet';
 import { Button, Notice } from './ui/kit';
 
-export type NavTab = 'scanner' | 'sites' | 'vpn' | 'incidents' | 'history';
+export type NavTab = 'scanner' | 'sites' | 'vpn' | 'speed' | 'incidents' | 'history';
 
 interface LayoutProps {
   user: User;
@@ -96,6 +95,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'scanner', label: 'Проверка сети', mobileLabel: 'Проверка', icon: Radar },
     { id: 'sites', label: 'Каталог сайтов', mobileLabel: 'Сайты', icon: Globe },
     { id: 'vpn', label: 'VPN-узлы', mobileLabel: 'VPN', icon: Shield },
+    { id: 'speed', label: 'Скорость', mobileLabel: 'Скорость', icon: Gauge },
     {
       id: 'incidents',
       label: 'Сбои и белые списки',

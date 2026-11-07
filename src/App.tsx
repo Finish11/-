@@ -36,6 +36,7 @@ import { ScannerView } from './components/ScannerView';
 import { SitesView } from './components/SitesView';
 import { VpnMonitorView } from './components/VpnMonitorView';
 import { IncidentsView } from './components/IncidentsView';
+import { SpeedTestView } from './components/SpeedTestView';
 import { HistoryView } from './components/HistoryView';
 import { PermissionOnboarding } from './components/PermissionOnboarding';
 
@@ -412,6 +413,15 @@ export function App() {
                 darkMode={darkMode}
                 showToast={showToast}
                 lastScan={scans[0] ?? null}
+              />
+            )}
+
+            {activeTab === 'speed' && (
+              <SpeedTestView
+                connection={connection}
+                profiles={vpnProfiles}
+                confirmationProfileId={confirmationProfileId}
+                showToast={showToast}
               />
             )}
 

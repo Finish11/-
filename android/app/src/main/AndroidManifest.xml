@@ -3,6 +3,11 @@
 
     <!-- Android 11+: разрешаем запуск только явно перечисленных сервисов. -->
     <queries>
+        <!-- Android 11+: без этого getPackagesForUid() для VPN-владельца пуст,
+             и приложение показывает «клиент не указан», хотя VPN включён. -->
+        <intent>
+            <action android:name="android.net.VpnService" />
+        </intent>
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.anthropic.claude" />
         <package android:name="com.google.android.apps.bard" />
@@ -54,6 +59,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Точно отличаем мобильный интернет от Wi-Fi, в том числе под VPN. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Привязка сокета к физической сети мимо VPN: иначе TCP-проба узла
+         принимается локальным VPN-клиентом и показывает выдуманную задержку. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <!-- Установка APK-обновлений, скачанных самим приложением -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Итог замера в шторке на Android 13+. Запрашивается отдельно при первом входе. -->

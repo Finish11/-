@@ -176,6 +176,16 @@ export interface VpnProfile {
   latency_kind?: 'tcp_connect' | 'browser_relay';
   latency_route?: 'vpn' | 'direct' | 'unknown';
   latency_trusted?: boolean;
+  /** Замер шёл через физическую сеть в обход включённого VPN. */
+  latency_bypassed?: boolean;
+  /** «Реальная задержка»: HTTP сквозь активный туннель (методика v2rayNG real delay). */
+  real_delay_ms?: number | null;
+  real_delay_at?: string | null;
+  real_delay_route?: 'vpn' | 'direct' | 'unknown';
+  real_delay_exit_ip?: string;
+  real_delay_vpn_package?: string;
+  /** IP сервера из последней DNS-резолюции: помогает угадать активный узел по выходному IP. */
+  server_ip?: string;
   created_at: string;
 }
 
@@ -259,6 +269,12 @@ export interface ClientConnectionInfo {
   vpn_source?: 'system' | 'ip' | 'none';
   vpn_reasons: string[];
   split_tunnel?: boolean;
+  /** VPN включён в системе, даже если наше приложение идёт мимо него. */
+  system_vpn?: boolean;
+  /** Внешний IP физической сети: сравнение доказывает обход туннеля. */
+  direct_ip?: string;
+  /** Система разрешает приложению прямой доступ мимо VPN. */
+  bypass_available?: boolean;
   webrtc_ips?: string[];
 }
 

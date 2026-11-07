@@ -1,4 +1,4 @@
-import { getNativeNetworkState, isNativeApp, nativeGet } from './nativeBridge';
+import { getNativeNetworkState, getVpnDiagnostics, ipEcho, isNativeApp, nativeGet } from './nativeBridge';
 import type { NativeNetworkState } from './nativeBridge';
 import type { ClientConnectionInfo } from '../types';
 
@@ -25,6 +25,13 @@ export interface NetworkContext {
   vpnSource: 'system' | 'ip' | 'none';
   vpnReasons: string[];
   splitTunnel: boolean;
+  /** VPN есть в системе (может принадлежать другому приложению). */
+  systemVpn?: boolean;
+  /** Через туннель идёт именно трафик этого приложения. */
+  appUsesVpn?: boolean;
+  bypassAvailable?: boolean;
+  /** IP физической сети, если удалось измерить мимо туннеля. */
+  directIp?: string;
   nativeSequence?: number;
   nativeCarrier?: string;
   vpnPackage?: string;
@@ -84,6 +91,30 @@ export async function detectNativeNetworkStatus(): Promise<NativeNetworkState> {
   }
 }
 
+const TEXT_IP_PROVIDERS = ['https://api.ipify.org', 'https://ifconfig.me/ip', 'https://checkip.amazonaws.com'];
+
+/** IP отдельным шагом: без него нельзя ни подтвердить приложение, ни привязать замер. */
+export async function detectExitIp(): Promise<{ ip: string; source: string; error?: string }> {
+  if (isNativeApp()) {
+    const echo = await ipEcho(false, 6000);
+    if (echo.ok && echo.ip) return { ip: echo.ip, source: echo.source || 'native' };
+  }
+  for (const url of TEXT_IP_PROVIDERS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      try {
+        const response = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+        if (!response.ok) continue;
+        const text = (await response.text()).trim();
+        const match = /^(?:\d{1,3}\.){3}\d{1,3}$/.exec(text) || /^[0-9a-f:]+$/i.exec(text);
+        if (match) return { ip: text, source: url };
+      } finally { clearTimeout(timer); }
+    } catch { /* следующий провайдер */ }
+  }
+  return { ip: '', source: '', error: 'Сервисы определения IP недоступны' };
+}
+
 async function detectGeo(): Promise<{ geo: GeoInfo; error?: string }> {
   const providers = [
     'https://ipwho.is/',
@@ -136,6 +167,9 @@ async function detectGeo(): Promise<{ geo: GeoInfo; error?: string }> {
       lastError = err instanceof Error ? err.message : String(err);
     }
   }
+  // Геоданные не обязательны: подтверждающим приложениям нужен только сам IP.
+  const fallback = await detectExitIp();
+  if (fallback.ip) return { geo: { ...emptyGeo(), ip: fallback.ip }, error: lastError || 'Страна и провайдер не определены' };
   return { geo: emptyGeo(), error: lastError || 'GeoIP недоступен' };
 }
 
@@ -149,11 +183,15 @@ export function resolveVpnStatus(
   nativePlatform: boolean
 ): Pick<NetworkContext, 'vpnLikely' | 'vpnSource' | 'vpnReasons'> {
   if (nativePlatform) {
-    const reasons = native.connected && native.vpn
-      ? ['Android сообщает TRANSPORT_VPN для активной сети']
-      : [];
+    // VPN «для приложения» и VPN «в системе» — разные факты. При per-app proxy
+    // клиент включён, но наши запросы идут напрямую: подписывать их туннелем нельзя.
+    const appUsesVpn = native.connected && (native.appUsesVpn ?? native.vpn);
+    const systemVpn = native.connected && (native.systemVpn || native.vpn || appUsesVpn);
+    const reasons: string[] = [];
+    if (appUsesVpn) reasons.push('Android сообщает TRANSPORT_VPN для сети этого приложения');
+    if (systemVpn && !appUsesVpn) reasons.push('VPN включён в системе, но трафик приложения идёт мимо туннеля (раздельный туннель)');
     return {
-      vpnLikely: native.connected && native.vpn,
+      vpnLikely: appUsesVpn,
       vpnSource: native.connected ? 'system' : 'none',
       vpnReasons: reasons,
     };
@@ -198,11 +236,16 @@ export function buildNetworkContext(
   const operator = native.kind === 'cellular' && native.carrier
     ? native.carrier
     : geo?.isp || '';
+  const appUsesVpn = nativePlatform ? native.connected && (native.appUsesVpn ?? native.vpn) : vpn.vpnLikely;
+  const systemVpn = nativePlatform ? native.connected && Boolean(native.systemVpn || native.vpn || appUsesVpn) : false;
   return {
     geo,
     networkKind,
     ...vpn,
-    splitTunnel: false,
+    splitTunnel: nativePlatform ? systemVpn && !appUsesVpn : false,
+    systemVpn,
+    appUsesVpn,
+    bypassAvailable: native.bypassAvailable !== false,
     nativeSequence: native.sequence,
     nativeCarrier: operator,
     vpnPackage: native.vpnPackage,
@@ -293,6 +336,32 @@ export function toClientConnection(ctx: NetworkContext): ClientConnectionInfo {
     vpn_source: ctx.vpnSource,
     vpn_reasons: ctx.vpnReasons,
     split_tunnel: ctx.splitTunnel,
+    system_vpn: ctx.systemVpn,
+    direct_ip: ctx.directIp,
+    bypass_available: ctx.bypassAvailable,
     webrtc_ips: [],
   };
+}
+
+/**
+ * Доказательство раздельного туннеля: сравниваем IP приложения и IP физической
+ * сети. Если они совпадают при включённом VPN — наши проверки идут напрямую, и
+ * результаты нельзя приписывать туннелю.
+ */
+export async function verifyTunnelBypass(): Promise<{ checked: boolean; bypassed: boolean; appIp: string; directIp: string; reason: string }> {
+  if (!isNativeApp()) return { checked: false, bypassed: false, appIp: '', directIp: '', reason: 'Доступно только в Android-приложении' };
+  const diagnostics = await getVpnDiagnostics();
+  if (!diagnostics.ok) return { checked: false, bypassed: false, appIp: '', directIp: '', reason: diagnostics.error || 'Система не отдала сведения о VPN' };
+  if (!diagnostics.systemVpn) return { checked: true, bypassed: false, appIp: '', directIp: '', reason: 'Системный VPN выключен' };
+  if (diagnostics.splitTunnel) return { checked: true, bypassed: true, appIp: '', directIp: '',
+    reason: `${diagnostics.vpnAppName || 'VPN-клиент'} включён, но Android направляет трафик этого приложения мимо туннеля. Добавьте приложение в проксируемые в настройках клиента.` };
+  if (!diagnostics.bypassAvailable) return { checked: true, bypassed: false, appIp: '', directIp: '',
+    reason: 'Прямой доступ мимо VPN запрещён системой (постоянный VPN): сравнить маршруты нельзя' };
+  const [app, direct] = await Promise.all([ipEcho(false, 6000), ipEcho(true, 6000)]);
+  if (!app.ok || !app.ip || !direct.ok || !direct.ip)
+    return { checked: false, bypassed: false, appIp: app.ip || '', directIp: direct.ip || '', reason: 'Не удалось сравнить IP двух маршрутов' };
+  const bypassed = app.ip === direct.ip;
+  return { checked: true, bypassed, appIp: app.ip, directIp: direct.ip,
+    reason: bypassed ? 'Приложение и прямая сеть выходят с одного IP: туннель не используется для наших проверок'
+      : `Приложение выходит с ${app.ip}, прямая сеть — с ${direct.ip}: проверки идут через туннель` };
 }

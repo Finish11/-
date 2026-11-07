@@ -21,6 +21,7 @@
     "test:worker": "tsx --test tests/community-worker.test.ts",
     "test:regressions": "tsx --test tests/regressions.test.ts",
     "test:sync": "tsx --test tests/sync-hardening.test.ts tests/community-quota.test.ts",
+    "test:native": "tsx --test tests/native-contract.test.ts",
     "test:e2e": "playwright test",
     "deploy:community": "node scripts/deploy-community.mjs"
   },

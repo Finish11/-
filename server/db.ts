@@ -201,7 +201,36 @@ addColumnIfMissing('app_confirmations', 'route_source', "TEXT NOT NULL DEFAULT '
 addColumnIfMissing('vpn_profiles', 'latency_kind', 'TEXT');
 addColumnIfMissing('vpn_profiles', 'latency_route', 'TEXT');
 addColumnIfMissing('vpn_profiles', 'latency_trusted', 'INTEGER');
+addColumnIfMissing('vpn_profiles', 'latency_bypassed', 'INTEGER');
+addColumnIfMissing('vpn_profiles', 'real_delay_ms', 'REAL');
+addColumnIfMissing('vpn_profiles', 'real_delay_at', 'TEXT');
+addColumnIfMissing('vpn_profiles', 'real_delay_route', 'TEXT');
+addColumnIfMissing('vpn_profiles', 'real_delay_exit_ip', 'TEXT');
+addColumnIfMissing('vpn_profiles', 'real_delay_vpn_package', 'TEXT');
+addColumnIfMissing('vpn_profiles', 'server_ip', 'TEXT');
 addColumnIfMissing('incidents', 'updated_at', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS speed_tests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  download_mbps REAL NOT NULL,
+  upload_mbps REAL NOT NULL,
+  ping_ms REAL,
+  jitter_ms REAL,
+  download_bytes INTEGER NOT NULL DEFAULT 0,
+  upload_bytes INTEGER NOT NULL DEFAULT 0,
+  server TEXT NOT NULL DEFAULT '',
+  network_kind TEXT NOT NULL DEFAULT 'unknown',
+  route TEXT NOT NULL DEFAULT 'unknown',
+  vpn_package TEXT NOT NULL DEFAULT '',
+  vpn_app_name TEXT NOT NULL DEFAULT '',
+  exit_ip TEXT NOT NULL DEFAULT '',
+  profile_id INTEGER REFERENCES vpn_profiles(id) ON DELETE SET NULL,
+  profile_name TEXT NOT NULL DEFAULT '',
+  reliable INTEGER NOT NULL DEFAULT 1,
+  note TEXT NOT NULL DEFAULT ''
+)`);
+db.exec(`CREATE INDEX IF NOT EXISTS speed_tests_user ON speed_tests(user_id, created_at DESC)`);
 db.exec(`CREATE TABLE IF NOT EXISTS app_confirmation_route (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   profile_id INTEGER REFERENCES vpn_profiles(id) ON DELETE SET NULL

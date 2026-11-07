@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Локальный плагин: должен быть зарегистрирован до super.onCreate()
         registerPlugin(ApkUpdaterPlugin.class);
+        registerPlugin(NetworkProbePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

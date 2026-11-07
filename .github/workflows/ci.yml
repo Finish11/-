@@ -27,6 +27,7 @@ jobs:
           npm run typecheck
           npm run typecheck:community
           npm run test:core
+          npm run test:native
           npm run test:regressions
           npm run test:sync
           npm run test:worker

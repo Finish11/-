@@ -2,7 +2,9 @@ import type { AppConfirmation, VpnProfile } from '../types';
 
 export interface ConfirmationMatch {
   confirmation: AppConfirmation;
-  matchedBy: 'node_ip' | 'ip';
+  matchedBy: 'node_ip' | 'node' | 'ip';
+  /** Отзыв оставлен на этом узле, но выходной IP с тех пор изменился. */
+  ipChanged?: boolean;
 }
 
 export function confirmationNodeKey(profile: Pick<VpnProfile, 'id'> | null): string {
@@ -32,10 +34,54 @@ export function findAppConfirmation(
   const exact = newest(service.filter((item) => item.node_key === nodeKey && cleanIp(item.exit_ip) === ip));
   if (exact) return { confirmation: exact, matchedBy: 'node_ip' };
 
+  // Узел выбрал сам пользователь — это его утверждение о маршруте. Многие
+  // VPN-провайдеры меняют выходной IP при каждом подключении, поэтому отзыв не
+  // должен исчезать из карточки только из-за смены адреса.
+  if (profile) {
+    const byNode = newest(service.filter((item) => item.node_key === nodeKey && item.profile_id === profile.id));
+    if (byNode) return { confirmation: byNode, matchedBy: 'node', ipChanged: Boolean(ip) && cleanIp(byNode.exit_ip) !== ip };
+  }
+
   // Для прямого подключения не переносим отзыв с VPN даже при совпадении IP.
   if (!profile || !ip) return null;
   const byIp = newest(service.filter((item) => item.profile_id != null && cleanIp(item.exit_ip) === ip));
   return byIp ? { confirmation: byIp, matchedBy: 'ip' } : null;
+}
+
+/** Отпечаток маршрута: клиент + выходной IP. По нему запоминаем выбранный узел. */
+export function routeFingerprint(vpnPackage: string | undefined, exitIp: string | null | undefined): string {
+  const pkg = (vpnPackage || '').trim().toLowerCase();
+  const ip = cleanIp(exitIp);
+  return pkg && ip ? `${pkg}|${ip}` : '';
+}
+
+export interface NodeSuggestion {
+  profile: VpnProfile;
+  source: 'remembered' | 'server_ip';
+  reason: string;
+}
+
+/**
+ * Автоопределение активного узла. Android не раскрывает чужой конфиг, поэтому
+ * используем два честных признака: прошлый выбор пользователя для этой пары
+ * «клиент + IP» и совпадение выходного IP с адресом сервера узла.
+ */
+export function suggestActiveNode(
+  profiles: VpnProfile[],
+  facts: { vpnPackage?: string; exitIp?: string; remembered?: Record<string, number> },
+): NodeSuggestion | null {
+  const fingerprint = routeFingerprint(facts.vpnPackage, facts.exitIp);
+  if (fingerprint && facts.remembered) {
+    const id = facts.remembered[fingerprint];
+    const profile = profiles.find((item) => item.id === id);
+    if (profile) return { profile, source: 'remembered', reason: 'Вы выбирали этот узел для того же клиента и IP' };
+  }
+  const ip = cleanIp(facts.exitIp);
+  if (!ip) return null;
+  const byServer = profiles.find((profile) => cleanIp(profile.server_ip) === ip);
+  if (byServer) return { profile: byServer, source: 'server_ip',
+    reason: `Выходной IP совпадает с адресом сервера «${byServer.name}». Это признак, а не доказательство: сверьте имя в клиенте.` };
+  return null;
 }
 
 export interface ConfirmedNodeRecommendation {
@@ -86,4 +132,15 @@ export function confirmationRouteStillValid(
   return Boolean(after.exitIp) && before.networkKey === after.networkKey
     && before.exitIp === after.exitIp && before.nodeKey === after.nodeKey
     && (before.vpnPackage || '') === (after.vpnPackage || '');
+}
+
+/**
+ * Значимая часть маршрута для отзыва: транспорт, VPN, клиент и выходной IP.
+ * Системный sequence меняется при любом переподтверждении сети (например, когда
+ * открывается другое приложение), и сам по себе не означает смену маршрута.
+ */
+export function routeIdentity(networkKey: string): string {
+  const parts = networkKey.split('|');
+  // networkSnapshotKey: connected|kind|vpn|package[|sequence]
+  return parts.length >= 4 ? parts.slice(0, 4).join('|') : networkKey;
 }

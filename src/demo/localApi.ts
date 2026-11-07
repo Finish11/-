@@ -25,6 +25,7 @@ interface DemoState {
   subscriptions: Row[];
   confirmations: Row[];
   confirmationProfileId?: number | null;
+  speedTests: Row[];
 }
 
 const native = isNativeApp();
@@ -57,6 +58,7 @@ const state: DemoState = {
       ),
   subscriptions: native ? [] : JSON.parse(JSON.stringify((seed as any).subscriptions)),
   confirmations: [],
+  speedTests: [],
 };
 
 const TOKEN = 'demo-local-token';
@@ -80,6 +82,7 @@ function bootstrap() {
     subscriptions: state.subscriptions,
     confirmations: state.confirmations,
     confirmationProfileId: state.confirmationProfileId ?? null,
+    speedTests: state.speedTests,
   };
 }
 
@@ -131,9 +134,10 @@ async function restoreState(): Promise<void> {
     if (Array.isArray(saved.incidents)) state.incidents = saved.incidents;
     if (Array.isArray(saved.subscriptions)) state.subscriptions = saved.subscriptions;
     if (Array.isArray(saved.confirmations)) state.confirmations = saved.confirmations;
+    if (Array.isArray(saved.speedTests)) state.speedTests = saved.speedTests;
     state.confirmationProfileId = typeof saved.confirmationProfileId === 'number' ? saved.confirmationProfileId : null;
 
-    const ids = [state.sites, state.scans, state.profiles, state.incidents, state.subscriptions, state.confirmations]
+    const ids = [state.sites, state.scans, state.profiles, state.incidents, state.subscriptions, state.confirmations, state.speedTests]
       .flat()
       .map((row) => Number(row.id))
       .filter(Number.isFinite);
@@ -786,6 +790,42 @@ async function handle(path: string, method: string, body: any): Promise<Response
       state.subscriptions = state.subscriptions.filter((s) => s.id !== id);
       await sleep(160);
       return json({ ok: true, removed_nodes: removed });
+    }
+  }
+
+  // ---------- ИСТОРИЯ ЗАМЕРОВ СКОРОСТИ ----------
+  if (parts[0] === 'speed-tests') {
+    if (parts.length === 1 && method === 'GET') return json({ runs: state.speedTests });
+    if (parts.length === 1 && method === 'POST') {
+      const down = Number(body?.download_mbps), up = Number(body?.upload_mbps);
+      if (!Number.isFinite(down) || down < 0 || !Number.isFinite(up) || up < 0)
+        return json({ error: 'Некорректные значения скорости' }, 400);
+      const profileId = body?.profile_id == null ? null : Number(body.profile_id);
+      if (profileId != null && !state.profiles.some((profile) => Number(profile.id) === profileId))
+        return json({ error: 'Узел не найден' }, 404);
+      const run = {
+        id: genId(), user_id: state.user.id,
+        created_at: typeof body?.created_at === 'string' && body.created_at ? body.created_at : new Date().toISOString(),
+        download_mbps: down, upload_mbps: up,
+        ping_ms: body?.ping_ms == null ? null : Number(body.ping_ms),
+        jitter_ms: body?.jitter_ms == null ? null : Number(body.jitter_ms),
+        download_bytes: Math.max(0, Math.round(Number(body?.download_bytes) || 0)),
+        upload_bytes: Math.max(0, Math.round(Number(body?.upload_bytes) || 0)),
+        server: String(body?.server || '').slice(0, 200),
+        network_kind: String(body?.network_kind || 'unknown').slice(0, 20),
+        route: ['vpn', 'direct', 'unknown'].includes(String(body?.route)) ? String(body.route) : 'unknown',
+        vpn_package: String(body?.vpn_package || '').slice(0, 160),
+        vpn_app_name: String(body?.vpn_app_name || '').slice(0, 160),
+        exit_ip: String(body?.exit_ip || '').slice(0, 80),
+        profile_id: profileId, profile_name: String(body?.profile_name || '').slice(0, 160),
+        reliable: body?.reliable !== false, note: String(body?.note || '').slice(0, 400),
+      };
+      state.speedTests = [run, ...state.speedTests].slice(0, 200);
+      return json({ run }, 201);
+    }
+    if (parts.length === 2 && method === 'DELETE') {
+      state.speedTests = state.speedTests.filter((run) => Number(run.id) !== Number(parts[1]));
+      return json({ ok: true });
     }
   }
 

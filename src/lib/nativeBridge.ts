@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
-import { ApkPlugin } from './apkPlugin';
+import { ApkPlugin, NetworkProbePlugin } from './apkPlugin';
 
 /**
  * Мост к «нативной» сети. В APK (Capacitor) запросы идут через нативный HTTP-стек:
@@ -21,6 +21,14 @@ export type NativeConnectionKind = 'wifi' | 'cellular' | 'ethernet' | 'none' | '
 
 export interface NativeNetworkState {
   connected: boolean;
+  /** VPN включён в системе (может быть у другого приложения). */
+  systemVpn?: boolean;
+  /** Трафик именно этого приложения идёт через VPN. */
+  appUsesVpn?: boolean;
+  /** VPN есть, но наше приложение идёт мимо него: per-app proxy в клиенте. */
+  splitTunnel?: boolean;
+  lockdown?: boolean;
+  bypassAvailable?: boolean;
   /** false означает сбой bridge, а не доказанное отсутствие сети. */
   systemKnown?: boolean;
   kind: NativeConnectionKind;
@@ -56,6 +64,11 @@ export async function getNativeNetworkState(): Promise<NativeNetworkState> {
     sequence: typeof state.sequence === 'number' ? state.sequence : undefined,
     vpnPackage: typeof state.vpnPackage === 'string' ? state.vpnPackage : '',
     vpnAppName: typeof state.vpnAppName === 'string' ? state.vpnAppName : '',
+    systemVpn: state.systemVpn === true || Boolean(state.connected && state.vpn),
+    appUsesVpn: state.appUsesVpn ?? Boolean(state.connected && state.vpn),
+    splitTunnel: state.splitTunnel === true,
+    lockdown: state.lockdown === true,
+    bypassAvailable: state.bypassAvailable !== false,
   };
 }
 
@@ -318,24 +331,33 @@ export async function mapLimit<T, R>(
 
 
 /** TCP-пинг до игрового сервера через нативный сокет (только в APK). */
+export interface TcpPingResult {
+  ok: boolean; latency_ms: number | null; latency_us?: number | null; dns_us?: number | null;
+  route?: 'vpn' | 'direct' | 'unknown'; vpn_package?: string; error?: string;
+  bypassed?: boolean; local_accept?: boolean; address?: string;
+}
 export async function tcpPing(
   host: string,
   port: number,
-  timeout = 5000
-): Promise<{ ok: boolean; latency_ms: number | null; latency_us?: number | null; dns_us?: number | null; route?: 'vpn' | 'direct'; vpn_package?: string; error?: string }> {
+  timeout = 5000,
+  bypassVpn = false
+): Promise<TcpPingResult> {
   if (!isNativeApp()) return { ok: false, latency_ms: null, error: 'только в приложении' };
   try {
-    const res = await (ApkPlugin as unknown as {
-      tcpProbe(o: { host: string; port: number; timeout?: number }): Promise<{
+    const res = await (NetworkProbePlugin as unknown as {
+      tcpProbe(o: { host: string; port: number; timeout?: number; bypassVpn?: boolean }): Promise<{
         ok: boolean;
         latency_ms?: number;
         latency_us?: number;
         dns_us?: number;
-        route?: 'vpn' | 'direct';
+        route?: 'vpn' | 'direct' | 'unknown';
         vpn_package?: string;
         error?: string;
+        bypassed?: boolean;
+        local_accept?: boolean;
+        address?: string;
       }>;
-    }).tcpProbe({ host, port, timeout });
+    }).tcpProbe({ host, port, timeout, bypassVpn });
     const micros = typeof res.latency_us === 'number' && Number.isFinite(res.latency_us)
       ? Math.max(0, res.latency_us)
       : null;
@@ -346,7 +368,8 @@ export async function tcpPing(
       : null;
     return { ok: Boolean(res.ok), latency_ms: millis, latency_us: micros,
       dns_us: typeof res.dns_us === 'number' ? res.dns_us : null,
-      route: res.route, vpn_package: res.vpn_package, error: res.error };
+      route: res.route, vpn_package: res.vpn_package, error: res.error,
+      bypassed: res.bypassed === true, local_accept: res.local_accept === true, address: res.address };
   } catch (err) {
     return { ok: false, latency_ms: null, error: err instanceof Error ? err.message : 'ошибка' };
   }
@@ -357,8 +380,108 @@ export interface NativeHttpProbe {
   truncated?: boolean; latency_ms?: number; route?: 'vpn' | 'direct'; vpn_package?: string; error?: string;
 }
 export async function httpProbe(url: string, timeoutMs = 8000,
-  plugin: { httpProbe(o: { url: string; timeoutMs: number }): Promise<unknown> } = ApkPlugin as never): Promise<NativeHttpProbe> {
+  plugin: { httpProbe(o: { url: string; timeoutMs: number; bypassVpn?: boolean }): Promise<unknown> } = NetworkProbePlugin as never,
+  bypassVpn = false): Promise<NativeHttpProbe> {
   if (!isNativeApp()) return { ok: false, error: 'Нативная HTTP-проба доступна только в APK' };
-  try { return await plugin.httpProbe({ url, timeoutMs }) as NativeHttpProbe; }
+  try { return await plugin.httpProbe({ url, timeoutMs, bypassVpn }) as NativeHttpProbe; }
   catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
+export interface VpnDiagnostics {
+  ok: boolean;
+  appUsesVpn: boolean;
+  systemVpn: boolean;
+  splitTunnel: boolean;
+  vpnPackage: string;
+  vpnAppName: string;
+  alwaysOnApp: string;
+  lockdown: boolean;
+  bypassAvailable: boolean;
+  physicalKind: NativeConnectionKind;
+  activeKind: NativeConnectionKind;
+  installedVpnApps: Array<{ package: string; name: string }>;
+  error?: string;
+}
+
+/** Системные факты о VPN: какой клиент включён и проходит ли через него наше приложение. */
+export async function getVpnDiagnostics(): Promise<VpnDiagnostics> {
+  const empty: VpnDiagnostics = { ok: false, appUsesVpn: false, systemVpn: false, splitTunnel: false,
+    vpnPackage: '', vpnAppName: '', alwaysOnApp: '', lockdown: false, bypassAvailable: false,
+    physicalKind: 'unknown', activeKind: 'unknown', installedVpnApps: [] };
+  if (!isNativeApp()) return empty;
+  try {
+    const res = await (NetworkProbePlugin as unknown as { vpnDiagnostics(): Promise<Partial<VpnDiagnostics>> }).vpnDiagnostics();
+    return { ...empty, ...res, installedVpnApps: Array.isArray(res.installedVpnApps) ? res.installedVpnApps : [] };
+  } catch (error) {
+    return { ...empty, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export interface IpEchoResult { ok: boolean; ip?: string; source?: string; route?: 'vpn' | 'direct' | 'unknown'; latency_ms?: number; error?: string }
+
+/** Внешний IP через нативный HTTP: работает и мимо VPN (для доказательства обхода туннеля). */
+export async function ipEcho(bypassVpn = false, timeoutMs = 6000): Promise<IpEchoResult> {
+  if (!isNativeApp()) return { ok: false, error: 'только в приложении' };
+  try {
+    return await (NetworkProbePlugin as unknown as {
+      ipEcho(o: { bypassVpn?: boolean; timeoutMs?: number }): Promise<IpEchoResult>;
+    }).ipEcho({ bypassVpn, timeoutMs });
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
+export interface RealDelayResult {
+  ok: boolean; latency_ms?: number; min_ms?: number; max_ms?: number; samples?: number[];
+  status?: number; route?: 'vpn' | 'direct' | 'unknown'; error?: string;
+}
+
+/** «Реальная задержка» через активное подключение — методика real delay в v2rayNG/NekoBox. */
+export async function realDelayProbe(url?: string, timeoutMs = 8000, samples = 4): Promise<RealDelayResult> {
+  if (!isNativeApp()) return { ok: false, error: 'только в приложении' };
+  try {
+    return await (NetworkProbePlugin as unknown as {
+      realDelay(o: { url?: string; timeoutMs?: number; samples?: number }): Promise<RealDelayResult>;
+    }).realDelay({ url, timeoutMs, samples });
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
+export interface SpeedSlice { t: number; bytes: number; confirmed: number }
+export interface NativeSpeedPhase {
+  ok: boolean; bytes: number; confirmed: number; elapsedMs: number; requests: number;
+  connections: number; route?: 'vpn' | 'direct' | 'unknown'; slices: SpeedSlice[]; errors: string[];
+}
+export interface SpeedPhaseOptions {
+  runId: string; direction: 'download' | 'upload'; urls: string[];
+  connections?: number; durationMs?: number; chunkBytes?: number; maxBytes?: number; timeoutMs?: number;
+}
+
+export async function nativeSpeedPhase(options: SpeedPhaseOptions): Promise<NativeSpeedPhase> {
+  const fallback: NativeSpeedPhase = { ok: false, bytes: 0, confirmed: 0, elapsedMs: 0, requests: 0,
+    connections: options.connections ?? 4, slices: [], errors: [] };
+  if (!isNativeApp()) return { ...fallback, errors: ['только в приложении'] };
+  try {
+    const res = await (NetworkProbePlugin as unknown as {
+      speedPhase(o: SpeedPhaseOptions): Promise<Partial<NativeSpeedPhase>>;
+    }).speedPhase(options);
+    return { ...fallback, ...res, slices: Array.isArray(res.slices) ? res.slices : [], errors: Array.isArray(res.errors) ? res.errors : [] };
+  } catch (error) { return { ...fallback, errors: [error instanceof Error ? error.message : String(error)] }; }
+}
+
+export async function abortNativeSpeed(runId: string): Promise<void> {
+  if (!isNativeApp()) return;
+  try { await (NetworkProbePlugin as unknown as { speedAbort(o: { runId: string }): Promise<unknown> }).speedAbort({ runId }); }
+  catch { /* фаза уже завершилась */ }
+}
+
+export interface SpeedSampleEvent { runId: string; direction: 'download' | 'upload'; elapsedMs: number; bytes: number; confirmed: number }
+
+export function onNativeSpeedSample(listener: (event: SpeedSampleEvent) => void): () => void {
+  if (!isNativeApp()) return () => {};
+  let disposed = false;
+  let handle: PluginListenerHandle | undefined;
+  void (NetworkProbePlugin as unknown as {
+    addListener(name: 'speedSample', cb: (event: SpeedSampleEvent) => void): Promise<PluginListenerHandle>;
+  }).addListener('speedSample', listener).then((value) => {
+    if (disposed) void value.remove(); else handle = value;
+  }).catch(() => { /* старый APK без событий: остаётся итоговый результат */ });
+  return () => { disposed = true; if (handle) void handle.remove(); };
 }

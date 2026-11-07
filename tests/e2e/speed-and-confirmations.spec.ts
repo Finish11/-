@@ -24,7 +24,13 @@ test('замер скорости показывает результат и с�
   await page.goto('/');
   await page.getByRole('button', { name: /Скорость/ }).first().click();
   await expect(page.getByText('Скорость интернета')).toBeVisible();
+  // Экономный режим меняет и расчёт трафика, и длительность фаз.
+  await expect(page.getByText(/до ~120 МБ на загрузку/)).toBeVisible();
+  await page.getByRole('checkbox').check();
+  await expect(page.getByText(/до ~25 МБ на загрузку/)).toBeVisible();
   await page.getByRole('button', { name: 'Замерить' }).click();
+  // Живой график появляется, как только пошли сэмплы загрузки.
+  await expect(page.getByText(/пик /).first()).toBeVisible({ timeout: 40_000 });
   // Фаза загрузки идёт 10 секунд, отдачи — 8: ждём сохранения результата.
   await expect(page.getByText('Что именно измеряется')).toBeVisible();
   // Ждём завершения обеих фаз: кнопка «Замерить» возвращается после сохранения.
@@ -35,6 +41,8 @@ test('замер скорости показывает результат и с�
   expect(numbers.some((text) => Number(text.replace(',', '.')) > 0)).toBeTruthy();
   // Отдача не должна быть нулём: это ловил реальный баг учёта байтов без progress-событий.
   await expect(page.getByText(/^0,00$/)).toHaveCount(0);
+  // График и подписи фаз остаются после замера.
+  await expect(page.getByText(/загрузка · /).first()).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

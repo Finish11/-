@@ -288,3 +288,48 @@ export function speedGaugeFraction(mbps: number | null | undefined): number {
   // log10(1+x)/log10(1001): 1 Мбит/с ≈ 0.1, 10 ≈ 0.35, 100 ≈ 0.67, 1000 = 1.
   return Math.max(0, Math.min(1, Math.log10(1 + clamped) / Math.log10(1001)));
 }
+
+/** Точка живого графика: мгновенная скорость и фаза, в которой она измерена. */
+export interface SpeedTracePoint {
+  mbps: number;
+  phase: 'download' | 'upload';
+}
+
+export interface SpeedTraceGeometry {
+  /** SVG-путь загрузки (пустая строка, если точек нет). */
+  download: string;
+  /** SVG-путь отдачи. */
+  upload: string;
+  /** Верх шкалы: максимум по всем точкам, но не меньше 1 Мбит/с. */
+  max: number;
+}
+
+/**
+ * Геометрия живого графика, как в Speedtest: ось X — время (равномерные отсчёты),
+ * ось Y — скорость от 0 до максимума замера. Загрузка и отдача рисуются отдельно,
+ * чтобы фаза была видна по цвету, а не только по подписи.
+ */
+export function speedTraceGeometry(points: SpeedTracePoint[], width: number, height: number): SpeedTraceGeometry {
+  const usable = points.filter((point) => Number.isFinite(point.mbps));
+  if (usable.length < 2 || width <= 0 || height <= 0) return { download: '', upload: '', max: 1 };
+  const padding = 2;
+  const usableHeight = Math.max(1, height - padding * 2);
+  const max = Math.max(1, ...usable.map((point) => Math.max(0, point.mbps)));
+  const step = width / (usable.length - 1);
+  const build = (phase: SpeedTracePoint['phase']) => {
+    const parts: string[] = [];
+    usable.forEach((point, index) => {
+      if (point.phase !== phase) return;
+      const x = index * step;
+      const y = height - padding - (Math.max(0, point.mbps) / max) * usableHeight;
+      parts.push(`${parts.length === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
+    });
+    // Одиночная точка фазы рисуется коротким штрихом, иначе её не видно.
+    if (parts.length === 1) {
+      const [, x, y] = parts[0].split(' ');
+      parts.push(`L ${(Number(x) + Math.min(step, 4)).toFixed(1)} ${y}`);
+    }
+    return parts.join(' ');
+  };
+  return { download: build('download'), upload: build('upload'), max };
+}

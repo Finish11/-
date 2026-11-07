@@ -7,8 +7,8 @@ import { routeFingerprint, suggestActiveNode } from '../lib/appConfirmations';
 import { runSpeedTest, SPEED_TRAFFIC, type SpeedProgress, type SpeedTestResult } from '../lib/speedRunner';
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
-  compareConfigs, formatBytes, formatSpeed, guessSpeedCap, speedGaugeFraction, speedUsageVerdict,
-  GAUGE_TICKS, type SpeedRun,
+  compareConfigs, formatBytes, formatSpeed, guessSpeedCap, speedGaugeFraction, speedTraceGeometry, speedUsageVerdict,
+  GAUGE_TICKS, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile } from '../types';
 import { Button, Chip, EmptyState, Notice, SectionTitle } from './ui/kit';
@@ -26,7 +26,7 @@ const PHASE_LABEL: Record<SpeedProgress['phase'], string> = {
 };
 
 /** Стрелка и дуга: логарифмическая шкала, как в Speedtest. */
-const SpeedGauge: React.FC<{ mbps: number; running: boolean; phase: string; progress: number }> = ({ mbps, running, phase, progress }) => {
+const SpeedGauge: React.FC<{ mbps: number; running: boolean; phase: string; progress: number; direction?: string }> = ({ mbps, running, phase, progress, direction }) => {
   const fraction = speedGaugeFraction(mbps);
   const startAngle = -210;
   const sweep = 240;
@@ -74,7 +74,9 @@ const SpeedGauge: React.FC<{ mbps: number; running: boolean; phase: string; prog
       </svg>
       <div className="absolute inset-x-0 text-center" style={{ top: 138 }}>
         <div className="text-[34px] font-black leading-none tabular-nums" style={{ color: 'var(--text)' }}>{formatSpeed(mbps)}</div>
-        <div className="text-[11px] font-bold mt-1" style={{ color: 'var(--text-muted)' }}>Мбит/с</div>
+        <div className="text-[11px] font-bold mt-1" style={{ color: 'var(--text-muted)' }}>
+          {direction === 'upload' ? '↑ ' : direction === 'download' ? '↓ ' : ''}Мбит/с
+        </div>
         <div className="text-[11.5px] font-semibold mt-1.5" style={{ color: 'rgb(var(--accent))' }}>{phase}</div>
       </div>
       {running && (
@@ -82,6 +84,25 @@ const SpeedGauge: React.FC<{ mbps: number; running: boolean; phase: string; prog
           <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.round(progress * 100)}%`, background: 'rgb(var(--accent))' }} />
         </div>
       )}
+    </div>
+  );
+};
+
+/** Живой график скорости: загрузка и отдача разным цветом, шкала по пику. */
+const SpeedTrace: React.FC<{ points: SpeedTracePoint[] }> = ({ points }) => {
+  const geometry = speedTraceGeometry(points, 300, 44);
+  if (!geometry.download && !geometry.upload) return null;
+  return (
+    <div className="mt-2" aria-hidden="true">
+      <svg viewBox="0 0 300 44" className="w-full" style={{ height: 44 }}>
+        <line x1="0" y1="42" x2="300" y2="42" stroke="var(--line)" strokeWidth="1" />
+        {geometry.download && <path d={geometry.download} fill="none" stroke="rgb(var(--accent))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+        {geometry.upload && <path d={geometry.upload} fill="none" stroke="rgb(var(--success))" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+      </svg>
+      <div className="flex items-center justify-between text-[9.5px]" style={{ color: 'var(--text-muted)' }}>
+        <span><span style={{ color: 'rgb(var(--accent))' }}>━</span> загрузка · <span style={{ color: 'rgb(var(--success))' }}>━</span> отдача</span>
+        <span className="tabular-nums">пик {formatSpeed(geometry.max)}</span>
+      </div>
     </div>
   );
 };
@@ -108,6 +129,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const [profileId, setProfileId] = useState<number | null>(confirmationProfileId);
   const [serverId, setServerId] = useState<string>('auto');
   const [lite, setLite] = useState(false);
+  const [trace, setTrace] = useState<SpeedTracePoint[]>([]);
   const [autoNote, setAutoNote] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -145,10 +167,18 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const comparison = useMemo(() => compareConfigs(runs, networkKind === 'unknown' ? undefined : networkKind), [runs, networkKind]);
   const capGuess = result ? guessSpeedCap(result.download) : null;
 
+  const handleProgress = useCallback((next: SpeedProgress) => {
+    setProgress(next);
+    if (next.phase === 'download' || next.phase === 'upload') {
+      setTrace((prev) => [...prev.slice(-179), { mbps: next.mbps, phase: next.phase as 'download' | 'upload' }]);
+    }
+  }, []);
+
   const start = async () => {
     if (running) return;
     setRunning(true);
     setResult(null);
+    setTrace([]);
     setProgress({ phase: 'select', mbps: 0, progress: 0, message: 'Готовим замер…' });
     const controller = new AbortController();
     abortRef.current = controller;
@@ -157,7 +187,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         server: selectedServer,
         communityEndpoint: communityEndpoint() || undefined,
         signal: controller.signal,
-        onProgress: setProgress,
+        onProgress: handleProgress,
         lite,
       });
       setResult(measurement);
@@ -215,7 +245,9 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
       </SectionTitle>
 
       <div className="rounded-3xl border p-4" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
-        <SpeedGauge mbps={liveMbps} running={running} phase={running || result ? PHASE_LABEL[progress.phase] : 'Нажмите «Замерить»'} progress={progress.progress} />
+        <SpeedGauge mbps={liveMbps} running={running} phase={running || result ? PHASE_LABEL[progress.phase] : 'Нажмите «Замерить»'} progress={progress.progress} direction={progress.phase} />
+
+        <SpeedTrace points={trace} />
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MetricCard icon={<ArrowDown className="w-3.5 h-3.5" />} label="Загрузка" value={formatSpeed(result?.download.mbps)} unit="Мбит/с"

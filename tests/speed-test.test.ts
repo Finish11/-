@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -187,4 +187,35 @@ test('отдача считается по записанным байтам: к
   // Крупные редкие подтверждения отбрасываются как «быстрые срезы», и скорость
   // превращается в ноль. Поэтому отдача считается по записанным байтам.
   assert.ok(byConfirmed.mbps < 1, `ожидался провал методики на подтверждениях, получено ${byConfirmed.mbps}`);
+});
+
+test('живой график: шкала по максимуму, фазы отдельными путями', () => {
+  const empty = speedTraceGeometry([], 260, 44);
+  assert.equal(empty.download, '');
+  assert.equal(empty.upload, '');
+
+  const geometry = speedTraceGeometry([
+    { mbps: 0, phase: 'download' },
+    { mbps: 50, phase: 'download' },
+    { mbps: 100, phase: 'download' },
+    { mbps: 25, phase: 'upload' },
+  ], 300, 44);
+  assert.equal(geometry.max, 100);
+  assert.ok(geometry.download.startsWith('M 0.0 42.0'), geometry.download);
+  assert.ok(geometry.download.endsWith('L 200.0 2.0'), geometry.download);
+  assert.ok(geometry.upload.startsWith('M 300.0 '), geometry.upload);
+  assert.ok(!geometry.upload.includes('L 0.0'), 'отдача не рисуется в начале оси времени');
+});
+
+test('живой график переживает нули, отрицательные и мусорные значения', () => {
+  const geometry = speedTraceGeometry([
+    { mbps: 0, phase: 'download' },
+    { mbps: -5, phase: 'download' },
+    { mbps: Number.NaN, phase: 'download' },
+    { mbps: 0, phase: 'upload' },
+  ], 100, 20);
+  assert.equal(geometry.max, 1, 'нулевой канал не делит на ноль');
+  assert.ok(geometry.download.includes('18.0'), geometry.download);
+  const single = speedTraceGeometry([{ mbps: 10, phase: 'upload' }, { mbps: Number.NaN, phase: 'upload' }], 100, 20);
+  assert.equal(single.upload, '', 'одной валидной точки мало для линии');
 });

@@ -238,3 +238,43 @@ test('кнопки в карточках сайтов удобно нажима�
     expect(box!.h, `высота зоны нажатия ${name}`).toBeGreaterThanOrEqual(name === 'toggle' ? 32 : 36);
   }
 });
+
+test('настройки прокручиваются до конца на маленьком экране', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'ширины задаются вручную');
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/?demo=1');
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /Настройки/ }).first().click();
+  await expect(page.getByText('Замеры и проверки')).toBeVisible({ timeout: 15_000 });
+  // Самый низ шторки — версия сборки: если она достигается, достигается всё.
+  const scrolled = await page.evaluate(async () => {
+    const body = document.querySelector('.sheet-panel .overflow-y-auto') as HTMLElement | null;
+    if (!body) return { ok: false, reason: 'нет прокручиваемого тела' };
+    body.scrollTop = body.scrollHeight;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return { ok: body.scrollTop > 0, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  });
+  expect(scrolled.ok, `шторка должна прокручиваться: ${JSON.stringify(scrolled)}`).toBe(true);
+  expect(scrolled.overflow).toBeLessThanOrEqual(1);
+  await expect(page.getByText(/\d+\.\d+\.\d+ · веб/)).toBeVisible();
+});
+
+test('проверка всех сайтов укладывается в обещанное время и честно отчитывается', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'ширины задаются вручную');
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/?demo=1');
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible();
+  // Быстрый режим обещает предел 20 секунд — подсказка не должна врать.
+  await expect(page.getByText(/предел 20 с/)).toBeVisible();
+  const started = Date.now();
+  await page.getByRole('button', { name: 'Проверить все сайты' }).click();
+  await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible({ timeout: 60_000 });
+  const elapsed = Date.now() - started;
+  expect(elapsed, `проверка шла ${elapsed} мс`).toBeLessThan(45_000);
+  // Итог называет число сайтов, а не просто «готово».
+  await expect(page.getByText(/Проверено \d+/)).toBeVisible({ timeout: 15_000 });
+});

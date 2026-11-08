@@ -43,6 +43,7 @@ import { ResultGlossary } from './ResultGlossary';
 import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
 import { scanBudgetFor } from '../lib/scanBudget';
+import { createUiBatch } from '../lib/uiBatch';
 import { useSettings } from '../lib/appSettings';
 import {
   connectionLabel,
@@ -319,9 +320,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setShowAllSites(false);
     setProgress({ done: 0, total: enabledSitesCount, currentDomain: '' });
 
+    // Залп в 64 пробы приносит ответы пачкой: без склейки каждый ответ
+    // перерисовывал весь список. Первое обновление идёт сразу, дальше — не
+    // чаще восьми раз в секунду, итог применяется принудительно.
+    const ui = createUiBatch<{ done: number; total: number; domain: string; results: ScanSiteResult[] }>(({ done, total, domain, results }) => {
+      setProgress({ done, total, currentDomain: domain });
+      setLiveResults(results);
+    });
     const progressCb = (done: number, total: number, latest: ScanSiteResult, partial: ScanSiteResult[]) => {
-      setProgress({ done, total, currentDomain: latest.domain });
-      setLiveResults([...partial]);
+      ui.push({ done, total, domain: latest.domain, results: partial });
     };
 
     // Достоверность важнее наглядности: настоящие запросы выполняем всегда,
@@ -333,7 +340,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 8000, {
       withVpn: vpnMode === 'with_vpn',
       countryCode: conn.country_code,
-    }, undefined, scanBudgetFor(appSettings.scanSpeed));
+    }, undefined, scanBudgetFor(appSettings.scanSpeed)).finally(() => ui.flush());
     if (outcome.incomplete > 0 && !ctrl.signal.aborted) {
       showToast('warning', `Проверено ${outcome.results.length} из ${enabledSitesCount} за ${Math.round(outcome.elapsedMs / 1000)} с. ${outcome.incomplete} не успели ответить — им вердикт не выдуман, запустите проверку ещё раз.`);
     }
@@ -1192,7 +1199,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            {filteredResults.map((item, idx) => {
+            {filteredResults.map((item) => {
               const tone: 'ok' | 'warn' | 'bad' =
                 item.access_scope === 'app_unconfirmed' || item.intercepted
                   ? 'warn'
@@ -1203,8 +1210,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   : 'ok';
               return (
                 <div
-                  key={`${item.domain}-${idx}`}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl border"
+                  key={item.site_id ?? item.domain}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl border break-anywhere"
                   style={{
                     borderColor: 'var(--line)',
                     background:

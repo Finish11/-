@@ -25,6 +25,7 @@ import { ConfirmSheet } from './ui/ConfirmSheet';
 import { siteMeasurementPatch, siteResultIsStale, siteStatusLabel } from '../lib/siteMeasurement';
 import { runRealSiteScan } from '../lib/realScan';
 import { scanBudgetFor, worstCaseSeconds } from '../lib/scanBudget';
+import { createUiBatch } from '../lib/uiBatch';
 import { useSettings } from '../lib/appSettings';
 import { detectNetworkContext } from '../lib/networkInfo';
 import { IS_DEMO_BUILD } from '../lib/scanner';
@@ -188,13 +189,16 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     // Второй проход переспрашивает промолчавшие сайты: результат обновляется,
     // но счётчик не должен обгонять число сайтов («90 / 75»).
     const counted = new Set<number>();
+    // Счётчик обновляется не на каждый из 75 ответов, а пачками: иначе залп
+    // вызывает десятки перерисовок списка в секунду.
+    const counter = createUiBatch<string>(setCheckProgress);
     try {
       const ctx = await detectNetworkContext({ skipGeo: true });
       const apply = async (result: ScanSiteResult) => {
         const site = targets.find((item) => item.id === result.site_id); if (!site || ctrl.signal.aborted) return;
         try { await saveMeasurement(site, siteMeasurementPatch(result)); } catch { failedSaves++; }
         if (!counted.has(site.id)) { counted.add(site.id); done++; }
-        setCheckProgress(`${done} / ${targets.length}`);
+        counter.push(`${done} / ${targets.length}`);
       };
       // Записи результатов ждём до итога: иначе счётчик в уведомлении отстаёт
       // от реально сохранённых сайтов, а уход с экрана обрывает сохранения.
@@ -216,7 +220,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
       if ((error as Error)?.name === 'AbortError' || ctrl.signal.aborted)
         showToast('info', `Проверка остановлена: сохранено ${done} из ${targets.length}`);
       else showToast('error', error instanceof Error ? error.message : 'Проверка не завершена');
-    } finally { setCheckingAll(false); setCheckProgress(''); abortRef.current = null; }
+    } finally { counter.flush(); setCheckingAll(false); setCheckProgress(''); abortRef.current = null; }
   };
 
   const handleResetDefaults = async () => {
@@ -467,13 +471,17 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                       onClick={() => handleToggleEnabled(site)}
                       title={isEnabled ? 'Участвует в проверке' : 'Отключён'}
                       aria-label={isEnabled ? 'Отключить сайт' : 'Включить сайт'}
-                      className="w-9 h-5 rounded-full p-0.5 transition-colors"
-                      style={{ background: isEnabled ? 'rgb(var(--accent))' : 'var(--line-strong)' }}
+                      className="grid place-items-center min-w-[44px] min-h-[32px]"
                     >
                       <span
-                        className="block w-4 h-4 rounded-full bg-white transition-transform"
-                        style={{ transform: isEnabled ? 'translateX(1rem)' : 'translateX(0)' }}
-                      />
+                        className="block w-9 h-5 rounded-full p-0.5 transition-colors"
+                        style={{ background: isEnabled ? 'rgb(var(--accent))' : 'var(--line-strong)' }}
+                      >
+                        <span
+                          className="block w-4 h-4 rounded-full bg-white transition-transform"
+                          style={{ transform: isEnabled ? 'translateX(1rem)' : 'translateX(0)' }}
+                        />
+                      </span>
                     </button>
                     <div className="flex items-center gap-0.5">
                       <button
@@ -481,7 +489,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                         disabled={checkingAll || pingingIds.has(site.id)}
                         onClick={() => handlePingSingleSite(site)}
                         title="Проверить сейчас"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--accent))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--accent))]"
                       >
                         <Zap className={`w-3.5 h-3.5 ${pingingIds.has(site.id) ? 'animate-spin' : ''}`} />
                       </button>
@@ -489,7 +497,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                         type="button"
                         onClick={() => openEditModal(site)}
                         title="Изменить"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--accent))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--accent))]"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -497,7 +505,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                         type="button"
                         onClick={() => setPendingDelete(site)}
                         title="Удалить"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--danger))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--danger))]"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

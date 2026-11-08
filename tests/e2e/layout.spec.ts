@@ -181,3 +181,60 @@ test('настройки: режим проверки и единицы выби
   await page.getByRole('button', { name: /Быстро/ }).click();
   await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
 });
+
+test('во время проверки сайтов раскладка держится, а список обновляется', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'ширины задаются вручную');
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto('/?demo=1');
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /^(Проверить|Повторить замер)/ }).first().click();
+  const problems: string[] = [];
+  let sawProgress = false;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(400);
+    const info = await page.evaluate(() => {
+      const nav = document.querySelector('nav.fixed')!.getBoundingClientRect();
+      const text = document.querySelector('main')!.textContent || '';
+      return {
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        navRows: new Set(Array.from(document.querySelectorAll('nav.fixed button')).map((b) => Math.round(b.getBoundingClientRect().top))).size,
+        navVisible: nav.height > 0 && nav.bottom <= window.innerHeight + 2,
+        // Прогресс проверки: «N / 75» или строка с текущим домном.
+        progress: /\d+\s*\/\s*\d+/.test(text),
+      };
+    });
+    if (info.progress) sawProgress = true;
+    if (info.overflow > 1) problems.push(`шаг ${i}: страница шире экрана на ${info.overflow}px`);
+    if (info.navRows !== 1) problems.push(`шаг ${i}: панель в ${info.navRows} ряда`);
+    if (!info.navVisible) problems.push(`шаг ${i}: нижняя панель скрыта`);
+  }
+  expect(sawProgress, 'проверка должна показывать прогресс').toBe(true);
+  expect(problems, problems.join('\n')).toEqual([]);
+});
+
+test('кнопки в карточках сайтов удобно нажимать пальцем', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'ширины задаются вручную');
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/?demo=1');
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible();
+  const sizes = await page.evaluate(() => {
+    const pick = (title: string) => {
+      const el = document.querySelector(`main [title="${title}"]`) as HTMLElement | null;
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    };
+    const toggle = document.querySelector('main [aria-label="Отключить сайт"]') as HTMLElement | null;
+    const tr = toggle?.getBoundingClientRect();
+    return { ping: pick('Проверить сейчас'), edit: pick('Изменить'), del: pick('Удалить'),
+      toggle: tr ? { w: Math.round(tr.width), h: Math.round(tr.height) } : null };
+  });
+  for (const [name, box] of Object.entries(sizes)) {
+    expect(box, `кнопка ${name} есть на экране`).not.toBeNull();
+    expect(box!.w, `ширина зоны нажатия ${name}`).toBeGreaterThanOrEqual(name === 'toggle' ? 44 : 36);
+    expect(box!.h, `высота зоны нажатия ${name}`).toBeGreaterThanOrEqual(name === 'toggle' ? 32 : 36);
+  }
+});

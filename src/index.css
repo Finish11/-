@@ -450,6 +450,23 @@ html.light .glass {
   transform: scale(0.975);
 }
 
+/* Иконка остаётся маленькой, а попасть по ней легко: на телефоне зона нажатия
+   не меньше 36×36 (у кнопок в карточках было 26×26 — мимо на ходу). */
+.tap-icon {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 0.6rem;
+}
+@media (min-width: 1024px) {
+  /* Мышь точнее пальца: на десктопе оставляем компактную строку. */
+  .tap-icon {
+    min-width: 30px;
+    min-height: 30px;
+  }
+}
+
 /* «Живой» заголовок с бегущим блеском */
 .sheen-text {
   background: linear-gradient(
@@ -592,8 +609,13 @@ html, body {
   max-width: 100vw;
   overflow-x: clip;
 }
-/* Любой flex/grid-ребёнок по умолчанию может отказаться сжиматься — разрешаем. */
-main, section, article, header, .grid > *, .flex > * {
+/* Любой flex/grid-ребёнок по умолчанию может отказаться сжиматься — разрешаем.
+   Важно: :where() даёт нулевую специфичность, иначе это правило перебивало бы
+   явные min-width (зоны нажатия кнопок, min-w-[44px]) — так и было. */
+main, section, article, header {
+  min-width: 0;
+}
+:where(.grid > *, .flex > *) {
   min-width: 0;
 }
 /* Адреса, домены и причины отказа переносятся, а не распирают карточку. */

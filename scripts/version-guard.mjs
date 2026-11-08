@@ -20,7 +20,10 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = process.env.GITHUB_REPOSITORY || 'Finish11/-';
-const APP_PATHS = [/^src\//, /^android\/app\/src\//, /^server\//, /^community\//, /^package\.json$/, /^package-lock\.json$/];
+const APP_PATHS = [
+  /^src\//, /^android\/app\/src\//, /^server\//, /^community\//, /^scripts\//,
+  /^package\.json$/, /^package-lock\.json$/, /^capacitor\.config\.ts$/, /^vite.*\.config\.ts$/,
+];
 
 export function compareVersions(a, b) {
   const pa = String(a).split('.').map((n) => Number.parseInt(n, 10) || 0);
@@ -89,10 +92,13 @@ async function main() {
       changed = ['src/'];
     }
     const result = verdict({ current, released, changed });
-    console.log(result.reason);
+    // В GitHub verdict виден прямо в аннотациях: логи раннера не всегда доступны.
+    const marker = process.env.CI ? (result.ok ? '::notice::' : '::error::') : '';
+    console.log(`${marker}Проверка версии: ${result.reason}`);
     if (!result.ok) process.exit(1);
   } catch (error) {
-    console.log(`Проверка версии пропущена: ${error.message}. Версия в package.json — ${current}.`);
+    const marker = process.env.CI ? '::warning::' : '';
+    console.log(`${marker}Проверка версии пропущена: ${error.message}. Версия в package.json — ${current}.`);
   }
 }
 

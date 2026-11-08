@@ -41,6 +41,9 @@ test('изменившиеся исходники под той же верси�
   assert.match(bad.reason, /version:bump/);
   assert.deepEqual(touchesApp(['docs/diagnostics.md', 'tests/core.test.ts']), []);
   assert.deepEqual(touchesApp(['android/app/src/main/java/X.java']), ['android/app/src/main/java/X.java']);
+  // Сборочные скрипты и конфиги тоже влияют на APK — версия обязана расти.
+  assert.deepEqual(touchesApp(['scripts/version-guard.mjs', 'vite.demo.config.ts']),
+    ['scripts/version-guard.mjs', 'vite.demo.config.ts']);
 });
 
 test('поднятая версия и правки только в документации проходят', () => {

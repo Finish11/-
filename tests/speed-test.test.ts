@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeCeilingValue,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -337,4 +337,23 @@ test('конфиг быстрее прямого канала не называ�
   const verdict = compareConfigs(runs, 'wifi').verdicts.find((item) => item.key === 'profile:4')!;
   assert.match(verdict.text, /Не медленнее прямого канала/);
   assert.equal(verdict.tone, 'ok');
+});
+
+test('единицы и шкала настраиваются как в оригинальном Speedtest', () => {
+  assert.equal(speedInUnit(80, 'MBps'), 10);
+  assert.equal(formatSpeedIn(80, 'MBps'), '10,0');
+  assert.equal(formatSpeedIn(80, 'mbps'), '80,0');
+  assert.equal(speedUnitLabel('MBps'), 'МБ/с');
+  assert.equal(speedInUnit(null, 'MBps'), null);
+  assert.equal(formatSpeedIn(undefined), '—');
+
+  assert.equal(gaugeCeilingValue('auto'), 1000);
+  assert.equal(gaugeCeilingValue(250), 250);
+  assert.deepEqual(gaugeTicks(100), [0, 1, 5, 10, 25, 50, 100]);
+  // Закреплённая шкала: значение на потолке даёт полную дугу, выше — не выходит.
+  assert.equal(speedGaugeFraction(100, 100), 1);
+  assert.equal(speedGaugeFraction(500, 100), 1);
+  assert.ok(speedGaugeFraction(50, 100) > 0.8);
+  assert.ok(speedGaugeFraction(50, 'auto') < 0.6);
+  assert.equal(speedGaugeFraction(0, 100), 0);
 });

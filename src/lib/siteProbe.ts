@@ -1,5 +1,6 @@
 import { httpProbe, isNativeApp, tcpPing, type NativeHttpProbe } from './nativeBridge';
 import { assessSiteContent } from './siteContent';
+import { remainingMs } from './scanBudget';
 import type { SiteProof } from '../types';
 
 export type ProbeVerdict = 'ok' | 'slow' | 'blocked' | 'intercepted' | 'offline';
@@ -13,6 +14,12 @@ export interface ProbeOptions {
   timeoutMs?: number; verifyContent?: boolean;
   /** Injectable transport for regression tests; production uses the registered native plugin. */
   nativeHttp?: (url: string, timeoutMs?: number) => Promise<NativeHttpProbe>;
+  /** Момент (performance.now), после которого сайт больше не проверяется. */
+  deadlineAt?: number;
+  /** Повтор и главная страница — только в подробных режимах. */
+  retry?: boolean;
+  /** TCP-проба как последнее средство. */
+  tcpFallback?: boolean;
 }
 const OK_MS = 1500;
 const HTML_SERVICE_HOSTS = new Set(['chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com',
@@ -39,6 +46,19 @@ function classifyError(message: string): { verdict: ProbeVerdict; reason: string
   if (/cleartext|not permitted/.test(m)) return { verdict: 'blocked', reason: 'незашифрованное соединение запрещено' };
   return { verdict: 'blocked', reason: 'нет соединения' };
 }
+/** Жёсткий предел ожидания транспорта: зависший мост не держит всю проверку. */
+async function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | NativeHttpProbe> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<NativeHttpProbe>((resolve) => {
+        timer = setTimeout(() => resolve({ ok: false, error: `timeout: транспорт не ответил за ${Math.round(ms / 1000)} с` }), ms);
+      }),
+    ]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+
 const webSpeed = (ms: number) => ms > OK_MS ? 'slow' as const : 'ok' as const;
 
 export async function probeSite(url: string, options: ProbeOptions = {}): Promise<SiteProbeResult> {
@@ -55,7 +75,9 @@ export async function probeSite(url: string, options: ProbeOptions = {}): Promis
     } catch { return { verdict: 'blocked', latencyMs: null, networkStatus: 'blocked', reason: 'нет ответа (браузер)', probeUrl: url }; }
     finally { clearTimeout(timer); }
   }
-  const res = await (options.nativeHttp || httpProbe)(url, timeoutMs);
+  // Страховка на стороне JS: если нативный поток завис (бывает на DNS), проверка
+  // всё равно закончится вовремя. Поздний ответ просто отбрасывается.
+  const res = await raceTimeout((options.nativeHttp || httpProbe)(url, timeoutMs), timeoutMs + 400);
   if (!res.ok || res.status == null) return { ...classifyError(res.error || 'нет ответа'), latencyMs: null, networkStatus: 'blocked', probeUrl: url };
   try {
     const bytes = Uint8Array.from(atob(res.data_base64 || ''), (char) => char.charCodeAt(0));
@@ -75,27 +97,40 @@ export async function probeSite(url: string, options: ProbeOptions = {}): Promis
   } catch (err) { return { ...classifyError(err instanceof Error ? err.message : String(err)), latencyMs: null, networkStatus: 'blocked', probeUrl: url }; }
 }
 
-/** Общий алгоритм одиночной и массовой проверки; повтор не короче первого запроса. */
+/**
+ * Общий алгоритм одиночной и массовой проверки.
+ *
+ * Каждый следующий шаг получает только остаток бюджета сайта: раньше первая
+ * проба, главная страница, повтор и TCP складывались в 28 секунд на один сайт.
+ * В быстром режиме повторов нет вовсе — сайты проверяются одним залпом.
+ */
 export async function probeSiteResilient(url: string, options: ProbeOptions = {}, signal?: AbortSignal): Promise<SiteProbeResult> {
-  const timeoutMs = options.timeoutMs ?? 8000;
-  let first = await probeSite(url, { ...options, timeoutMs }), attempts = 1;
-  if (signal?.aborted) return { ...first, attempts };
+  const retry = options.retry ?? true;
+  const budgetLeft = () => options.deadlineAt == null ? (options.timeoutMs ?? 8000) : remainingMs(options.deadlineAt, performance.now());
+  const firstBudget = budgetLeft();
+  if (firstBudget == null) return { verdict: 'offline', latencyMs: null, networkStatus: 'blocked', attempts: 0,
+    probeUrl: url, reason: 'Не проверен: вышло время проверки' };
+  let first = await probeSite(url, { ...options, timeoutMs: Math.min(options.timeoutMs ?? 8000, firstBudget) }), attempts = 1;
+  if (signal?.aborted || !retry) return { ...first, attempts };
   let parsed: URL;
   try { parsed = new URL(canonicalServiceProbeUrl(url)); } catch { return { ...first, attempts, reason: 'Некорректный URL проверки' }; }
   const homepage = `${parsed.origin}/`;
-  if (first.verdict === 'blocked' && homepage !== parsed.href && parsed.pathname !== '/') {
-    const fallback = await probeSite(homepage, { ...options, timeoutMs }); attempts++;
+  const fallbackBudget = budgetLeft();
+  if (fallbackBudget != null && first.verdict === 'blocked' && homepage !== parsed.href && parsed.pathname !== '/') {
+    const fallback = await probeSite(homepage, { ...options, timeoutMs: Math.min(options.timeoutMs ?? 8000, fallbackBudget) }); attempts++;
     if (fallback.verdict === 'ok' || fallback.verdict === 'slow') return { ...fallback, attempts,
       reason: `${fallback.reason || 'Главная страница ответила'} · исходный адрес проверки не открылся` };
     if (first.httpStatus == null && fallback.httpStatus != null) first = fallback;
   }
-  if (!signal?.aborted && first.verdict === 'blocked' && first.httpStatus == null && !/TLS/i.test(first.reason || '')) {
-    const second = await probeSite(first.probeUrl || url, { ...options, timeoutMs }); attempts++;
+  const retryBudget = budgetLeft();
+  if (retryBudget != null && !signal?.aborted && first.verdict === 'blocked' && first.httpStatus == null && !/TLS/i.test(first.reason || '')) {
+    const second = await probeSite(first.probeUrl || url, { ...options, timeoutMs: Math.min(options.timeoutMs ?? 8000, retryBudget) }); attempts++;
     if (second.verdict === 'ok' || second.verdict === 'slow') return { ...second, attempts };
     // «Пинг идёт, а сайт не открывается» — разные вещи. Проверяем TCP 443, чтобы
     // честно сказать: маршрут до сервера есть, но страница не отдалась.
-    if (isNativeApp() && !signal?.aborted) {
-      const tcp = await tcpPing(parsed.hostname, parsed.port ? Number(parsed.port) : 443, 4000);
+    const tcpBudget = budgetLeft();
+    if ((options.tcpFallback ?? true) && tcpBudget != null && isNativeApp() && !signal?.aborted) {
+      const tcp = await tcpPing(parsed.hostname, parsed.port ? Number(parsed.port) : 443, Math.min(4000, tcpBudget));
       if (tcp.ok) return { ...first, attempts,
         reason: `${first.reason || 'Страница не открылась'} · TCP-порт отвечает: маршрут до сервера есть, но HTTP-ответ не получен (защита от ботов, DPI или блокировка страницы)` };
     }

@@ -43,6 +43,7 @@ import { QuickPicks } from './QuickPicks';
 import { ResultGlossary } from './ResultGlossary';
 import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
+import { scanBudgetFor } from '../lib/scanBudget';
 import { useSettings } from '../lib/appSettings';
 import {
   connectionLabel,
@@ -333,7 +334,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 8000, {
       withVpn: vpnMode === 'with_vpn',
       countryCode: conn.country_code,
-    });
+    }, undefined, scanBudgetFor(appSettings.scanSpeed));
+    if (outcome.incomplete > 0 && !ctrl.signal.aborted) {
+      showToast('warning', `Проверено ${outcome.results.length} из ${enabledSitesCount} за ${Math.round(outcome.elapsedMs / 1000)} с. ${outcome.incomplete} не успели ответить — им вердикт не выдуман, запустите проверку ещё раз.`);
+    }
     const results: ScanSiteResult[] = outcome.results;
     const controlOk = outcome.controlOk;
     const approximate = outcome.approximate;

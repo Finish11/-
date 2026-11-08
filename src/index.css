@@ -563,3 +563,44 @@ html.calm-motion .anim-overlay {
     scroll-behavior: auto;
   }
 }
+
+/* ============================================================================
+   УСТОЙЧИВОСТЬ РАСКЛАДКИ НА ТЕЛЕФОНЕ
+   Длинный домен, URL или текст ошибки не должен расширять страницу: иначе
+   мобильный браузер расширяет layout-viewport, срабатывают desktop-брейкпоинты,
+   нижняя панель исчезает и «всё съезжает».
+   ========================================================================== */
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+#root {
+  max-width: 100vw;
+  overflow-x: clip;
+}
+/* Любой flex/grid-ребёнок по умолчанию может отказаться сжиматься — разрешаем. */
+main, section, article, header, .grid > *, .flex > * {
+  min-width: 0;
+}
+/* Адреса, домены и причины отказа переносятся, а не распирают карточку. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.font-mono {
+  overflow-wrap: anywhere;
+}
+
+/* Поля ввода не меньше 16px: иначе мобильный браузер приближает страницу при
+   фокусе, визуальный viewport меняется и фиксированная нижняя панель уезжает. */
+@media (max-width: 1023px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Длинный список сайтов не тормозит: браузер не рисует карточки за экраном. */
+.virtual-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 92px;
+}

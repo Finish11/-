@@ -34,7 +34,9 @@ import {
 } from '../lib/appUpdate';
 import { connectionLabel, detectNetworkContext, type NetworkContext } from '../lib/networkInfo';
 import { Sheet } from './ui/Sheet';
-import { Button, Notice, Segmented, SectionTitle, Toggle } from './ui/kit';
+import { Button, Chip, Notice, Segmented, SectionTitle, Toggle } from './ui/kit';
+import { SCAN_SPEED_LABEL, type ScanSpeed } from '../lib/scanBudget';
+import { speedUnitLabel } from '../lib/speedTest';
 
 interface SettingsSheetProps {
   open: boolean;
@@ -303,6 +305,38 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
             по-настоящему. Если содержимое страницы недоступно (например, в веб-предпросмотре),
             результат честно помечается как оценка.
           </p>
+        </section>
+
+        {/* ---------- Скорость проверок ---------- */}
+        <section className="space-y-2.5">
+          <SectionTitle hint="Сколько ждать ответы сайтов и в чём показывать скорость">
+            Замеры и проверки
+          </SectionTitle>
+          <div className="space-y-1.5">
+            {(Object.keys(SCAN_SPEED_LABEL) as ScanSpeed[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => update({ scanSpeed: value })}
+                className="w-full rounded-xl border px-3 py-2 text-left tap"
+                style={{
+                  borderColor: settings.scanSpeed === value ? 'rgb(var(--accent))' : 'var(--line)',
+                  background: settings.scanSpeed === value ? 'var(--accent-soft)' : 'transparent',
+                }}
+              >
+                <div className="text-[12.5px] font-bold">{SCAN_SPEED_LABEL[value].title}</div>
+                <div className="text-[10.5px] text-dim leading-snug mt-0.5">{SCAN_SPEED_LABEL[value].hint}</div>
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11.5px] text-dim mr-1">Скорость показывать в</span>
+            {(['mbps', 'MBps'] as const).map((value) => (
+              <Chip key={value} active={settings.speedUnit === value} onClick={() => update({ speedUnit: value })}>
+                {speedUnitLabel(value)}
+              </Chip>
+            ))}
+          </div>
         </section>
 
         {/* ---------- О приложении ---------- */}

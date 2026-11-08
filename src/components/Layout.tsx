@@ -381,8 +381,8 @@ export const Layout: React.FC<LayoutProps> = ({
               icon={<Info className="w-3.5 h-3.5" />}
               onClose={() => setDemoBanner(false)}
             >
-              <strong className="font-bold">Веб-предпросмотр.</strong> Браузер не может читать
-              содержимое сайтов — статусы здесь оценочные. Точные замеры — в приложении для Android.
+              <strong className="font-bold">Веб-предпросмотр.</strong> Статусы сайтов оценочные: браузер
+              не читает их содержимое. Точные замеры — в приложении для Android.
             </Notice>
           </div>
         )}
@@ -407,7 +407,9 @@ export const Layout: React.FC<LayoutProps> = ({
           backdropFilter: 'blur(18px)',
         }}
       >
-        <div className="grid grid-cols-5 px-1.5 pt-1.5">
+        {/* Шесть вкладок — шесть колонок: раньше сетка была на 5, и последняя
+            вкладка одна уезжала во второй ряд. */}
+        <div className="grid grid-cols-6 px-1 pt-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -415,12 +417,14 @@ export const Layout: React.FC<LayoutProps> = ({
               <button
                 key={item.id}
                 onClick={() => onSelectTab(item.id)}
-                className={`relative flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl tap ${
+                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 py-1 rounded-xl tap ${
                   isActive ? 'accent-text' : 'text-muted'
                 }`}
+                aria-label={item.label}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <span
-                  className="relative grid place-items-center w-11 h-7 rounded-full transition-colors"
+                  className="relative grid place-items-center w-full max-w-[46px] h-7 rounded-full transition-colors"
                   style={{ background: isActive ? 'var(--accent-soft)' : 'transparent' }}
                 >
                   <Icon className="w-[19px] h-[19px]" />
@@ -431,7 +435,7 @@ export const Layout: React.FC<LayoutProps> = ({
                     />
                   )}
                 </span>
-                <span className="text-[10px] font-semibold leading-none">{item.mobileLabel}</span>
+                <span className="w-full truncate px-0.5 text-center text-[9px] font-semibold leading-none tracking-tight">{item.mobileLabel}</span>
               </button>
             );
           })}

@@ -93,8 +93,13 @@ public class NetworkProbePlugin extends Plugin {
                     ret.put("route", routeName(context, network));
                     ret.put("vpn_package", NetUtil.vpnOwnerPackage(context, NetUtil.caps(context, NetUtil.activeNetwork(context))));
                     int status = 0;
+                    // Общий бюджет на всю цепочку редиректов: раньше каждый хоп
+                    // получал полный таймаут, и один сайт держал проверку до 6×timeout.
+                    long deadlineMs = System.currentTimeMillis() + timeout;
                     for (int hop = 0; hop < 6; hop++) {
-                        connection = NetUtil.open(context, network, current, timeout, "GET");
+                        int left = (int) (deadlineMs - System.currentTimeMillis());
+                        if (left < 250) throw new java.io.IOException("timeout: бюджет проверки исчерпан на редиректах");
+                        connection = NetUtil.open(context, network, current, left, "GET");
                         status = connection.getResponseCode();
                         String location = connection.getHeaderField("Location");
                         if (status >= 300 && status < 400 && location != null && !location.isEmpty()) {

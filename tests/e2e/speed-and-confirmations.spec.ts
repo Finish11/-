@@ -36,10 +36,18 @@ test('замер скорости показывает результат и с�
   await page.goto('/');
   await page.getByRole('button', { name: /Скорость/ }).first().click();
   await expect(page.getByText('Скорость интернета')).toBeVisible();
-  // Экономный режим меняет и расчёт трафика, и длительность фаз.
-  await expect(page.getByText(/до ~120 МБ на загрузку/)).toBeVisible();
+  // Настройки замера: экономный режим, единицы и потолок шкалы.
+  await page.getByRole('button', { name: /Настройки замера/ }).click();
+  await expect(page.getByText(/до ~120 МБ вниз/)).toBeVisible();
   await page.getByRole('checkbox').check();
-  await expect(page.getByText(/до ~25 МБ на загрузку/)).toBeVisible();
+  await expect(page.getByText(/до ~25 МБ вниз/)).toBeVisible();
+  // Потолок шкалы задаётся в текущих единицах, поэтому выбираем его в Мбит/с.
+  await page.getByRole('button', { name: '100', exact: true }).click();
+  await page.getByRole('button', { name: 'МБ/с', exact: true }).click();
+  await expect(page.getByText('Предел шкалы, МБ/с')).toBeVisible();
+  await expect(page.getByRole('button', { name: '12.5', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
+  await page.getByRole('button', { name: /Настройки замера/ }).click();
 
   const runOnce = async () => {
     await page.getByRole('button', { name: 'Замерить' }).click();

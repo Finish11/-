@@ -24,6 +24,8 @@ import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
 import { siteMeasurementPatch, siteResultIsStale, siteStatusLabel } from '../lib/siteMeasurement';
 import { runRealSiteScan } from '../lib/realScan';
+import { scanBudgetFor, worstCaseSeconds } from '../lib/scanBudget';
+import { useSettings } from '../lib/appSettings';
 import { detectNetworkContext } from '../lib/networkInfo';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { isNativeApp, mapLimit } from '../lib/nativeBridge';
@@ -38,6 +40,7 @@ interface SitesViewProps {
 }
 
 export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode, showToast }) => {
+  const [settings] = useSettings();
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<'all' | SiteCategory>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'blocked' | 'disabled'>('all');
@@ -169,7 +172,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     setPingIds((prev) => new Set(prev).add(site.id));
     try {
       const result = IS_DEMO_BUILD && !isNativeApp() ? await probeSingleSite(site, 'live')
-        : (await runRealSiteScan([site], () => undefined, undefined, 8000)).results[0];
+        : (await runRealSiteScan([site], () => undefined, undefined, 8000, { withVpn: false }, undefined, scanBudgetFor(settings.scanSpeed))).results[0];
       if (!result) return;
       await saveMeasurement(site, siteMeasurementPatch(result));
       showToast(result.network_status === 'ok' || result.network_status === 'slow' ? 'info' : 'warning',
@@ -182,23 +185,33 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     const targets = sites.filter((site) => Boolean(site.enabled)); if (!targets.length) return;
     const ctrl = new AbortController(); abortRef.current = ctrl; setCheckingAll(true);
     let done = 0, failedSaves = 0;
+    // Второй проход переспрашивает промолчавшие сайты: результат обновляется,
+    // но счётчик не должен обгонять число сайтов («90 / 75»).
+    const counted = new Set<number>();
     try {
       const ctx = await detectNetworkContext({ skipGeo: true });
       const apply = async (result: ScanSiteResult) => {
         const site = targets.find((item) => item.id === result.site_id); if (!site || ctrl.signal.aborted) return;
         try { await saveMeasurement(site, siteMeasurementPatch(result)); } catch { failedSaves++; }
-        done++; setCheckProgress(`${done} / ${targets.length}`);
+        if (!counted.has(site.id)) { counted.add(site.id); done++; }
+        setCheckProgress(`${done} / ${targets.length}`);
       };
       // Записи результатов ждём до итога: иначе счётчик в уведомлении отстаёт
       // от реально сохранённых сайтов, а уход с экрана обрывает сохранения.
       const saving: Promise<void>[] = [];
+      let skipped = 0, elapsedMs = 0;
       if (IS_DEMO_BUILD && !isNativeApp())
         await mapLimit(targets, 6, async (site) => { await apply(await probeSingleSite(site, 'live')); }, ctrl.signal);
-      else await runRealSiteScan(targets, (_done, _total, result) => { saving.push(apply(result)); }, ctrl.signal, 8000,
-        { withVpn: ctx.vpnLikely, countryCode: ctx.geo?.country_code });
+      else {
+        const outcome = await runRealSiteScan(targets, (_done, _total, result) => { saving.push(apply(result)); }, ctrl.signal, 8000,
+          { withVpn: ctx.vpnLikely, countryCode: ctx.geo?.country_code }, undefined, scanBudgetFor(settings.scanSpeed));
+        skipped = outcome.incomplete; elapsedMs = outcome.elapsedMs;
+      }
       await Promise.all(saving);
-      if (!ctrl.signal.aborted) showToast(failedSaves ? 'warning' : 'success', failedSaves
-        ? `Проверено ${done}; не сохранено ${failedSaves}. Повторите проверку.` : `Проверено ${done} сайтов одним алгоритмом`);
+      if (!ctrl.signal.aborted) showToast(failedSaves || skipped ? 'warning' : 'success', failedSaves
+        ? `Проверено ${done}; не сохранено ${failedSaves}. Повторите проверку.`
+        : skipped ? `Проверено ${done} за ${Math.round(elapsedMs / 1000)} с. ${skipped} не успели — вердикт им не выдуман, повторите проверку.`
+        : `Проверено ${done} сайтов одним алгоритмом${elapsedMs ? ` за ${Math.round(elapsedMs / 1000)} с` : ''}`);
     } catch (error) {
       if ((error as Error)?.name === 'AbortError' || ctrl.signal.aborted)
         showToast('info', `Проверка остановлена: сохранено ${done} из ${targets.length}`);
@@ -272,7 +285,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
             Добавить сайт
           </Button>
           <Button variant="soft" size="md" icon={<RefreshCw className="w-4 h-4" />} onClick={() => void handleCheckAll()}>
-            {checkingAll ? `Отменить · ${checkProgress}` : 'Проверить все сайты'}
+            {checkingAll ? `Остановить · ${checkProgress}` : 'Проверить все сайты'}
           </Button>
           <Button
             variant="outline"
@@ -285,6 +298,12 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
           </Button>
         </div>
       </header>
+      <div className="text-[11px] text-dim">
+        Режим «{settings.scanSpeed === 'fast' ? 'Быстро' : settings.scanSpeed === 'balanced' ? 'Сбалансированно' : 'Подробно'}»:
+        все сайты запрашиваются одновременно, предел {Math.round(scanBudgetFor(settings.scanSpeed).totalMs / 1000)} с
+        {enabledCount > 0 ? `, обычно укладывается в ${worstCaseSeconds(scanBudgetFor(settings.scanSpeed), enabledCount)} с` : ''}.
+        Не успевшие сайты остаются непроверенными. Режим меняется в настройках.
+      </div>
       <Notice tone="info">Это история проб, а не постоянный мониторинг. После смены Wi-Fi/VPN запустите проверку заново.
         «Ответ адреса» не означает работу приложения; старые результаты помечены временем проверки.</Notice>
 
@@ -405,7 +424,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
             return (
               <article
                 key={site.id}
-                className="rounded-2xl border px-3 py-2.5"
+                className="virtual-row rounded-2xl border px-3 py-2.5 break-anywhere"
                 style={{
                   borderColor: 'var(--line)',
                   background: isEnabled ? 'var(--surface)' : 'var(--surface-2)',

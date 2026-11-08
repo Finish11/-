@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ScanSpeed } from './scanBudget';
 
 /**
  * Пользовательские настройки: профиль сети (оператор, город, тип подключения),
@@ -9,6 +10,10 @@ export type NetworkType = 'auto' | 'wifi' | 'cellular';
 export type ProbeMode = 'auto' | 'real';
 /** Тема оформления: тёмная, светлая или как в системе. */
 export type ThemeMode = 'dark' | 'light' | 'system';
+/** Единицы в замере скорости: как в Ookla — биты или байты. */
+export type SpeedUnit = 'mbps' | 'MBps';
+/** Потолок шкалы спидометра: авто или фиксированный, как в оригинале. */
+export type GaugeMax = 'auto' | 100 | 250 | 500 | 1000;
 
 export interface AppSettings {
   /** Оператор: '' — определять автоматически */
@@ -24,6 +29,14 @@ export interface AppSettings {
   theme: ThemeMode;
   /** Меньше анимации — для слабых устройств и для тех, кого укачивает */
   calmMotion: boolean;
+  /** Насколько глубоко и долго проверять сайты. */
+  scanSpeed: ScanSpeed;
+  /** Единицы скорости: Мбит/с или МБ/с. */
+  speedUnit: SpeedUnit;
+  /** Предел шкалы спидометра. */
+  gaugeMax: GaugeMax;
+  /** Экономный замер скорости по умолчанию. */
+  speedLite: boolean;
 }
 
 export type AccentTheme = 'sky' | 'violet' | 'emerald' | 'amber' | 'rose';
@@ -109,6 +122,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accent: 'sky',
   theme: 'dark',
   calmMotion: false,
+  scanSpeed: 'fast',
+  speedUnit: 'mbps',
+  gaugeMax: 'auto',
+  speedLite: false,
 };
 
 export function readSettings(): AppSettings {
@@ -123,6 +140,11 @@ export function readSettings(): AppSettings {
     const merged = { ...DEFAULT_SETTINGS, ...parsed };
     // Старое значение 'demo' больше не существует: имитации в замерах нет.
     if (merged.probeMode !== 'real') merged.probeMode = 'auto';
+    // Значения из старого хранилища или испорченного JSON не должны ломать UI.
+    if (!['fast', 'balanced', 'thorough'].includes(merged.scanSpeed)) merged.scanSpeed = 'fast';
+    if (!['mbps', 'MBps'].includes(merged.speedUnit)) merged.speedUnit = 'mbps';
+    if (!['auto', 100, 250, 500, 1000].includes(merged.gaugeMax as never)) merged.gaugeMax = 'auto';
+    merged.speedLite = Boolean(merged.speedLite);
     applyAccent(merged.accent);
     applyTheme(merged.theme);
     applyMotion(merged.calmMotion);

@@ -321,11 +321,43 @@ export function speedUsageVerdict(downloadMbps: number, uploadMbps: number, ping
 
 /** Логарифмическая шкала стрелки, как в Speedtest: 0…1000 Мбит/с в 240°. */
 export const GAUGE_TICKS = [0, 1, 5, 10, 50, 100, 500, 1000];
-export function speedGaugeFraction(mbps: number | null | undefined): number {
+
+/** Потолок шкалы: как в Ookla, пользователь может закрепить его вручную. */
+export type GaugeCeiling = 'auto' | 100 | 250 | 500 | 1000;
+
+export function gaugeTicks(ceiling: GaugeCeiling = 'auto'): number[] {
+  if (ceiling === 100) return [0, 1, 5, 10, 25, 50, 100];
+  if (ceiling === 250) return [0, 5, 10, 25, 50, 100, 250];
+  if (ceiling === 500) return [0, 10, 25, 50, 100, 250, 500];
+  return GAUGE_TICKS;
+}
+
+export function gaugeCeilingValue(ceiling: GaugeCeiling = 'auto'): number {
+  return ceiling === 'auto' ? 1000 : ceiling;
+}
+
+export function speedGaugeFraction(mbps: number | null | undefined, ceiling: GaugeCeiling = 'auto'): number {
   if (mbps == null || !Number.isFinite(mbps) || mbps <= 0) return 0;
-  const clamped = Math.min(1000, mbps);
-  // log10(1+x)/log10(1001): 1 Мбит/с ≈ 0.1, 10 ≈ 0.35, 100 ≈ 0.67, 1000 = 1.
-  return Math.max(0, Math.min(1, Math.log10(1 + clamped) / Math.log10(1001)));
+  const max = gaugeCeilingValue(ceiling);
+  const clamped = Math.min(max, mbps);
+  // Логарифмическая шкала: 1 Мбит/с не прилипает к нулю, 1000 не улетает за дугу.
+  return Math.max(0, Math.min(1, Math.log10(1 + clamped) / Math.log10(1 + max)));
+}
+
+/** Единицы как в оригинальном Speedtest: биты по умолчанию, байты по выбору. */
+export type SpeedDisplayUnit = 'mbps' | 'MBps';
+
+export function speedInUnit(mbps: number | null | undefined, unit: SpeedDisplayUnit = 'mbps'): number | null {
+  if (mbps == null || !Number.isFinite(mbps)) return null;
+  return unit === 'MBps' ? mbps / 8 : mbps;
+}
+
+export function speedUnitLabel(unit: SpeedDisplayUnit = 'mbps'): string {
+  return unit === 'MBps' ? 'МБ/с' : 'Мбит/с';
+}
+
+export function formatSpeedIn(mbps: number | null | undefined, unit: SpeedDisplayUnit = 'mbps'): string {
+  return formatSpeed(speedInUnit(mbps, unit));
 }
 
 /** Точка живого графика: мгновенная скорость и фаза, в которой она измерена. */

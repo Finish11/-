@@ -139,7 +139,8 @@ export interface ConfirmedNodeRecommendation {
 /** Рейтинг использует только отзывы, оставленные непосредственно для этого узла. */
 export function recommendConfirmedNodes(
   profiles: VpnProfile[],
-  confirmations: AppConfirmation[]
+  confirmations: AppConfirmation[],
+  now: number = Date.now()
 ): ConfirmedNodeRecommendation[] {
   return profiles.map((profile) => {
     const own = confirmations.filter((item) =>
@@ -154,11 +155,11 @@ export function recommendConfirmedNodes(
     const works = latest.filter((item) => item.works).length;
     const failures = latest.length - works;
     const weightedWorks = latest.filter((item) => item.works)
-      .reduce((sum, item) => sum + confirmationWeight(item.confirmed_at), 0);
+      .reduce((sum, item) => sum + confirmationWeight(item.confirmed_at, now), 0);
     const weightedFailures = latest.filter((item) => !item.works)
-      .reduce((sum, item) => sum + confirmationWeight(item.confirmed_at), 0);
+      .reduce((sum, item) => sum + confirmationWeight(item.confirmed_at, now), 0);
     const freshWorks = latest.filter((item) => item.works
-      && confirmationFreshness(item.confirmed_at) === 'fresh').length;
+      && confirmationFreshness(item.confirmed_at, now) === 'fresh').length;
     const comparable = profile.latency_kind === 'tcp_connect' && profile.latency_route === 'direct'
       && profile.latency_trusted === true && profile.latency_ms != null && Number.isFinite(profile.latency_ms);
     const latency = comparable ? Math.max(0, profile.latency_ms!) : 600;

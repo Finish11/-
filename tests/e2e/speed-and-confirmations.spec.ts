@@ -71,7 +71,8 @@ test('замер скорости показывает результат и с�
   // Второй замер — с выбранным конфигом: только теперь сравнение законно.
   await configSelect.selectOption({ index: 1 });
   await runOnce();
-  await expect(page.getByText(/% от прямого канала|Теряет \d+%/).first()).toBeVisible();
+  // Любой законный вердикт сравнения: конфиг может быть и быстрее прямого.
+  await expect(page.getByText(/Почти без потерь|Не медленнее прямого канала|Теряет \d+%|Сильно ограничивает/).first()).toBeVisible();
   // Сводка по подписке отвечает на вопрос «какие конфиги режут канал».
   await expect(page.getByText('Подписки: где теряется скорость')).toBeVisible();
   await expect(page.getByText(/измерено \d+ из \d+/).first()).toBeVisible();

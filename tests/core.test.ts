@@ -223,11 +223,14 @@ test('рекомендации VPN учитывают последний отз�
     confirmation(3, 'chatgpt', '3.3.3.3', false, '2026-11-02'),
     confirmation(3, 'youtube', '3.3.3.3', true, '2026-11-02'),
   ];
-  const ranked = recommendConfirmedNodes([first, second, third], records);
+  // Часы задаются явно: свежесть отзывов влияет на порядок, и тест не должен
+  // менять результат просто потому, что прошла неделя.
+  const now = Date.parse('2026-11-03T00:00:00.000Z');
+  const ranked = recommendConfirmedNodes([first, second, third], records, now);
   assert.deepEqual(ranked.map((item) => item.profile.id), [2, 1, 3]);
   assert.equal(ranked[0].works, 2);
   // Новый отрицательный отзыв заменяет старый положительный для того же сервиса.
-  const changed = recommendConfirmedNodes([first], [records[0], confirmation(1, 'chatgpt', '4.4.4.4', false, '2026-11-03')]);
+  const changed = recommendConfirmedNodes([first], [records[0], confirmation(1, 'chatgpt', '4.4.4.4', false, '2026-11-03')], now);
   assert.equal(changed.length, 0);
 });
 

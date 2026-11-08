@@ -33,6 +33,7 @@ jobs:
           npm run test:regressions
           npm run test:sync
           npm run test:worker
+          npm run test:version
           npm audit --omit=dev
 
       - name: Сборка фронтенда

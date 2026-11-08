@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { versionLabel } from '../lib/version';
+import { isNativeApp } from '../lib/nativeBridge';
 import {
   Check,
   CircleCheck,
@@ -307,7 +309,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
         <section className="space-y-2.5">
           <SectionTitle
             hint="Обновления раздаются через GitHub Releases"
-            right={<span className="font-mono text-[11px] text-muted">{version || 'веб-версия'}</span>}
+            right={<span className="font-mono text-[11px] text-muted">{versionLabel(version, isNativeApp())}</span>}
           >
             О приложении
           </SectionTitle>

@@ -1,7 +1,7 @@
 {
   "name": "pulsenet",
   "private": true,
-  "version": "1.5.8",
+  "version": "1.6.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
@@ -25,7 +25,10 @@
     "test:speed": "tsx --test tests/speed-test.test.ts tests/speed-endpoints.test.ts tests/speed-runner.test.ts tests/speed-payload.test.ts",
     "test:routes": "tsx --test tests/routes-and-sharing.test.ts",
     "test:e2e": "playwright test",
-    "deploy:community": "node scripts/deploy-community.mjs"
+    "deploy:community": "node scripts/deploy-community.mjs",
+    "test:version": "tsx --test tests/version.test.ts",
+    "version:android": "node scripts/app-version.mjs",
+    "release:notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",

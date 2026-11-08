@@ -249,7 +249,7 @@ test('давний отзыв не поднимает узел выше свеж
   const ranked = recommendConfirmedNodes([oldNode, freshNode], [
     confirmation(oldNode, 60, 'chatgpt'),
     confirmation(freshNode, 1, 'chatgpt'),
-  ]);
+  ], NOW);
   assert.equal(ranked[0].profile.id, freshNode.id, 'свежий отзыв важнее давнего');
   assert.equal(ranked.find((item) => item.profile.id === oldNode.id)?.freshWorks, 0);
   assert.equal(ranked.find((item) => item.profile.id === freshNode.id)?.freshWorks, 1);

@@ -14,7 +14,7 @@
 
 ---
 
-## Что нового в 1.8.1
+## Что нового в 1.8.2
 
 Полный журнал — в [`CHANGELOG.md`](CHANGELOG.md); версия живёт в `package.json`,
 оттуда же берутся `versionName` в APK и заметки релиза (`npm run version:android`,

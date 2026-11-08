@@ -12,7 +12,7 @@ import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
   bufferbloatVerdict, compareConfigs, formatBytes, guessSpeedCap, networkKindLabel, speedGaugeFraction,
   recordedSpeedRoute, speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows, systemSpeedRoute,
-  gaugeTicks, speedUnitLabel, formatSpeedIn, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
+  gaugeTicks, gaugeExceedsCeiling, speedUnitLabel, formatSpeedIn, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
 import { Button, Chip, EmptyState, Notice, SectionTitle } from './ui/kit';
@@ -112,6 +112,11 @@ const SpeedGauge: React.FC<{
           </>
         )}
       </div>
+      {!idle && gaugeExceedsCeiling(mbps, ceiling) && (
+        <div className="text-center text-[10px] font-semibold" style={{ color: 'rgb(var(--warning))' }}>
+          выше предела шкалы — точное число в карточках ниже
+        </div>
+      )}
       {running && (
         <div className="mx-6 mt-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
           <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.round(progress * 100)}%`, background: 'rgb(var(--accent))' }} />

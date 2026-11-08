@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeCeilingValue,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeCeilingValue, gaugeExceedsCeiling,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -364,4 +364,15 @@ test('ненулевая скорость не показывается нулё
   assert.equal(formatSpeedIn(0.4, 'MBps'), '0,05');
   assert.equal(formatSpeedIn(0, 'MBps'), '0,00');
   assert.equal(formatSpeedIn(null, 'MBps'), '—');
+});
+
+test('скорость выше потолка шкалы не выдаётся за сам потолок', () => {
+  assert.equal(gaugeExceedsCeiling(900, 100), true);
+  assert.equal(gaugeExceedsCeiling(100, 100), false, 'ровно потолок — не превышение');
+  assert.equal(gaugeExceedsCeiling(900, 'auto'), false);
+  assert.equal(gaugeExceedsCeiling(1500, 'auto'), true);
+  assert.equal(gaugeExceedsCeiling(null, 100), false);
+  assert.equal(gaugeExceedsCeiling(Number.NaN, 100), false);
+  // Стрелка при этом остаётся внутри дуги.
+  assert.equal(speedGaugeFraction(900, 100), 1);
 });

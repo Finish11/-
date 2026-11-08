@@ -347,6 +347,15 @@ export function speedGaugeFraction(mbps: number | null | undefined, ceiling: Gau
   return Math.max(0, Math.min(1, Math.log10(1 + clamped) / Math.log10(1 + max)));
 }
 
+/**
+ * Скорость выше выбранного потолка: стрелка упирается в конец шкалы, и без
+ * подсказки показалось бы, что измерено ровно 100 Мбит/с, а не 900.
+ */
+export function gaugeExceedsCeiling(mbps: number | null | undefined, ceiling: GaugeCeiling = 'auto'): boolean {
+  if (mbps == null || !Number.isFinite(mbps)) return false;
+  return mbps > gaugeCeilingValue(ceiling);
+}
+
 /** Единицы как в оригинальном Speedtest: биты по умолчанию, байты по выбору. */
 export type SpeedDisplayUnit = 'mbps' | 'MBps';
 

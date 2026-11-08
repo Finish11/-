@@ -15,7 +15,7 @@
  *   node scripts/app-version.mjs --build 137     # номер сборки из CI
  *   node scripts/app-version.mjs --print         # только показать, ничего не менять
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -55,6 +55,10 @@ function main() {
     const gradlePath = path.join(root, 'android', 'app', 'build.gradle');
     writeFileSync(gradlePath, applyToGradle(readFileSync(gradlePath, 'utf8'), version, buildNumber));
   }
+  // --github-env кладёт значения в переменные сборки: номер виден в заметках
+  // релиза, и его можно проверить со стороны, не скачивая APK.
+  if (args.includes('--github-env') && process.env.GITHUB_ENV)
+    appendFileSync(process.env.GITHUB_ENV, `APP_VERSION=${version}\nAPP_VERSION_CODE=${code}\n`);
   console.log(`versionName ${version}`);
   console.log(`versionCode ${code}`);
 }

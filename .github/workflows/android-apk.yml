@@ -105,7 +105,7 @@ jobs:
           # versionName и монотонный versionCode — из одного скрипта, который
           # проверяется тестом: расхождение версии в APK и в заметках релиза
           # ломает обновление поверх установленного приложения.
-          node scripts/app-version.mjs --build "$GITHUB_RUN_NUMBER"
+          node scripts/app-version.mjs --build "$GITHUB_RUN_NUMBER" --github-env
           grep -n 'versionCode\|versionName' android/app/build.gradle
 
       - name: Демо-сборка и синхронизация с Android
@@ -166,7 +166,7 @@ jobs:
           # Журнал вставляется файлом, а не подстановкой в heredoc: обратные
           # кавычки и $ в тексте изменений иначе выполнились бы как команды.
           {
-            printf 'Версия: %s\n\n' "${VERSION}"
+            printf 'Версия: %s (versionCode %s)\n\n' "${VERSION}" "${APP_VERSION_CODE:-неизвестен}"
             node scripts/release-notes.mjs
             printf '\nDebug-сборка приложения «ПульсСети» для Android: Capacitor 8 + автономное локальное хранилище.\n\n'
             printf 'Коммит: `%s`\n' "${SHA_SHORT}"

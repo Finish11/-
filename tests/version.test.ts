@@ -54,3 +54,10 @@ test('патч Gradle меняет только версию и пережива
   assert.equal(applyToGradle(once, '1.6.0', 42), once, 'повторный запуск идемпотентен');
   assert.throws(() => applyToGradle('android {}', '1.6.0'), /не найдены/);
 });
+
+test('номер версии из релиза читается даже с припиской versionCode', () => {
+  // Так приложение узнаёт версию релиза (src/lib/appUpdate.ts).
+  const body = 'Версия: 1.6.0 (versionCode 106000137)\n\nЧто нового в 1.6.0';
+  const match = body.match(/Верси[яи]:\s*([0-9]+(?:\.[0-9]+){1,3})/i);
+  assert.equal(match?.[1], '1.6.0');
+});

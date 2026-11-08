@@ -116,9 +116,14 @@ test('длинный адрес и название сайта не расшир
       category: 'other', marker_role: 'global_neutral', description: 'x'.repeat(240) },
   });
   expect(created.ok(), await created.text()).toBeTruthy();
+  // Список приходит с сервера при загрузке: без перезагрузки приложение держит
+  // прежний набор, и тест проверял бы пустое место (на чистой базе CI так и было).
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible();
-  // Карточка действительно на экране — иначе тест проверял бы пустой список.
+  // Поиск оставляет одну карточку — она точно на экране, а не за пределами списка.
+  await page.getByPlaceholder('Поиск: youtube, госуслуги, steam').fill(long);
   await expect(page.getByText(`${long}-`, { exact: false }).first()).toBeVisible();
   await page.waitForTimeout(400);
   const info = await page.evaluate(() => {

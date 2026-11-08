@@ -34,7 +34,7 @@ import {
 } from '../lib/appUpdate';
 import { connectionLabel, detectNetworkContext, type NetworkContext } from '../lib/networkInfo';
 import { Sheet } from './ui/Sheet';
-import { Button, Chip, Notice, Segmented, SectionTitle, Toggle } from './ui/kit';
+import { Button, Chip, Segmented, SectionTitle, Toggle } from './ui/kit';
 import { SCAN_SPEED_LABEL, type ScanSpeed } from '../lib/scanBudget';
 import { speedUnitLabel } from '../lib/speedTest';
 

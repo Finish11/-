@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Activity, Gauge, Info, Play, SlidersHorizontal, Squ
 import { apiFetch } from '../lib/api';
 import { communityEndpoint } from '../lib/community';
 import { isNativeApp } from '../lib/nativeBridge';
-import { routeFingerprint, suggestActiveNode } from '../lib/appConfirmations';
+import { suggestActiveNode } from '../lib/appConfirmations';
 import { runSpeedTest, SPEED_TRAFFIC, type SpeedProgress, type SpeedTestResult } from '../lib/speedRunner';
 import { normalizeSpeedRunPayload } from '../lib/speedPayload';
 import { useSettings } from '../lib/appSettings';

@@ -20,7 +20,6 @@ import {
   Server,
   Eye,
   Radio,
-  Gauge,
   Sparkles,
   ChevronRight,
   Share2,

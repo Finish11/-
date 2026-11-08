@@ -26,3 +26,13 @@ test('общий сервер отклоняет небезопасный HTTP-�
   await page.getByRole('button', { name: 'Проверить и подключить' }).click();
   await expect(page.getByText(/Общий API должен использовать HTTPS/)).toBeVisible();
 });
+
+test('в настройках видна версия сборки, а не 0.0.0', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'достаточно одной проверки на десктопе');
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /Проверка сети|Проверка/ }).first()).toBeVisible();
+  await page.getByRole('button', { name: /Настройки/ }).first().click();
+  await expect(page.getByText('О приложении')).toBeVisible({ timeout: 15_000 });
+  // Версия берётся из package.json через Vite define и не отстаёт от APK.
+  await expect(page.getByText(/\d+\.\d+\.\d+ · веб/)).toBeVisible();
+});

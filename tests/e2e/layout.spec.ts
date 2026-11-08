@@ -190,7 +190,7 @@ test('во время проверки сайтов раскладка держ�
   await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /^(Проверить|Повторить замер)/ }).first().click();
   const problems: string[] = [];
-  let sawProgress = false;
+  let sawProgress = false, sawTimer = false;
   for (let i = 0; i < 20; i++) {
     await page.waitForTimeout(400);
     const info = await page.evaluate(() => {
@@ -200,16 +200,19 @@ test('во время проверки сайтов раскладка держ�
         overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         navRows: new Set(Array.from(document.querySelectorAll('nav.fixed button')).map((b) => Math.round(b.getBoundingClientRect().top))).size,
         navVisible: nav.height > 0 && nav.bottom <= window.innerHeight + 2,
-        // Прогресс проверки: «N / 75» или строка с текущим домном.
+        // Прогресс проверки: «N / 75» и секундомер с пределом.
         progress: /\d+\s*\/\s*\d+/.test(text),
+        timer: /прошло \d+ с · предел \d+ с/.test(text),
       };
     });
     if (info.progress) sawProgress = true;
+    if (info.timer) sawTimer = true;
     if (info.overflow > 1) problems.push(`шаг ${i}: страница шире экрана на ${info.overflow}px`);
     if (info.navRows !== 1) problems.push(`шаг ${i}: панель в ${info.navRows} ряда`);
     if (!info.navVisible) problems.push(`шаг ${i}: нижняя панель скрыта`);
   }
   expect(sawProgress, 'проверка должна показывать прогресс').toBe(true);
+  expect(sawTimer, 'во время проверки видно, сколько прошло и какой предел').toBe(true);
   expect(problems, problems.join('\n')).toEqual([]);
 });
 
@@ -272,6 +275,8 @@ test('проверка всех сайтов укладывается в обе�
   await expect(page.getByText(/предел 20 с/)).toBeVisible();
   const started = Date.now();
   await page.getByRole('button', { name: 'Проверить все сайты' }).click();
+  // Пока идёт проверка, видно секундомер и предел — «зависло на 5%» больше нет.
+  await expect(page.getByText(/Идёт проверка: прошло \d+ с из 20 с/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible({ timeout: 60_000 });
   const elapsed = Date.now() - started;
   expect(elapsed, `проверка шла ${elapsed} мс`).toBeLessThan(45_000);

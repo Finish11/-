@@ -42,7 +42,7 @@ import { QuickPicks } from './QuickPicks';
 import { ResultGlossary } from './ResultGlossary';
 import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
-import { scanBudgetFor } from '../lib/scanBudget';
+import { SCAN_SPEED_LABEL, scanBudgetFor } from '../lib/scanBudget';
 import { createUiBatch } from '../lib/uiBatch';
 import { useSettings } from '../lib/appSettings';
 import {
@@ -168,6 +168,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [phase, setPhase] = useState<Phase>('idle');
   const [detectedConn, setDetectedConn] = useState<ClientConnectionInfo | null>(connection);
   const [progress, setProgress] = useState({ done: 0, total: 0, currentDomain: '' });
+  // Секундомер проверки: пользователь видел «5%» и не понимал, идёт ли работа.
+  // Теперь видно, сколько прошло и какой у проверки жёсткий предел.
+  const [scanStartedAt, setScanStartedAt] = useState<number | null>(null);
+  const [scanElapsedSec, setScanElapsedSec] = useState(0);
   const [liveResults, setLiveResults] = useState<ScanSiteResult[]>([]);
   // Примерные замеры из демо-набора не показываем как свои: только реальные.
   const realLatestScan = latestScan && !latestScan.demo ? latestScan : null;
@@ -319,6 +323,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setSiteFilter('all');
     setShowAllSites(false);
     setProgress({ done: 0, total: enabledSitesCount, currentDomain: '' });
+    setScanStartedAt(Date.now());
+    setScanElapsedSec(0);
 
     // Залп в 64 пробы приносит ответы пачкой: без склейки каждый ответ
     // перерисовывал весь список. Первое обновление идёт сразу, дальше — не
@@ -340,7 +346,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 8000, {
       withVpn: vpnMode === 'with_vpn',
       countryCode: conn.country_code,
-    }, undefined, scanBudgetFor(appSettings.scanSpeed)).finally(() => ui.flush());
+    }, undefined, scanBudgetFor(appSettings.scanSpeed)).finally(() => { ui.flush(); setScanStartedAt(null); });
     if (outcome.incomplete > 0 && !ctrl.signal.aborted) {
       showToast('warning', `Проверено ${outcome.results.length} из ${enabledSitesCount} за ${Math.round(outcome.elapsedMs / 1000)} с. ${outcome.incomplete} не успели ответить — им вердикт не выдуман, запустите проверку ещё раз.`);
     }
@@ -566,6 +572,14 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (phase !== 'scanning' || scanStartedAt == null) return;
+    const tick = () => setScanElapsedSec(Math.max(0, Math.floor((Date.now() - scanStartedAt) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [phase, scanStartedAt]);
+
   /* --------------------------------- данные --------------------------------- */
 
   const displayedResults = phase === 'scanning' ? liveResults : activeScan?.results || [];
@@ -779,6 +793,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           {phase === 'scanning' ? (
             <div className="w-full max-w-sm mt-5 space-y-2">
               <Meter pct={progressPct} height={7} />
+              <div className="text-center text-[10.5px] tabular-nums text-dim">
+                прошло {scanElapsedSec} с · предел {Math.round(scanBudgetFor(appSettings.scanSpeed).totalMs / 1000)} с
+                {' · '}{SCAN_SPEED_LABEL[appSettings.scanSpeed].title.toLowerCase()}
+              </div>
               <div className="flex flex-wrap justify-between gap-x-2 gap-y-1 text-[11px] text-dim font-medium">
                 <span className="inline-flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'rgb(var(--success))' }} />

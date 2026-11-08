@@ -48,6 +48,16 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
   const [roleFilter, setRoleFilter] = useState<'all' | 'whitelist' | 'neutral' | 'rkn'>('all');
   const [pingingIds, setPingIds] = useState<Set<number>>(new Set());
   const [checkingAll, setCheckingAll] = useState(false);
+  // Секундомер: видно, что проверка идёт и когда её жёсткий предел.
+  const [checkStartedAt, setCheckStartedAt] = useState<number | null>(null);
+  const [checkElapsedSec, setCheckElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!checkingAll || checkStartedAt == null) return;
+    const tick = () => setCheckElapsedSec(Math.max(0, Math.floor((Date.now() - checkStartedAt) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [checkingAll, checkStartedAt]);
   const [checkProgress, setCheckProgress] = useState('');
   const [now, setNow] = useState(Date.now());
   const abortRef = useRef<AbortController | null>(null);
@@ -185,6 +195,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     if (checkingAll) { abortRef.current?.abort(); return; }
     const targets = sites.filter((site) => Boolean(site.enabled)); if (!targets.length) return;
     const ctrl = new AbortController(); abortRef.current = ctrl; setCheckingAll(true);
+    setCheckStartedAt(Date.now()); setCheckElapsedSec(0);
     let done = 0, failedSaves = 0;
     // Второй проход переспрашивает промолчавшие сайты: результат обновляется,
     // но счётчик не должен обгонять число сайтов («90 / 75»).
@@ -220,7 +231,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
       if ((error as Error)?.name === 'AbortError' || ctrl.signal.aborted)
         showToast('info', `Проверка остановлена: сохранено ${done} из ${targets.length}`);
       else showToast('error', error instanceof Error ? error.message : 'Проверка не завершена');
-    } finally { counter.flush(); setCheckingAll(false); setCheckProgress(''); abortRef.current = null; }
+    } finally { counter.flush(); setCheckingAll(false); setCheckProgress(''); setCheckStartedAt(null); abortRef.current = null; }
   };
 
   const handleResetDefaults = async () => {
@@ -302,6 +313,12 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
           </Button>
         </div>
       </header>
+      {checkingAll && (
+        <div className="text-[11.5px] font-semibold tabular-nums accent-text">
+          Идёт проверка: прошло {checkElapsedSec} с из {Math.round(scanBudgetFor(settings.scanSpeed).totalMs / 1000)} с
+          {checkProgress ? ` · ${checkProgress}` : ''}
+        </div>
+      )}
       <div className="text-[11px] text-dim">
         Режим «{settings.scanSpeed === 'fast' ? 'Быстро' : settings.scanSpeed === 'balanced' ? 'Сбалансированно' : 'Подробно'}»:
         все сайты запрашиваются одновременно, предел {Math.round(scanBudgetFor(settings.scanSpeed).totalMs / 1000)} с

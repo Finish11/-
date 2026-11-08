@@ -612,7 +612,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                   <div className="flex items-center -mr-1">
                     <button
                       type="button"
-                      className="p-1.5 rounded-full text-muted tap cursor-grab active:cursor-grabbing"
+                      className="tap-icon tap rounded-full text-muted cursor-grab active:cursor-grabbing"
                       style={{ touchAction: 'none' }}
                       aria-label={`Переместить ${pick.name}. Стрелки также меняют порядок`}
                       title="Перетащите карточку на новое место"
@@ -653,7 +653,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                       type="button"
                       onClick={() => handleRemove(pick, site)}
                       disabled={busy === pick.id}
-                      className="p-1.5 rounded-full text-muted hover:text-[rgb(var(--danger))] tap"
+                      className="tap-icon tap rounded-full text-muted hover:text-[rgb(var(--danger))]"
                       aria-label={`Убрать ${pick.name}`}
                     >
                       {busy === pick.id ? (
@@ -668,7 +668,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                 <button
                   type="button"
                   onClick={() => void openDetails(pick, r)}
-                  className="mt-2 flex items-center gap-1 max-w-full text-left tap"
+                  className="mt-1.5 flex min-h-[32px] items-center gap-1 max-w-full text-left tap"
                   aria-label={`Подробнее о проверке ${pick.name}`}
                 >
                   <span className="text-[12px] font-bold truncate pr-1">{pick.name}</span>
@@ -684,7 +684,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                     <button
                       type="button"
                       onClick={() => void openDetails(pick, r)}
-                      className="block text-left text-[10.5px] leading-tight font-semibold break-words tap"
+                      className="block min-h-[32px] py-1 text-left text-[10.5px] leading-tight font-semibold break-words tap"
                       style={{ color: v.fg }}
                     >
                       {v.label}

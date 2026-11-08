@@ -533,7 +533,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           <button
             type="button"
             onClick={() => setPlacePickerOpen(true)}
-            className="text-[11.5px] font-semibold px-2 py-1 rounded-lg tap"
+            className="text-[11.5px] font-semibold px-2.5 min-h-[32px] rounded-lg tap"
             style={{ background: 'var(--accent-soft)', color: 'rgb(var(--accent))' }}
           >
             + Добавить
@@ -805,7 +805,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                         type="button"
                         onClick={() => void handleToggleResolved(inc)}
                         title={resolved ? 'Вернуть в активные' : 'Отметить решённым'}
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--success))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--success))]"
                       >
                         {resolved ? <RotateCcw className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                       </button>
@@ -813,7 +813,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                         type="button"
                         onClick={() => openEdit(inc)}
                         title="Изменить"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--accent))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--accent))]"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -821,7 +821,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                         type="button"
                         onClick={() => setPendingDelete(inc)}
                         title="Удалить"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--danger))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--danger))]"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

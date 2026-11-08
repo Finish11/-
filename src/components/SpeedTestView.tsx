@@ -369,6 +369,8 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         <button
           type="button"
           onClick={() => setTuneOpen((value) => !value)}
+          aria-expanded={tuneOpen}
+          aria-controls="speed-tune-panel"
           className="mt-3 flex w-full items-center justify-between rounded-xl border px-3 py-2 text-[11.5px] font-semibold tap"
           style={{ borderColor: 'var(--line)', color: 'var(--text-muted)' }}
         >
@@ -379,7 +381,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           </span>
         </button>
         {tuneOpen && (
-          <div className="mt-2 space-y-2.5 rounded-2xl border p-3" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+          <div id="speed-tune-panel" className="mt-2 space-y-2.5 rounded-2xl border p-3" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
             <div>
               <div className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Единицы</div>
               <div className="mt-1.5 flex gap-1.5">
@@ -582,7 +584,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
                     {run.reliable === false ? ' · приблизительно' : ''}
                   </div>
                 </div>
-                <button onClick={() => void removeRun(run.id)} className="p-1.5 rounded-lg shrink-0" style={{ color: 'var(--text-muted)' }} aria-label="Удалить замер">
+                <button onClick={() => void removeRun(run.id)} className="tap-icon tap shrink-0" style={{ color: 'var(--text-muted)' }} aria-label="Удалить замер">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>

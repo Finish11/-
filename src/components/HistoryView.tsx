@@ -314,7 +314,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                         type="button"
                         onClick={() => handleTogglePin(scan)}
                         title="Закрепить"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--accent))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--accent))]"
                       >
                         <Bookmark className={`w-3.5 h-3.5 ${scan.pinned ? 'fill-current text-[rgb(var(--accent))]' : ''}`} />
                       </button>
@@ -322,7 +322,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                         type="button"
                         onClick={() => openEdit(scan)}
                         title="Подпись и заметка"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--accent))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--accent))]"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -330,7 +330,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                         type="button"
                         onClick={() => setPendingDelete(scan)}
                         title="Удалить"
-                        className="p-1.5 rounded-lg text-dim hover:text-[rgb(var(--danger))]"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--danger))]"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

@@ -286,7 +286,7 @@ export const Layout: React.FC<LayoutProps> = ({
             <button
               onClick={onLogout}
               title="Выйти"
-              className="p-1.5 rounded-lg text-muted hover:text-[rgb(var(--danger))] tap"
+              className="tap-icon tap text-muted hover:text-[rgb(var(--danger))]"
             >
               <LogOut className="w-4 h-4" />
             </button>

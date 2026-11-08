@@ -975,7 +975,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                         type="button"
                         disabled={syncingId === s.id}
                         onClick={() => handleSyncSubscription(s)}
-                        className="p-2 rounded-lg text-dim hover:text-[color:var(--text)] tap"
+                        className="tap-icon tap text-dim hover:text-[color:var(--text)]"
                         title="Обновить подписку"
                       >
                         <RefreshCw className={`w-4 h-4 ${syncingId === s.id ? 'animate-spin' : ''}`} />
@@ -983,7 +983,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setPendingDelete({ kind: 'sub', sub: s })}
-                        className="p-2 rounded-lg text-dim hover:text-[rgb(var(--danger))] tap"
+                        className="tap-icon tap text-dim hover:text-[rgb(var(--danger))]"
                         title="Удалить подписку"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1854,7 +1854,7 @@ const IconAction: React.FC<{
     aria-label={title}
     onClick={onClick}
     disabled={loading}
-    className={`p-2 rounded-lg text-dim tap ${danger ? 'hover:text-[rgb(var(--danger))]' : 'hover:text-[rgb(var(--accent))]'}`}
+    className={`tap-icon tap text-dim ${danger ? 'hover:text-[rgb(var(--danger))]' : 'hover:text-[rgb(var(--accent))]'}`}
   >
     {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : icon}
   </button>

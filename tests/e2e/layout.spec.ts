@@ -59,8 +59,15 @@ test('кнопка замера видна без прокрутки, едини
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
   }
   // Настройки замера: единицы меняют подписи, потолок шкалы — деления.
-  await page.getByRole('button', { name: /Настройки замера/ }).click();
+  const tune = page.getByRole('button', { name: /Настройки замера/ });
+  await expect(tune).toHaveAttribute('aria-expanded', 'false');
+  await tune.click();
+  await expect(tune).toHaveAttribute('aria-expanded', 'true');
+  // Выбранные единицы и потолок объявлены скринридеру, а не только подсвечены.
+  await expect(page.getByRole('button', { name: 'Мбит/с', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'МБ/с', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'МБ/с', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Мбит/с', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByText('Предел шкалы, МБ/с')).toBeVisible();
   await expect(page.getByText('МБ/с').first()).toBeVisible();
   await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
@@ -109,9 +116,11 @@ test('длинный адрес и название сайта не расшир
   await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
   // Пользовательский сайт с очень длинными строками — типичная причина
   // «компьютерного режима»: страница шире экрана, нижняя панель уезжает.
-  const long = 'очень-длинное-название-сервиса-без-пробелов-которое-не-влезает-в-карточку';
+  // Имя уникально для прогона: иначе поиск находил карточки прошлых прогонов,
+  // и первая из них могла быть за экраном (content-visibility её не рисует).
+  const long = `очень-длинное-название-сервиса-без-пробелов-${Date.now()}`;
   const created = await page.request.post('/api/sites', {
-    data: { name: `${long}-${'я'.repeat(60)}`, domain: `${'sub.'.repeat(12)}example.com`,
+    data: { name: `${long}-${'я'.repeat(60)}`, domain: `${'sub.'.repeat(12)}${Date.now()}.example.com`,
       probe_url: `https://${'segment-'.repeat(15)}example.com/${'path/'.repeat(10)}check`,
       category: 'other', marker_role: 'global_neutral', description: 'x'.repeat(240) },
   });
@@ -152,6 +161,10 @@ test('длинный адрес и название сайта не расшир
   expect(modal.overflow, 'окно не шире экрана').toBeLessThanOrEqual(1);
   expect(modal.cancelBottom, 'кнопки окна достижимы').toBeLessThanOrEqual(modal.vh + 1);
   await page.getByRole('button', { name: 'Отмена' }).click();
+  // Убираем за собой: тест не должен накапливать сайты в базе прогонов.
+  const body = await created.json() as { id?: number; site?: { id?: number } };
+  const id = body.id ?? body.site?.id;
+  if (id) await page.request.delete(`/api/sites/${id}`);
 });
 
 test('настройки: режим проверки и единицы выбираются на узком экране', async ({ page }) => {
@@ -178,6 +191,7 @@ test('настройки: режим проверки и единицы выби
   await expect(page.getByText('Замеры и проверки')).toBeVisible({ timeout: 15_000 });
   const balanced = page.getByRole('button', { name: /Сбалансированно/ });
   await expect(balanced).toHaveAttribute('style', /accent/);
+  await expect(balanced).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: /Быстро/ }).click();
   await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
 });

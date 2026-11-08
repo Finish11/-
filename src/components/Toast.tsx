@@ -49,7 +49,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
             <button
               type="button"
               onClick={() => onDismiss(t.id)}
-              className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-lg text-dim hover:text-[color:var(--text)]"
+              className="tap-icon tap shrink-0 -mr-1 -mt-0.5 text-dim hover:text-[color:var(--text)]"
               aria-label="Скрыть"
             >
               <X className="w-3.5 h-3.5" />

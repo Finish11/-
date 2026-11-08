@@ -336,7 +336,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
             setPhase('idle');
             setDismissed(true);
           }}
-          className="p-1.5 rounded-lg text-muted hover:text-[color:var(--text)] shrink-0"
+          className="tap-icon tap text-muted hover:text-[color:var(--text)] shrink-0"
           aria-label="Скрыть"
         >
           <X className="w-4 h-4" />

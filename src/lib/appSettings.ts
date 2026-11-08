@@ -128,6 +128,41 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speedLite: false,
 };
 
+const SCAN_SPEEDS: ScanSpeed[] = ['fast', 'balanced', 'thorough'];
+const SPEED_UNITS: SpeedUnit[] = ['mbps', 'MBps'];
+const GAUGE_MAXES: GaugeMax[] = ['auto', 100, 250, 500, 1000];
+const THEMES: ThemeMode[] = ['dark', 'light', 'system'];
+const NETWORK_TYPES: NetworkType[] = ['auto', 'wifi', 'cellular'];
+
+/**
+ * Приводит любые данные к корректным настройкам.
+ *
+ * Раньше значения проверялись только при чтении: `writeSettings({gaugeMax: 999})`
+ * сохранял мусор и рассылал его подписчикам, и экран замера получал потолок,
+ * которого нет в списке. Теперь проверка одна на оба пути — и старое хранилище,
+ * и испорченный JSON, и неверный вызов дают предсказуемый результат.
+ */
+export function sanitizeSettings(raw: unknown): AppSettings {
+  const parsed = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const pick = <T,>(value: unknown, allowed: T[], fallback: T): T =>
+    allowed.includes(value as T) ? (value as T) : fallback;
+  const text = (value: unknown): string => (typeof value === 'string' ? value.slice(0, 120) : '');
+  return {
+    operator: text(parsed.operator),
+    city: text(parsed.city),
+    networkType: pick(parsed.networkType, NETWORK_TYPES, DEFAULT_SETTINGS.networkType),
+    // Старое значение 'demo' больше не существует: имитации в замерах нет.
+    probeMode: parsed.probeMode === 'real' ? 'real' : 'auto',
+    accent: pick(parsed.accent, ACCENTS.map((a) => a.id), DEFAULT_SETTINGS.accent),
+    theme: pick(parsed.theme, THEMES, DEFAULT_SETTINGS.theme),
+    calmMotion: Boolean(parsed.calmMotion),
+    scanSpeed: pick(parsed.scanSpeed, SCAN_SPEEDS, DEFAULT_SETTINGS.scanSpeed),
+    speedUnit: pick(parsed.speedUnit, SPEED_UNITS, DEFAULT_SETTINGS.speedUnit),
+    gaugeMax: pick(parsed.gaugeMax, GAUGE_MAXES, DEFAULT_SETTINGS.gaugeMax),
+    speedLite: Boolean(parsed.speedLite),
+  };
+}
+
 export function readSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(KEY);
@@ -136,15 +171,7 @@ export function readSettings(): AppSettings {
       applyTheme(DEFAULT_SETTINGS.theme);
       return DEFAULT_SETTINGS;
     }
-    const parsed = JSON.parse(raw) as Partial<AppSettings> & { probeMode?: string };
-    const merged = { ...DEFAULT_SETTINGS, ...parsed };
-    // Старое значение 'demo' больше не существует: имитации в замерах нет.
-    if (merged.probeMode !== 'real') merged.probeMode = 'auto';
-    // Значения из старого хранилища или испорченного JSON не должны ломать UI.
-    if (!['fast', 'balanced', 'thorough'].includes(merged.scanSpeed)) merged.scanSpeed = 'fast';
-    if (!['mbps', 'MBps'].includes(merged.speedUnit)) merged.speedUnit = 'mbps';
-    if (!['auto', 100, 250, 500, 1000].includes(merged.gaugeMax as never)) merged.gaugeMax = 'auto';
-    merged.speedLite = Boolean(merged.speedLite);
+    const merged = sanitizeSettings(JSON.parse(raw));
     applyAccent(merged.accent);
     applyTheme(merged.theme);
     applyMotion(merged.calmMotion);
@@ -155,7 +182,9 @@ export function readSettings(): AppSettings {
 }
 
 export function writeSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = { ...readSettings(), ...patch };
+  // Проверяем и то, что пришло из интерфейса: неверный потолок шкалы или
+  // единицы не должны попасть ни в хранилище, ни к подписчикам.
+  const next = sanitizeSettings({ ...readSettings(), ...patch });
   try {
     localStorage.setItem(KEY, JSON.stringify(next));
   } catch {

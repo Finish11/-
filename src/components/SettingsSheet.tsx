@@ -318,6 +318,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                 key={value}
                 type="button"
                 onClick={() => update({ scanSpeed: value })}
+                aria-pressed={settings.scanSpeed === value}
                 className="w-full rounded-xl border px-3 py-2 text-left tap"
                 style={{
                   borderColor: settings.scanSpeed === value ? 'rgb(var(--accent))' : 'var(--line)',

@@ -24,7 +24,7 @@
     "test:native": "tsx --test tests/native-contract.test.ts",
     "test:speed": "tsx --test tests/speed-test.test.ts tests/speed-endpoints.test.ts tests/speed-runner.test.ts tests/speed-payload.test.ts",
     "test:routes": "tsx --test tests/routes-and-sharing.test.ts",
-    "test:scan": "tsx --test tests/scan-budget.test.ts tests/ui-batch.test.ts",
+    "test:scan": "tsx --test tests/scan-budget.test.ts tests/ui-batch.test.ts tests/app-settings.test.ts",
     "test:e2e": "playwright test",
     "deploy:community": "node scripts/deploy-community.mjs",
     "test:version": "tsx --test tests/version.test.ts",

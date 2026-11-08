@@ -81,6 +81,7 @@ export const Chip: React.FC<{
     type="button"
     title={title}
     onClick={onClick}
+    aria-pressed={active}
     className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold border tap ${
       active
         ? 'accent-soft'
@@ -120,6 +121,7 @@ export function Segmented<T extends string>({
             key={o.value}
             type="button"
             onClick={() => onChange(o.value)}
+            aria-pressed={active}
             className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold tap ${
               size === 'sm' ? 'py-1.5 text-[11.5px]' : 'py-2 text-[12.5px]'
             } ${
@@ -284,7 +286,7 @@ export const Notice: React.FC<{
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 opacity-60 hover:opacity-100 text-[13px] leading-none px-1"
+          className="tap-icon tap shrink-0 opacity-60 hover:opacity-100 text-[13px] leading-none"
           aria-label="Скрыть"
         >
           ✕

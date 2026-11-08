@@ -23,6 +23,8 @@ jobs:
         run: npm rebuild better-sqlite3
 
       - name: Типы и тесты
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run typecheck
           npm run typecheck:community
@@ -35,6 +37,7 @@ jobs:
           npm run test:sync
           npm run test:worker
           npm run test:version
+          npm run version:guard
           npm audit --omit=dev
 
       - name: Сборка фронтенда

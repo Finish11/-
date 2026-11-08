@@ -44,6 +44,10 @@ export interface UpdateInfo {
   /** Версия из релиза, напр. 1.2.0 */
   version: string;
   currentVersion: string;
+  /** Номер сборки Android из релиза (versionCode), 0 если не указан. */
+  buildNumber: number;
+  /** Номер сборки установленного приложения. */
+  currentBuildNumber: number;
   /** Прямая ссылка на APK */
   downloadUrl: string;
   notes: string;
@@ -74,6 +78,47 @@ export async function getCurrentVersion(): Promise<string> {
   }
 }
 
+/** Установленный versionCode: на Android Capacitor отдаёт его в поле build. */
+export async function getCurrentBuildNumber(): Promise<number> {
+  if (!isNativeApp()) return 0;
+  try {
+    const info = await App.getInfo();
+    const code = Number.parseInt(info.build, 10);
+    return Number.isFinite(code) ? code : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** «Версия: 1.8.0 (versionCode 108000012)» → 108000012. */
+export function parseBuildNumber(notes: string): number {
+  const match = notes.match(/versionCode\s+(\d+)/i);
+  const code = match ? Number.parseInt(match[1], 10) : 0;
+  return Number.isFinite(code) ? code : 0;
+}
+
+/**
+ * Есть ли обновление.
+ *
+ * Сравниваем не только X.Y.Z, но и номер сборки: каждая пересборка получает
+ * новый versionCode, поэтому даже маленькая правка приходит в приложение.
+ * Раньше сравнивалась только версия — и новые APK под тем же номером
+ * молча не предлагались.
+ */
+export function hasUpdate(
+  releaseVersion: string,
+  releaseBuild: number,
+  installedVersion: string,
+  installedBuild: number
+): boolean {
+  if (!releaseVersion) return false;
+  const byVersion = compareVersions(releaseVersion, installedVersion);
+  if (byVersion > 0) return true;
+  if (byVersion < 0) return false;
+  // Версия та же — решает номер сборки, но только если он известен с обеих сторон.
+  return releaseBuild > 0 && installedBuild > 0 && releaseBuild > installedBuild;
+}
+
 /**
  * Спрашивает последний релиз на GitHub. Возвращает null, если обновление не нужно
  * или сеть недоступна (обновление никогда не должно ломать запуск приложения).
@@ -82,7 +127,7 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
   if (!isNativeApp()) return null;
 
   try {
-    const currentVersion = await getCurrentVersion();
+    const [currentVersion, currentBuildNumber] = await Promise.all([getCurrentVersion(), getCurrentBuildNumber()]);
     const res = await fetch(RELEASE_API, {
       headers: { Accept: 'application/vnd.github+json' },
     });
@@ -100,11 +145,14 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
     const body = release.body || '';
     const versionMatch = body.match(/Верси[яи]:\s*([0-9]+(?:\.[0-9]+){1,3})/i);
     const version = versionMatch ? versionMatch[1] : '';
-    if (!version || compareVersions(version, currentVersion) <= 0) return null;
+    const buildNumber = parseBuildNumber(body);
+    if (!hasUpdate(version, buildNumber, currentVersion, currentBuildNumber)) return null;
 
     return {
       version,
       currentVersion,
+      buildNumber,
+      currentBuildNumber,
       downloadUrl: apk.browser_download_url,
       notes: body,
       sizeMb: Math.round((apk.size / 1048576) * 10) / 10,

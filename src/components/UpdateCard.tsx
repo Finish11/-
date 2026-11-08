@@ -236,10 +236,16 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-extrabold">
-              {phase === 'permission' ? 'Нужно разрешение' : `Доступно обновление ${info.version}`}
+              {phase === 'permission' ? 'Нужно разрешение'
+                : info.version === info.currentVersion
+                ? `Доступна новая сборка ${info.version}`
+                : `Доступно обновление ${info.version}`}
             </h3>
             <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded-md text-muted" style={{ background: 'var(--surface-2)' }}>
-              сейчас {info.currentVersion} · {info.sizeMb} МБ
+              сейчас {info.currentVersion}
+              {info.version === info.currentVersion && info.currentBuildNumber > 0
+                ? ` (сборка ${info.currentBuildNumber} → ${info.buildNumber})`
+                : ''} · {info.sizeMb} МБ
             </span>
           </div>
 

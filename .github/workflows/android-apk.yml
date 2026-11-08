@@ -50,6 +50,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Правило: версия растёт при каждом изменении приложения. Иначе APK
+      # выйдет под уже опубликованным номером и обновление не придёт.
+      - name: Версия поднята относительно релиза
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/version-guard.mjs
+
       - name: JDK 21
         uses: actions/setup-java@v5
         with:

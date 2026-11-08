@@ -1,7 +1,7 @@
 {
   "name": "pulsenet",
   "private": true,
-  "version": "1.7.0",
+  "version": "1.8.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
@@ -27,8 +27,10 @@
     "test:scan": "tsx --test tests/scan-budget.test.ts tests/ui-batch.test.ts tests/app-settings.test.ts",
     "test:e2e": "playwright test",
     "deploy:community": "node scripts/deploy-community.mjs",
-    "test:version": "tsx --test tests/version.test.ts",
+    "test:version": "tsx --test tests/version.test.ts tests/version-bump.test.ts tests/app-update.test.ts",
     "version:android": "node scripts/app-version.mjs",
+    "version:bump": "node scripts/version-bump.mjs",
+    "version:guard": "node scripts/version-guard.mjs",
     "release:notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {

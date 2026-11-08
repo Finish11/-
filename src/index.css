@@ -544,6 +544,20 @@ html.calm-motion .anim-overlay {
   animation-duration: 0.12s !important;
 }
 
+/* Указатель спидометра двигается плавно, но уважает «меньше анимации». */
+.gauge-needle {
+  transition: x1 0.35s cubic-bezier(0.22, 1, 0.36, 1), y1 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    x2 0.35s cubic-bezier(0.22, 1, 0.36, 1), y2 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+html.calm-motion .gauge-needle {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gauge-needle {
+    transition: none;
+  }
+}
+
 /* Уважаем настройку «уменьшить движение» */
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up,

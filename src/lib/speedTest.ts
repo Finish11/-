@@ -146,6 +146,9 @@ export function formatSpeed(mbps: number | null | undefined): string {
   if (mbps == null || !Number.isFinite(mbps)) return '—';
   if (mbps >= 100) return `${Math.round(mbps)}`;
   if (mbps >= 10) return mbps.toFixed(1).replace('.', ',');
+  // Ненулевой замер не должен выглядеть нулём: в МБ/с медленный канал даёт
+  // сотые доли, и «0,00» читается как «интернета нет».
+  if (mbps > 0 && mbps < 0.005) return '< 0,01';
   return mbps.toFixed(2).replace('.', ',');
 }
 

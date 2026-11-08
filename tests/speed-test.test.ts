@@ -357,3 +357,11 @@ test('единицы и шкала настраиваются как в ориг
   assert.ok(speedGaugeFraction(50, 'auto') < 0.6);
   assert.equal(speedGaugeFraction(0, 100), 0);
 });
+
+test('ненулевая скорость не показывается нулём в мелких единицах', () => {
+  // 0,03 Мбит/с = 0,00375 МБ/с: округление до сотых дало бы «0,00».
+  assert.equal(formatSpeedIn(0.03, 'MBps'), '< 0,01');
+  assert.equal(formatSpeedIn(0.4, 'MBps'), '0,05');
+  assert.equal(formatSpeedIn(0, 'MBps'), '0,00');
+  assert.equal(formatSpeedIn(null, 'MBps'), '—');
+});

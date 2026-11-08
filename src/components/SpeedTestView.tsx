@@ -73,7 +73,7 @@ const SpeedGauge: React.FC<{
           <line
             x1={needleFrom.x} y1={needleFrom.y} x2={needleTo.x} y2={needleTo.y}
             stroke={running ? 'rgb(var(--accent))' : 'var(--text-muted)'} strokeWidth="4" strokeLinecap="round"
-            style={{ transition: 'all 0.35s cubic-bezier(0.22, 1, 0.36, 1)' }}
+            className="gauge-needle"
           />
         )}
         {ticks.map((tick) => {
@@ -373,7 +373,10 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           style={{ borderColor: 'var(--line)', color: 'var(--text-muted)' }}
         >
           <span className="inline-flex items-center gap-1.5"><SlidersHorizontal className="w-3.5 h-3.5" /> Настройки замера</span>
-          <span className="text-[10.5px]">{speedUnitLabel(unit)} · шкала {ceiling === 'auto' ? 'авто' : ceiling}{lite ? ' · экономный' : ''}</span>
+          <span className="text-[10.5px]">
+            {speedUnitLabel(unit)} · шкала {ceiling === 'auto' ? 'авто' : unit === 'MBps' ? Math.round((ceiling / 8) * 10) / 10 : ceiling}
+            {lite ? ' · экономный' : ''}
+          </span>
         </button>
         {tuneOpen && (
           <div className="mt-2 space-y-2.5 rounded-2xl border p-3" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>

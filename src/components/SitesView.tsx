@@ -482,7 +482,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <div className="flex w-[116px] shrink-0 flex-col items-end gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleToggleEnabled(site)}
@@ -527,11 +527,14 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    <div className="text-[9.5px] leading-snug text-muted mt-1 break-words">
-                      {site.last_checked_at ? `${siteResultIsStale(site, now) ? 'Устарело · ' : ''}${new Date(site.last_checked_at).toLocaleString('ru-RU')}` : 'Ещё не проверялся на этом устройстве'}
-                      {site.last_note ? ` · ${site.last_note}` : ''}
-                    </div>
                   </div>
+                </div>
+                {/* Дата и причина — отдельной строкой на всю ширину карточки.
+                    Внутри правой колонки (shrink-0) длинная причина распирала
+                    её по содержимому и сжимала название в столбик по букве. */}
+                <div className="mt-1.5 pl-3.5 text-[9.5px] leading-snug text-muted break-anywhere">
+                  {site.last_checked_at ? `${siteResultIsStale(site, now) ? 'Устарело · ' : ''}${new Date(site.last_checked_at).toLocaleString('ru-RU')}` : 'Ещё не проверялся на этом устройстве'}
+                  {site.last_note ? ` · ${site.last_note}` : ''}
                 </div>
               </article>
             );

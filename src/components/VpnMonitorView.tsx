@@ -1366,12 +1366,16 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
                                 </div>
                               )}
                             </div>
+                            {/* Бейдж не должен съедать строку: «старая проба ·
+                                повторите» занимал 177 px и сжимал название узла
+                                в столбик по букве. Теперь он ограничен и режется. */}
                             <span
-                              className="inline-flex items-center gap-1 text-[10.5px] font-bold px-1.5 py-1 rounded-md shrink-0 font-mono"
+                              className="inline-flex min-w-0 max-w-[44%] items-center gap-1 text-[10.5px] font-bold px-1.5 py-1 rounded-md shrink-0 font-mono"
                               style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
+                              title={nodeRealDelayLabel(p) || nodeLatencyLabel(p)}
                             >
-                              <StatusIcon status={p.status} className="w-3 h-3" />
-                              {nodeRealDelayLabel(p) || nodeLatencyLabel(p)}
+                              <StatusIcon status={p.status} className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{nodeRealDelayLabel(p) || nodeLatencyLabel(p)}</span>
                             </span>
                           </div>
 

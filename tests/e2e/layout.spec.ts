@@ -68,7 +68,7 @@ test('кнопка замера видна без прокрутки, едини
   await page.getByRole('button', { name: 'МБ/с', exact: true }).click();
   await expect(page.getByRole('button', { name: 'МБ/с', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: 'Мбит/с', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByText('Предел шкалы, МБ/с')).toBeVisible();
+  await expect(page.getByText('Шкала, МБ/с')).toBeVisible();
   await expect(page.getByText('МБ/с').first()).toBeVisible();
   await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
   await page.getByRole('button', { name: '250', exact: true }).click();
@@ -296,4 +296,82 @@ test('проверка всех сайтов укладывается в обе�
   expect(elapsed, `проверка шла ${elapsed} мс`).toBeLessThan(45_000);
   // Итог называет число сайтов, а не просто «готово».
   await expect(page.getByText(/Проверено \d+/)).toBeVisible({ timeout: 15_000 });
+});
+
+test('длинная причина отказа не сжимает название сайта в столбик', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'ширины задаются вручную');
+  //Regression со скриншота пользователя: дата и причина лежали в правой
+  // колонке с shrink-0, она распиралась по тексту и выдавливала название.
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto('/?demo=1');
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
+  const unique = `NETFLIX-${Date.now()}`;
+  const created = await page.request.post('/api/sites', {
+    data: { name: unique, domain: `netflix-${Date.now()}.example.com`, category: 'streaming', marker_role: 'dpi_target' },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const { site } = await created.json() as { site: { id: number } };
+  const patched = await page.request.patch(`/api/sites/${site.id}`, {
+    data: {
+      last_status: 'blocked', last_checked_at: new Date().toISOString(),
+      last_note: 'вместо сайта открылась заглушка провайдера: соединение установлено, но содержимое подменено на страницу-уведомление о блокировке ресурса',
+    },
+  });
+  expect(patched.ok(), await patched.text()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
+  await page.getByPlaceholder('Поиск: youtube, госуслуги, steam').fill(unique);
+  const card = page.locator('article').filter({ hasText: unique }).first();
+  await expect(card).toBeVisible();
+  const shape = await card.evaluate((el) => {
+    const name = Array.from(el.querySelectorAll('span')).find((s) => s.textContent?.startsWith('NETFLIX-'))!;
+    const note = Array.from(el.querySelectorAll('div')).find((d) => d.textContent?.includes('заглушка провайдера'))!;
+    const r = el.getBoundingClientRect();
+    return {
+      cardHeight: Math.round(r.height), cardWidth: Math.round(r.width),
+      nameWidth: Math.round(name.getBoundingClientRect().width),
+      nameHeight: Math.round(name.getBoundingClientRect().height),
+      noteWidth: Math.round(note.getBoundingClientRect().width),
+      noteRight: Math.round(note.getBoundingClientRect().right),
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  // Название занимает строку, а не столбик по букве; карточка остаётся компактной.
+  expect(shape.nameWidth, `название сжато: ${JSON.stringify(shape)}`).toBeGreaterThan(100);
+  expect(shape.nameHeight, `название в столбик: ${JSON.stringify(shape)}`).toBeLessThan(40);
+  expect(shape.cardHeight, `карточка раздута: ${JSON.stringify(shape)}`).toBeLessThan(200);
+  expect(shape.noteRight, 'подпись не выезжает за экран').toBeLessThanOrEqual(320);
+  expect(shape.overflow).toBeLessThanOrEqual(1);
+  await page.request.delete(`/api/sites/${site.id}`);
+});
+
+
+/**
+ * Ловушка раскладки: длинная подпись в соседнем блоке с shrink-0 распирает его
+ * по содержимому и сжимает основной текст в столбик по одной букве. Так выглядел
+ * скриншот пользователя (карточка сайта высотой 545 px) и строка VPN-узла.
+ * Проверяем все вкладки на трёх узких ширинах: у текстового блока не может быть
+ * ширины в пару символов при высоте в десятки строк.
+ */
+test('нигде текст не сжат в столбик', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'ширины задаются вручную');
+  test.setTimeout(180_000);
+  const problems: string[] = [];
+  for (const width of [320, 360, 390]) {
+    await page.setViewportSize({ width, height: 740 });
+    await page.goto('/?demo=1');
+    await page.getByRole('button', { name: 'Проверка сети', exact: true }).waitFor({ timeout: 30_000 });
+    for (const tab of ['Проверка сети', 'Каталог сайтов', 'VPN-узлы', 'Скорость', 'Сбои и белые списки', 'История']) {
+      await page.getByRole('button', { name: tab, exact: true }).click();
+      await page.waitForTimeout(400);
+      const squeezed = await page.evaluate(() => Array.from(document.querySelectorAll('main span, main div'))
+        .filter((el) => el.children.length === 0 && (el.textContent || '').trim().length > 12)
+        .map((el) => { const r = el.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), t: (el.textContent || '').trim().slice(0, 30) }; })
+        .filter((x) => x.w > 0 && x.w < 40 && x.h > 60));
+      if (squeezed.length) problems.push(`${width}px «${tab}»: ${JSON.stringify(squeezed.slice(0, 3))}`);
+    }
+  }
+  if (problems.length) console.log(problems.join('\n'));
+  expect(problems).toEqual([]);
 });

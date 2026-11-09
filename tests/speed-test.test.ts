@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeCeilingValue, gaugeExceedsCeiling,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeTickMarks, gaugeCeilingValue, gaugeExceedsCeiling, gaugeAutoCeiling, GAUGE_TICKS,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -137,11 +137,12 @@ test('сравнение не смешивает Wi-Fi и мобильную с�
 test('шкала стрелки логарифмическая и монотонная', () => {
   assert.equal(speedGaugeFraction(0), 0);
   assert.equal(speedGaugeFraction(null), 0);
-  assert.equal(speedGaugeFraction(1000), 1);
-  assert.equal(speedGaugeFraction(5000), 1);
-  const values = [1, 5, 10, 50, 100, 500].map(speedGaugeFraction);
+  // На закреплённой шкале значение на потолке даёт полную дугу.
+  assert.equal(speedGaugeFraction(1000, 1000), 1);
+  assert.equal(speedGaugeFraction(5000, 1000), 1);
+  const values = [1, 5, 10, 50, 100, 500].map((v) => speedGaugeFraction(v, 1000));
   assert.deepEqual([...values].sort((a, b) => a - b), values);
-  assert.ok(speedGaugeFraction(10) > 0.3 && speedGaugeFraction(10) < 0.4);
+  assert.ok(speedGaugeFraction(10, 1000) > 0.3 && speedGaugeFraction(10, 1000) < 0.4);
 });
 
 test('форматирование и вывод о применимости скорости', () => {
@@ -347,14 +348,16 @@ test('единицы и шкала настраиваются как в ориг
   assert.equal(speedInUnit(null, 'MBps'), null);
   assert.equal(formatSpeedIn(undefined), '—');
 
-  assert.equal(gaugeCeilingValue('auto'), 1000);
+  // «Авто» — без предела: без замера 0…100, дальше шкала растёт за скоростью.
+  assert.equal(gaugeCeilingValue('auto'), 100);
+  assert.equal(gaugeCeilingValue('auto', 900), 1000);
   assert.equal(gaugeCeilingValue(250), 250);
   assert.deepEqual(gaugeTicks(100), [0, 1, 5, 10, 25, 50, 100]);
   // Закреплённая шкала: значение на потолке даёт полную дугу, выше — не выходит.
   assert.equal(speedGaugeFraction(100, 100), 1);
   assert.equal(speedGaugeFraction(500, 100), 1);
   assert.ok(speedGaugeFraction(50, 100) > 0.8);
-  assert.ok(speedGaugeFraction(50, 'auto') < 0.6);
+  assert.ok(speedGaugeFraction(50, 'auto') <= 1);
   assert.equal(speedGaugeFraction(0, 100), 0);
 });
 
@@ -369,10 +372,55 @@ test('ненулевая скорость не показывается нулё
 test('скорость выше потолка шкалы не выдаётся за сам потолок', () => {
   assert.equal(gaugeExceedsCeiling(900, 100), true);
   assert.equal(gaugeExceedsCeiling(100, 100), false, 'ровно потолок — не превышение');
+  // В режиме «без предела» шкала растягивается сама — превышения нет.
   assert.equal(gaugeExceedsCeiling(900, 'auto'), false);
-  assert.equal(gaugeExceedsCeiling(1500, 'auto'), true);
+  assert.equal(gaugeExceedsCeiling(1500, 'auto'), false);
+  assert.equal(gaugeExceedsCeiling(20000, 'auto'), true, 'за последней ступенью подсказка нужна');
   assert.equal(gaugeExceedsCeiling(null, 100), false);
   assert.equal(gaugeExceedsCeiling(Number.NaN, 100), false);
   // Стрелка при этом остаётся внутри дуги.
   assert.equal(speedGaugeFraction(900, 100), 1);
+});
+
+test('шкала без предела растягивается за скоростью и ничего не ограничивает', () => {
+  // Ступени как в Speedtest: диск сам подбирает масштаб.
+  assert.equal(gaugeAutoCeiling(0), 10);
+  assert.equal(gaugeAutoCeiling(7), 10);
+  assert.equal(gaugeAutoCeiling(42), 50);
+  assert.equal(gaugeAutoCeiling(90), 100);
+  assert.equal(gaugeAutoCeiling(180), 250);
+  assert.equal(gaugeAutoCeiling(900), 1000);
+  assert.equal(gaugeAutoCeiling(2400), 2500);
+  assert.equal(gaugeAutoCeiling(999999), 10000, 'за последней ступенью — максимальная');
+  assert.equal(gaugeAutoCeiling(null), 10);
+  assert.equal(gaugeAutoCeiling(Number.NaN), 10);
+  // Стрелка не упирается в потолок: на любой скорости есть запас дуги.
+  for (const mbps of [3, 42, 95, 240, 900, 2400]) {
+    const fraction = speedGaugeFraction(mbps, 'auto');
+    assert.ok(fraction > 0.5 && fraction <= 1, `${mbps} Мбит/с → ${fraction}`);
+    assert.equal(gaugeExceedsCeiling(mbps, 'auto'), false);
+  }
+  // Деления соответствуют подобранной ступени.
+  assert.deepEqual(gaugeTicks('auto', 7), [0, 1, 2, 5, 10]);
+  assert.deepEqual(gaugeTicks('auto', 900), GAUGE_TICKS);
+  assert.deepEqual(gaugeTicks('auto', 2400), [0, 50, 100, 500, 1000, 2500]);
+});
+
+test('риски шкалы стоят по одному масштабу и не сбиваются в кучу', () => {
+  for (const scale of ['auto', 100, 250, 500, 1000] as const) {
+    for (const mbps of [undefined, 3, 90, 900, 2400]) {
+      const marks = gaugeTickMarks(scale, mbps);
+      assert.ok(marks.length >= 4, 'рисок должно быть несколько');
+      assert.equal(marks[0].value, 0);
+      assert.equal(marks[0].fraction, 0);
+      // Последняя риска — конец дуги, промежуточные строго по возрастанию и
+      // с заметным шагом: раньше каждая риска считалась по своей ступени и
+      // все цифры собирались у конца шкалы.
+      assert.equal(Math.round(marks[marks.length - 1].fraction * 1000) / 1000, 1);
+      for (let i = 1; i < marks.length; i += 1) {
+        assert.ok(marks[i].fraction > marks[i - 1].fraction, `${scale}/${mbps}: риски не по порядку`);
+        assert.ok(marks[i].fraction - marks[i - 1].fraction > 0.05, `${scale}/${mbps}: риски слиплись`);
+      }
+    }
+  }
 });

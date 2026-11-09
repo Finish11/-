@@ -12,7 +12,7 @@ import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
   bufferbloatVerdict, compareConfigs, formatBytes, guessSpeedCap, networkKindLabel, speedGaugeFraction,
   recordedSpeedRoute, speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows, systemSpeedRoute,
-  gaugeTicks, gaugeExceedsCeiling, speedUnitLabel, formatSpeedIn, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
+  gaugeTickMarks, gaugeAutoCeiling, gaugeExceedsCeiling, speedUnitLabel, formatSpeedIn, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
 import { Button, Chip, EmptyState, Notice, SectionTitle } from './ui/kit';
@@ -36,10 +36,13 @@ const PHASE_LABEL: Record<SpeedProgress['phase'], string> = {
  * не приходилось прокручивать экран вниз ради старта.
  */
 const SpeedGauge: React.FC<{
-  mbps: number; running: boolean; phase: string; progress: number; direction?: string;
+  mbps: number; scaleMbps: number; running: boolean; phase: string; progress: number; direction?: string;
   unit: SpeedDisplayUnit; ceiling: GaugeCeiling; idle: boolean; onStart: () => void;
-}> = ({ mbps, running, phase, progress, direction, unit, ceiling, idle, onStart }) => {
-  const fraction = speedGaugeFraction(mbps, ceiling);
+}> = ({ mbps, scaleMbps, running, phase, progress, direction, unit, ceiling, idle, onStart }) => {
+  // В режиме «без предела» масштаб берётся по пику замера: скорость дрогнула —
+  // шкала не перескакивает назад, иначе цифры под стрелкой жили бы своей жизнью.
+  const scale = ceiling === 'auto' ? gaugeAutoCeiling(scaleMbps) : ceiling;
+  const fraction = speedGaugeFraction(mbps, scale);
   const startAngle = -210;
   const sweep = 240;
   const angle = startAngle + sweep * fraction;
@@ -56,7 +59,7 @@ const SpeedGauge: React.FC<{
   };
   const needleFrom = polar(angle, radius - 34);
   const needleTo = polar(angle, radius - 18);
-  const ticks = gaugeTicks(ceiling);
+  const ticks = gaugeTickMarks(scale);
   return (
     <div className="relative mx-auto w-full" style={{ maxWidth: 260 }}>
       <svg viewBox="0 0 260 226" className="w-full block" role="img" aria-label={`Скорость ${formatSpeedIn(mbps, unit)} ${speedUnitLabel(unit)}`}>
@@ -76,8 +79,8 @@ const SpeedGauge: React.FC<{
             className="gauge-needle"
           />
         )}
-        {ticks.map((tick) => {
-          const tickAngle = startAngle + sweep * speedGaugeFraction(tick, ceiling);
+        {ticks.map(({ value: tick, fraction: tickFraction }) => {
+          const tickAngle = startAngle + sweep * tickFraction;
           const outer = polar(tickAngle, radius - 11);
           const inner = polar(tickAngle, radius - 19);
           const label = polar(tickAngle, radius - 45);
@@ -112,7 +115,7 @@ const SpeedGauge: React.FC<{
           </>
         )}
       </div>
-      {!idle && gaugeExceedsCeiling(mbps, ceiling) && (
+      {!idle && gaugeExceedsCeiling(mbps, scale) && (
         <div className="text-center text-[10px] font-semibold" style={{ color: 'rgb(var(--warning))' }}>
           выше предела шкалы — точное число в карточках ниже
         </div>
@@ -172,6 +175,8 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const lite = settings.speedLite;
   const setLite = (value: boolean) => setSettings({ speedLite: value });
   const [tuneOpen, setTuneOpen] = useState(false);
+  // Пик замера держит масштаб шкалы, чтобы она не прыгала на каждом сэмпле.
+  const [peakMbps, setPeakMbps] = useState(0);
   const [trace, setTrace] = useState<SpeedTracePoint[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [autoNote, setAutoNote] = useState('');
@@ -246,6 +251,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
 
   const handleProgress = useCallback((next: SpeedProgress) => {
     setProgress(next);
+    if (Number.isFinite(next.mbps)) setPeakMbps((prev) => (next.mbps > prev ? next.mbps : prev));
     if (next.phase === 'download' || next.phase === 'upload') {
       setTrace((prev) => [...prev.slice(-179), { mbps: next.mbps, phase: next.phase as 'download' | 'upload' }]);
     }
@@ -257,6 +263,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
     setResult(null);
     setTrace([]);
     setProgress({ phase: 'select', mbps: 0, progress: 0, message: 'Готовим замер…' });
+    setPeakMbps(0);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
@@ -327,6 +334,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   };
 
   const liveMbps = running ? progress.mbps : result?.download.mbps ?? 0;
+  const scaleMbps = Math.max(peakMbps, liveMbps);
 
   return (
     <div className="space-y-4">
@@ -336,7 +344,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
 
       <div className="rounded-3xl border p-3 sm:p-4" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
         <SpeedGauge
-          mbps={liveMbps} running={running} progress={progress.progress} direction={progress.phase}
+          mbps={liveMbps} scaleMbps={scaleMbps} running={running} progress={progress.progress} direction={progress.phase}
           phase={running || result ? PHASE_LABEL[progress.phase] : ''} unit={unit} ceiling={ceiling}
           idle={!running && !result} onStart={() => void start()}
         />
@@ -381,7 +389,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         >
           <span className="inline-flex items-center gap-1.5"><SlidersHorizontal className="w-3.5 h-3.5" /> Настройки замера</span>
           <span className="text-[10.5px]">
-            {speedUnitLabel(unit)} · шкала {ceiling === 'auto' ? 'авто' : unit === 'MBps' ? Math.round((ceiling / 8) * 10) / 10 : ceiling}
+            {speedUnitLabel(unit)} · шкала {ceiling === 'auto' ? 'без предела' : unit === 'MBps' ? Math.round((ceiling / 8) * 10) / 10 : ceiling}
             {lite ? ' · экономный' : ''}
           </span>
         </button>
@@ -396,13 +404,18 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
               </div>
             </div>
             <div>
-              <div className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Предел шкалы, {speedUnitLabel(unit)}</div>
+              <div className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Шкала, {speedUnitLabel(unit)}</div>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {(['auto', 100, 250, 500, 1000] as const).map((value) => (
                   <Chip key={String(value)} active={ceiling === value} onClick={() => setSettings({ gaugeMax: value })}>
-                    {value === 'auto' ? 'Авто' : unit === 'MBps' ? Math.round((value / 8) * 10) / 10 : value}
+                    {value === 'auto' ? 'Без предела' : unit === 'MBps' ? Math.round((value / 8) * 10) / 10 : value}
                   </Chip>
                 ))}
+              </div>
+              <div className="mt-1.5 text-[10.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                {ceiling === 'auto'
+                  ? 'Шкала растягивается сама: 0…10 на медленном канале и 0…1000 на быстром. Скорость ничем не ограничена.'
+                  : 'Шкала закреплена вручную. Если скорость окажется выше, стрелка упрётся в конец — подсказка об этом появится под шкалой.'}
               </div>
             </div>
             <label className="flex items-start gap-2 text-[11.5px] cursor-pointer" style={{ color: 'var(--text-muted)' }}>

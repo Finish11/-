@@ -44,7 +44,7 @@ test('замер скорости показывает результат и с�
   // Потолок шкалы задаётся в текущих единицах, поэтому выбираем его в Мбит/с.
   await page.getByRole('button', { name: '100', exact: true }).click();
   await page.getByRole('button', { name: 'МБ/с', exact: true }).click();
-  await expect(page.getByText('Предел шкалы, МБ/с')).toBeVisible();
+  await expect(page.getByText('Шкала, МБ/с')).toBeVisible();
   await expect(page.getByRole('button', { name: '12.5', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
   await page.getByRole('button', { name: /Настройки замера/ }).click();

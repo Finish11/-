@@ -327,33 +327,73 @@ export const GAUGE_TICKS = [0, 1, 5, 10, 50, 100, 500, 1000];
 
 /** Потолок шкалы: как в Ookla, пользователь может закрепить его вручную. */
 export type GaugeCeiling = 'auto' | 100 | 250 | 500 | 1000;
+/** Уже вычисленный числовой потолок тоже допустим: автошкала считается на лету. */
+export type GaugeScale = GaugeCeiling | number;
 
-export function gaugeTicks(ceiling: GaugeCeiling = 'auto'): number[] {
-  if (ceiling === 100) return [0, 1, 5, 10, 25, 50, 100];
-  if (ceiling === 250) return [0, 5, 10, 25, 50, 100, 250];
-  if (ceiling === 500) return [0, 10, 25, 50, 100, 250, 500];
-  return GAUGE_TICKS;
+/**
+ * Ступени автоматической шкалы. Как в Speedtest, диск сам подбирает масштаб:
+ * на 5 Мбит/с показывает 0…10, на 900 — 0…1000. Пользователю не нужно ничего
+ * выбирать, и стрелка никогда не упирается в искусственный потолок.
+ */
+export const GAUGE_LADDER = [10, 50, 100, 250, 500, 1000, 2500, 10000] as const;
+
+const LADDER_TICKS: Record<number, number[]> = {
+  10: [0, 1, 2, 5, 10],
+  50: [0, 5, 10, 25, 50],
+  100: [0, 1, 5, 10, 25, 50, 100],
+  250: [0, 5, 10, 25, 50, 100, 250],
+  500: [0, 10, 25, 50, 100, 250, 500],
+  1000: GAUGE_TICKS,
+  2500: [0, 50, 100, 500, 1000, 2500],
+  10000: [0, 100, 500, 1000, 5000, 10000],
+};
+
+/** Ближайшая ступень сверху: шкала растёт за скоростью, а не ограничивает её. */
+export function gaugeAutoCeiling(mbps: number | null | undefined): number {
+  const value = mbps == null || !Number.isFinite(mbps) || mbps < 0 ? 0 : mbps;
+  return GAUGE_LADDER.find((step) => value <= step) ?? GAUGE_LADDER[GAUGE_LADDER.length - 1];
 }
 
-export function gaugeCeilingValue(ceiling: GaugeCeiling = 'auto'): number {
-  return ceiling === 'auto' ? 1000 : ceiling;
+export function gaugeTicks(ceiling: GaugeScale = 'auto', mbps?: number | null): number[] {
+  const max = gaugeCeilingValue(ceiling, mbps);
+  return LADDER_TICKS[max] ?? GAUGE_TICKS;
 }
 
-export function speedGaugeFraction(mbps: number | null | undefined, ceiling: GaugeCeiling = 'auto'): number {
+/**
+ * Потолок шкалы. 'auto' — без предела: масштаб подбирается под скорость.
+ * Без замера диск показывает привычные 0…100.
+ */
+export function gaugeCeilingValue(ceiling: GaugeScale = 'auto', mbps?: number | null): number {
+  return ceiling === 'auto' ? (mbps == null ? 100 : gaugeAutoCeiling(mbps)) : ceiling;
+}
+
+export function speedGaugeFraction(mbps: number | null | undefined, ceiling: GaugeScale = 'auto'): number {
   if (mbps == null || !Number.isFinite(mbps) || mbps <= 0) return 0;
-  const max = gaugeCeilingValue(ceiling);
+  const max = gaugeCeilingValue(ceiling, mbps);
   const clamped = Math.min(max, mbps);
   // Логарифмическая шкала: 1 Мбит/с не прилипает к нулю, 1000 не улетает за дугу.
   return Math.max(0, Math.min(1, Math.log10(1 + clamped) / Math.log10(1 + max)));
 }
 
 /**
+ * Риски шкалы вместе с их местом на дуге. Место считается по ОДНОМУ масштабу
+ * всей шкалы: если считать каждую риску по её собственной ступени, в режиме
+ * «без предела» цифры собьются в кучу у конца дуги.
+ */
+export function gaugeTickMarks(scale: GaugeScale = 'auto', mbps?: number | null): Array<{ value: number; fraction: number }> {
+  const max = gaugeCeilingValue(scale, mbps);
+  return gaugeTicks(max).map((value) => ({ value, fraction: speedGaugeFraction(value, max) }));
+}
+
+/**
  * Скорость выше выбранного потолка: стрелка упирается в конец шкалы, и без
  * подсказки показалось бы, что измерено ровно 100 Мбит/с, а не 900.
  */
-export function gaugeExceedsCeiling(mbps: number | null | undefined, ceiling: GaugeCeiling = 'auto'): boolean {
+export function gaugeExceedsCeiling(mbps: number | null | undefined, ceiling: GaugeScale = 'auto'): boolean {
   if (mbps == null || !Number.isFinite(mbps)) return false;
-  return mbps > gaugeCeilingValue(ceiling);
+  // В режиме «без предела» шкала растягивается сама, превышение возможно только
+  // за последней ступенью — это уже десятки гигабит.
+  return mbps > gaugeCeilingValue(ceiling, mbps);
 }
 
 /** Единицы как в оригинальном Speedtest: биты по умолчанию, байты по выбору. */

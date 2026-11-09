@@ -4,7 +4,7 @@ import { buildNetworkContext, emptyGeo, resolveVpnStatus } from '../src/lib/netw
 import { mapLimit } from '../src/lib/nativeBridge.ts';
 import {
   confirmationAgeDays, confirmationAgeLabel, confirmationFreshness, confirmationWeight,
-  findAppConfirmation, recommendConfirmedNodes, routeFingerprint, routeIdentity, suggestActiveNode,
+  findAppConfirmation, recommendConfirmedNodes, routeFingerprint, routeIdentity, suggestActiveNode, confirmationStatus, detectExitChange,
 } from '../src/lib/appConfirmations.ts';
 import { communityInviteLink, exportIncidentBundle, importIncidentBundle, readCommunityInvite } from '../src/lib/incidentShare.ts';
 import type { AppConfirmation, Incident, VpnProfile } from '../src/types.ts';
@@ -253,4 +253,49 @@ test('давний отзыв не поднимает узел выше свеж
   assert.equal(ranked[0].profile.id, freshNode.id, 'свежий отзыв важнее давнего');
   assert.equal(ranked.find((item) => item.profile.id === oldNode.id)?.freshWorks, 0);
   assert.equal(ranked.find((item) => item.profile.id === freshNode.id)?.freshWorks, 1);
+});
+
+
+test('смена выходного IP меняет статус карточки, а не держит прежний зелёный', () => {
+  const saved = confirmation();
+  // Тот же узел и тот же выход — отзыв действителен.
+  const same = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10')!;
+  assert.equal(confirmationStatus(same).tone, 'ok');
+  assert.equal(confirmationStatus(same).recheck, false);
+  // Человек переключил узел в клиенте: выход другой, отзыв больше не про этот маршрут.
+  const changed = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77')!;
+  const status = confirmationStatus(changed);
+  assert.equal(status.tone, 'warn');
+  assert.equal(status.recheck, true);
+  assert.match(status.label, /перепроверьте/);
+  assert.match(status.reason, /203\.0\.113\.10/);
+  // Отзыв другого узла с тем же IP тоже требует перепроверки.
+  const byIp = findAppConfirmation([saved], 'youtube', { id: 9 }, '203.0.113.10')!;
+  assert.equal(confirmationStatus(byIp).recheck, true);
+});
+
+test('отрицательный отзыв остаётся красным, давний положительный — жёлтым', () => {
+  const now = Date.parse('2026-11-09T12:00:00Z');
+  const bad = confirmation({ works: false });
+  const badMatch = findAppConfirmation([bad], 'youtube', { id: 7 }, '203.0.113.10')!;
+  assert.equal(confirmationStatus(badMatch, now).tone, 'bad');
+  const old = confirmation({ confirmed_at: '2026-08-01T12:00:00Z' });
+  const oldMatch = findAppConfirmation([old], 'youtube', { id: 7 }, '203.0.113.10')!;
+  assert.equal(confirmationStatus(oldMatch, now).tone, 'warn');
+  assert.equal(confirmationStatus(oldMatch, now).recheck, true);
+});
+
+test('смена узла видна по выходному IP при том же VPN-клиенте', () => {
+  const before = { ip: '203.0.113.10', vpnPackage: 'com.v2ray.ang' };
+  assert.equal(detectExitChange(before, { ip: '203.0.113.10', vpnPackage: 'com.v2ray.ang' }), null);
+  const changed = detectExitChange(before, { ip: '198.51.100.5', vpnPackage: 'com.v2ray.ang' })!;
+  assert.equal(changed.sameClient, true);
+  assert.equal(changed.fromIp, '203.0.113.10');
+  assert.equal(changed.toIp, '198.51.100.5');
+  // Другой клиент — это смена маршрута, а не переключение узла внутри клиента.
+  assert.equal(detectExitChange(before, { ip: '198.51.100.5', vpnPackage: 'com.wireguard' })!.sameClient, false);
+  // Отсутствие IP ничего не доказывает: сеть могла просто не определиться.
+  assert.equal(detectExitChange(before, { ip: '', vpnPackage: 'com.v2ray.ang' }), null);
+  assert.equal(detectExitChange(null, before), null);
+  assert.equal(detectExitChange(before, { ip: '—' }), null);
 });

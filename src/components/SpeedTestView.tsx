@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Activity, Gauge, Info, Play, SlidersHorizontal, Square, Trash2, Waves } from 'lucide-react';
+import { ArrowDown, ArrowUp, Activity, Gauge, Globe, Info, Network, Play, Shield, Signal, SlidersHorizontal, Square, Trash2, Waves, Wifi, Youtube } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { communityEndpoint } from '../lib/community';
 import { isNativeApp } from '../lib/nativeBridge';
@@ -8,9 +8,10 @@ import { runSpeedTest, SPEED_TRAFFIC, type SpeedProgress, type SpeedTestResult }
 import { normalizeSpeedRunPayload } from '../lib/speedPayload';
 import { useSettings } from '../lib/appSettings';
 import { queuePendingSpeedRun, readPendingSpeedRuns, SPEED_PENDING_KEY } from '../lib/speedPending';
+import { PLAYBACK_RATES, YOUTUBE_QUALITIES, requiredMbps, runYoutubeProbe, youtubeQualityVerdict, youtubeSourceLabel, rateLabel, type YoutubeProbeResult } from '../lib/youtubeSpeed';
 import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
-  bufferbloatVerdict, compareConfigs, formatBytes, guessSpeedCap, networkKindLabel, speedGaugeFraction,
+  bufferbloatVerdict, compareConfigs, formatBytes, guessSpeedCap, networkKindLabel, speedGaugeFraction, speedNetworkLabel, speedRouteLabel,
   recordedSpeedRoute, speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows, systemSpeedRoute,
   gaugeTickMarks, gaugeAutoCeiling, gaugeExceedsCeiling, speedUnitLabel, formatSpeedIn, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
@@ -186,6 +187,13 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const [trace, setTrace] = useState<SpeedTracePoint[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [autoNote, setAutoNote] = useState('');
+  // Замер до YouTube: отдельная процедура, обычный спидометр замедление видео не видит.
+  const [ytRate, setYtRate] = useState<number>(2);
+  const [ytBusy, setYtBusy] = useState(false);
+  const [ytStatus, setYtStatus] = useState('');
+  const [ytLive, setYtLive] = useState(0);
+  const [ytResult, setYtResult] = useState<YoutubeProbeResult | null>(null);
+  const ytAbortRef = useRef<AbortController | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const servers = useMemo(() => availableSpeedServers({ communityEndpoint: communityEndpoint() || undefined }), []);
@@ -223,7 +231,24 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
   useEffect(() => { setProfileId(confirmationProfileId); }, [confirmationProfileId]);
-  useEffect(() => () => { abortRef.current?.abort(); }, []);
+  useEffect(() => () => { abortRef.current?.abort(); ytAbortRef.current?.abort(); }, []);
+
+  const startYoutube = async () => {
+    if (ytBusy) return;
+    setYtBusy(true); setYtResult(null); setYtLive(0); setYtStatus('Начинаем…');
+    const controller = new AbortController();
+    ytAbortRef.current = controller;
+    try {
+      const measured = await runYoutubeProbe({
+        signal: controller.signal, lite,
+        onProgress: (message, mbps) => { setYtStatus(message); if (Number.isFinite(mbps)) setYtLive(mbps); },
+      });
+      setYtResult(measured);
+      if (!measured.ok && !measured.aborted) showToast('warning', measured.note || 'YouTube не отдал данные');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Замер до YouTube не состоялся');
+    } finally { setYtBusy(false); setYtStatus(''); ytAbortRef.current = null; }
+  };
 
   // Автоопределение: тот же узел, что выбран для подтверждений, либо угаданный по IP.
   useEffect(() => {
@@ -298,6 +323,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         upload_bytes: measurement.upload.bytes,
         server: measurement.server?.label || '',
         network_kind: networkKind,
+        network_name: connection?.operator || connection?.isp || '',
         route: recordedSpeedRoute(measurement.route, route, Boolean(activeProfile)),
         vpn_package: connection?.vpn_package || '',
         vpn_app_name: connection?.vpn_app_name || '',
@@ -452,6 +478,97 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
       {result?.ok && !result.upload.bytes && result.error && <Notice tone="warn">Отдача не измерена: {result.error}</Notice>}
       {capGuess?.capped && <Notice tone="warn">{capGuess.reason}</Notice>}
 
+      {/* YouTube измеряется отдельно: замедляют именно видеоголовку, и быстрый
+          обычный замер ничего не говорит о том, пойдёт ли видео на 2×. */}
+      <div className="rounded-3xl border p-4 space-y-3" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-[12.5px] font-bold">
+            <Youtube className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--danger))' }} />
+            YouTube: на какое качество хватит
+          </div>
+          {ytResult?.ok && (
+            <span className="text-[11px] font-black tabular-nums shrink-0">{formatSpeedIn(ytResult.mbps, unit)} {speedUnitLabel(unit)}</span>
+          )}
+        </div>
+        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          Качаем данные с хостов YouTube и считаем, какое видео пойдёт без остановок. На 2× плеер расходует
+          секунду видео за полсекунды, поэтому канал нужен вдвое плотнее — частая причина, почему «1080p идёт»,
+          а на 2× сыплется.
+        </p>
+        <div>
+          <div className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Скорость воспроизведения</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {PLAYBACK_RATES.map((rate) => (
+              <Chip key={rate} active={ytRate === rate} onClick={() => setYtRate(rate)}>{rateLabel(rate)}</Chip>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" size="sm" loading={ytBusy} icon={<Play className="w-3.5 h-3.5" />} onClick={() => void startYoutube()}>
+            {ytResult ? 'Повторить замер YouTube' : 'Замерить YouTube'}
+          </Button>
+          {ytBusy && (
+            <Button variant="outline" size="sm" icon={<Square className="w-3.5 h-3.5" />} onClick={() => ytAbortRef.current?.abort()}>
+              Остановить
+            </Button>
+          )}
+        </div>
+        {ytBusy && (
+          <div className="text-[11px] font-semibold tabular-nums" style={{ color: 'rgb(var(--accent))' }}>
+            {ytStatus}{ytLive > 0 ? ` · ${formatSpeedIn(ytLive, unit)} ${speedUnitLabel(unit)}` : ''}
+          </div>
+        )}
+        {ytResult && (() => {
+          const verdict = youtubeQualityVerdict(ytResult.mbps, ytRate);
+          const color = verdict.tone === 'ok' ? 'success' : verdict.tone === 'warn' ? 'warning' : 'danger';
+          return (
+            <div className="space-y-2">
+              <div className="rounded-2xl border p-3" style={{ borderColor: `rgb(var(--${color}) / 0.45)`, background: `rgb(var(--${color}) / 0.08)` }}>
+                <div className="text-[12.5px] font-extrabold break-anywhere" style={{ color: `rgb(var(--${color}))` }}>{verdict.label}</div>
+                <div className="mt-1 text-[11px] leading-relaxed break-anywhere" style={{ color: 'var(--text-dim)' }}>{verdict.detail}</div>
+              </div>
+              <div className="text-[10.5px] leading-relaxed break-anywhere" style={{ color: 'var(--text-muted)' }}>
+                {ytResult.note}
+                {ytResult.source ? ` Источник: ${youtubeSourceLabel(ytResult.source)}.` : ''}
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                {ytResult.pingMs != null && <span>youtube.com {Math.round(ytResult.pingMs)} мс</span>}
+                {ytResult.videoPingMs != null && <span>видеоголовка {Math.round(ytResult.videoPingMs)} мс</span>}
+                {ytResult.bytes > 0 && <span>скачано {formatBytes(ytResult.bytes)}</span>}
+              </div>
+              <div className="divide-y" style={{ borderColor: 'var(--line)' }}>
+                {YOUTUBE_QUALITIES.filter((quality) => ['360p', '480p', '720p', '1080p', '1440p', '2160p'].includes(quality.id)).map((quality) => {
+                  const need = requiredMbps(quality, ytRate);
+                  const fits = ytResult.ok && ytResult.mbps >= need;
+                  return (
+                    <div key={quality.id} className="flex items-center justify-between gap-2 py-1.5">
+                      <span className="text-[11.5px] font-bold shrink-0" style={{ color: fits ? 'rgb(var(--success))' : 'var(--text-muted)' }}>
+                        {fits ? '✓' : '·'} {quality.label}
+                      </span>
+                      <span className="text-[10.5px] tabular-nums text-right break-anywhere" style={{ color: 'var(--text-muted)' }}>
+                        нужно ~{formatSpeedIn(need, unit)} {speedUnitLabel(unit)} при {rateLabel(ytRate)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {ytResult.errors.length > 0 && (
+                <details className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+                  <summary className="cursor-pointer font-semibold">Что помешало замеру ({ytResult.errors.length})</summary>
+                  <ul className="mt-1 space-y-0.5 break-anywhere">
+                    {ytResult.errors.slice(0, 6).map((item, index) => <li key={index}>· {item}</li>)}
+                  </ul>
+                </details>
+              )}
+              <p className="text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                Битрейты взяты как типичные для YouTube: конкретный ролик может весить иначе (кодек, HDR, сцена).
+                Оценка отвечает на вопрос «потянет ли канал», а не обещает качество конкретного видео.
+              </p>
+            </div>
+          );
+        })()}
+      </div>
+
       <div className="rounded-3xl border p-4 space-y-3" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
         <div className="text-[12.5px] font-bold">Что именно измеряется</div>
         <div className="flex flex-wrap gap-1.5">
@@ -538,6 +655,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
                     {item.medianLoadedPing != null && <span>под нагрузкой {Math.round(item.medianLoadedPing)} мс</span>}
                     <span>лучший {formatSpeedIn(item.bestDownload, unit)}</span>
                     <span>{item.runs} {item.runs === 1 ? 'замер' : 'замеров'}</span>
+                    <span>{item.networkLabel}</span>
                     <span>{new Date(item.lastAt).toLocaleString('ru-RU')}</span>
                   </div>
                   {verdict && (comparison.baseline || item.key === 'direct') && (
@@ -603,8 +721,20 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
                     {formatSpeedIn(run.download_mbps, unit)} ↓ · {formatSpeedIn(run.upload_mbps, unit)} ↑
                     {run.ping_ms != null ? ` · ${Math.round(run.ping_ms)} мс` : ''}
                   </div>
-                  <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
-                    {new Date(run.created_at).toLocaleString('ru-RU')} · {run.profile_name || (run.route === 'vpn' ? 'VPN без имени' : 'без VPN')} · {run.server || 'сервер не указан'}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-semibold"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}>
+                      {run.network_kind === 'cellular' ? <Signal className="w-3 h-3 shrink-0" /> : run.network_kind === 'wifi' ? <Wifi className="w-3 h-3 shrink-0" /> : <Network className="w-3 h-3 shrink-0" />}
+                      <span className="break-anywhere">{speedNetworkLabel(run)}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-semibold"
+                      style={{ background: 'var(--surface-2)', color: run.route === 'vpn' ? 'rgb(var(--accent))' : 'var(--text-dim)' }}>
+                      {run.route === 'vpn' ? <Shield className="w-3 h-3 shrink-0" /> : <Globe className="w-3 h-3 shrink-0" />}
+                      <span className="break-anywhere">{speedRouteLabel(run)}</span>
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[10px] break-anywhere" style={{ color: 'var(--text-muted)' }}>
+                    {new Date(run.created_at).toLocaleString('ru-RU')} · {run.server || 'сервер не указан'}
                     {run.reliable === false ? ' · приблизительно' : ''}
                   </div>
                 </div>

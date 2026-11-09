@@ -189,6 +189,8 @@ export interface SpeedRun {
   server: string;
   /** wifi/cellular — физическая сеть, чтобы не сравнивать LTE с Wi-Fi. */
   network_kind: string;
+  /** Имя источника: оператор из Android или провайдер из GeoIP. */
+  network_name?: string;
   route: 'vpn' | 'direct' | 'unknown';
   vpn_package?: string;
   vpn_app_name?: string;
@@ -212,6 +214,8 @@ export interface ConfigSpeedSummary {
   medianLoadedPing: number | null;
   lastAt: string;
   route: SpeedRun['route'];
+  /** Источник интернета: Wi-Fi/мобильная сеть и имя оператора, если известно. */
+  networkLabel: string;
 }
 
 function median(values: number[]): number {
@@ -237,6 +241,31 @@ export function networkKindLabel(kind: string | null | undefined): string {
   if (kind === 'cellular') return 'мобильная сеть';
   if (kind === 'ethernet') return 'проводная сеть';
   return 'неизвестная сеть';
+}
+
+/**
+ * Источник интернета словами: транспорт и имя сети. В истории раньше был только
+ * узел VPN, поэтому два замера — по Wi-Fi дома и по LTE у оператора — выглядели
+ * одинаково, и сравнение вводило в заблуждение.
+ */
+export function speedNetworkLabel(run: Pick<SpeedRun, 'network_kind' | 'network_name'>): string {
+  const kind = networkKindLabel(run.network_kind);
+  const name = (run.network_name || '').trim();
+  if (!name) return kind;
+  return `${kind} · ${name}`;
+}
+
+/** Куда шёл трафик: узел VPN с выходным IP или прямое подключение. */
+export function speedRouteLabel(run: Pick<SpeedRun, 'route' | 'profile_name' | 'vpn_app_name' | 'exit_ip'>): string {
+  const ip = (run.exit_ip || '').trim();
+  if (run.route === 'direct') return ip ? `напрямую · ${ip}` : 'напрямую';
+  const node = (run.profile_name || '').trim() || (run.vpn_app_name || '').trim();
+  if (run.route === 'vpn') {
+    const head = node ? `VPN · ${node}` : 'VPN · узел не выбран';
+    return ip ? `${head} · ${ip}` : head;
+  }
+  const head = node ? `маршрут не подтверждён · ${node}` : 'маршрут не подтверждён';
+  return ip ? `${head} · ${ip}` : head;
 }
 
 export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
@@ -266,6 +295,7 @@ export function summarizeByConfig(runs: SpeedRun[]): ConfigSpeedSummary[] {
       medianLoadedPing: loadedPings.length ? median(loadedPings) : null,
       lastAt: newest.created_at,
       route: newest.route,
+      networkLabel: speedNetworkLabel(newest),
     };
   }).sort((a, b) => b.medianDownload - a.medianDownload);
 }

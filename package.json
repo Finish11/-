@@ -1,7 +1,7 @@
 {
   "name": "pulsenet",
   "private": true,
-  "version": "1.9.1",
+  "version": "1.10.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
@@ -22,7 +22,7 @@
     "test:regressions": "tsx --test tests/regressions.test.ts",
     "test:sync": "tsx --test tests/sync-hardening.test.ts tests/community-quota.test.ts",
     "test:native": "tsx --test tests/native-contract.test.ts",
-    "test:speed": "tsx --test tests/speed-test.test.ts tests/speed-endpoints.test.ts tests/speed-runner.test.ts tests/speed-payload.test.ts",
+    "test:speed": "tsx --test tests/speed-test.test.ts tests/speed-endpoints.test.ts tests/speed-runner.test.ts tests/speed-payload.test.ts tests/youtube-speed.test.ts",
     "test:routes": "tsx --test tests/routes-and-sharing.test.ts",
     "test:scan": "tsx --test tests/scan-budget.test.ts tests/ui-batch.test.ts tests/app-settings.test.ts",
     "test:e2e": "playwright test",

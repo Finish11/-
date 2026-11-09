@@ -920,10 +920,10 @@ async function startServer() {
     }
     const info = db.prepare(`INSERT INTO speed_tests
       (user_id, created_at, download_mbps, upload_mbps, ping_ms, jitter_ms, loaded_ping_ms, download_bytes, upload_bytes, server,
-       network_kind, route, vpn_package, vpn_app_name, exit_ip, profile_id, profile_name, reliable, note)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+       network_kind, network_name, route, vpn_package, vpn_app_name, exit_ip, profile_id, profile_name, reliable, note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       req.user!.id, run.created_at, run.download_mbps, run.upload_mbps, run.ping_ms, run.jitter_ms, run.loaded_ping_ms,
-      run.download_bytes, run.upload_bytes, run.server, run.network_kind, run.route, run.vpn_package, run.vpn_app_name,
+      run.download_bytes, run.upload_bytes, run.server, run.network_kind, run.network_name, run.route, run.vpn_package, run.vpn_app_name,
       run.exit_ip, run.profile_id, run.profile_name, run.reliable ? 1 : 0, run.note,
     );
     const row = db.prepare('SELECT * FROM speed_tests WHERE id = ?').get(info.lastInsertRowid) as Record<string, unknown>;

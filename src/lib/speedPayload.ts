@@ -16,6 +16,7 @@ export interface NormalizedSpeedRun {
   upload_bytes: number;
   server: string;
   network_kind: string;
+  network_name: string;
   route: 'vpn' | 'direct' | 'unknown';
   vpn_package: string;
   vpn_app_name: string;
@@ -85,6 +86,7 @@ export function normalizeSpeedRunPayload(input: unknown, now: Date = new Date())
       upload_bytes: bytes(body.upload_bytes),
       server: text(body.server, 200),
       network_kind: NETWORK_KINDS.includes(networkKind) ? networkKind : 'unknown',
+      network_name: text(body.network_name, 80),
       route: (ROUTES.includes(route) ? route : 'unknown') as NormalizedSpeedRun['route'],
       vpn_package: text(body.vpn_package, 160),
       vpn_app_name: text(body.vpn_app_name, 160),

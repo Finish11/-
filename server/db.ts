@@ -236,6 +236,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS app_confirmation_route (
   profile_id INTEGER REFERENCES vpn_profiles(id) ON DELETE SET NULL
 )`);
 addColumnIfMissing('speed_tests', 'loaded_ping_ms', 'REAL');
+addColumnIfMissing('speed_tests', 'network_name', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('vpn_profiles', 'subscription_id', 'INTEGER');
 addColumnIfMissing('vpn_profiles', 'group_name', "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('vpn_profiles', 'raw_link', "TEXT NOT NULL DEFAULT ''");

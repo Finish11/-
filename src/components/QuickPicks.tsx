@@ -5,7 +5,7 @@ import { apiFetch } from '../lib/api';
 import { detectNetworkContext, networkSnapshotKey, toClientConnection, verifyTunnelBypass } from '../lib/networkInfo';
 import { confirmationRouteStillValid, routeFingerprint, routeIdentity, suggestActiveNode, confirmationFreshness, confirmationAgeLabel } from '../lib/appConfirmations';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
-import { confirmationNodeKey, findAppConfirmation, type ConfirmationMatch } from '../lib/appConfirmations';
+import { confirmationNodeKey, confirmationStatus, detectExitChange, findAppConfirmation, type ConfirmationMatch, type RouteChange } from '../lib/appConfirmations';
 import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
 import { Sheet } from './ui/Sheet';
 import { Button, Chip, EmptyState, Notice } from './ui/kit';
@@ -110,31 +110,15 @@ function statusVisual(r?: ScanSiteResult, scanning?: boolean, confirmation?: Con
     return { bg: 'var(--surface-2)', fg: 'var(--text-dim)', label: 'проверяем', emojiBg: 'transparent' };
   }
   if (confirmation) {
-    if (confirmation.matchedBy === 'ip') return { bg: 'rgb(var(--warning) / 0.08)', fg: 'rgb(var(--warning))',
-      label: 'отзыв другого узла с тем же IP', emojiBg: 'transparent' };
-    const freshness = confirmationFreshness(confirmation.confirmation.confirmed_at);
-    if (confirmation.confirmation.works && freshness === 'stale')
-      return {
-        bg: 'rgb(var(--warning) / 0.1)',
-        fg: 'rgb(var(--warning))',
-        label: 'приложение работало · отзыв давний',
-        emojiBg: 'transparent',
-      };
-    return confirmation.confirmation.works
-      ? {
-          bg: 'rgb(var(--success) / 0.12)',
-          fg: 'rgb(var(--success))',
-          label: freshness === 'aging'
-            ? `приложение работает · ${confirmationAgeLabel(confirmation.confirmation.confirmed_at)}`
-            : 'приложение работает · подтверждено',
-          emojiBg: 'transparent',
-        }
-      : {
-          bg: 'rgb(var(--danger) / 0.1)',
-          fg: 'rgb(var(--danger))',
-          label: 'приложение не работает · ваш отзыв',
-          emojiBg: 'transparent',
-        };
+    // Единый источник правды: та же функция решает, нужен ли повторный отзыв.
+    const status = confirmationStatus(confirmation);
+    const color = status.tone === 'ok' ? 'success' : status.tone === 'bad' ? 'danger' : 'warning';
+    return {
+      bg: `rgb(var(--${color}) / ${status.tone === 'ok' ? 0.12 : 0.1})`,
+      fg: `rgb(var(--${color}))`,
+      label: status.label,
+      emojiBg: 'transparent',
+    };
   }
   if (!r) {
     return {
@@ -241,6 +225,10 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   const [suggestion, setSuggestion] = useState('');
   const [bypassReport, setBypassReport] = useState('');
   const [bypassBusy, setBypassBusy] = useState(false);
+  // Смена выходного IP при том же клиенте = человек переключил узел в клиенте.
+  const [exitChange, setExitChange] = useState<RouteChange | null>(null);
+  const lastRouteRef = useRef<{ ip?: string; vpnPackage?: string } | null>(null);
+  const [routePickerOpen, setRoutePickerOpen] = useState(false);
 
   const byDomain = useMemo(() => {
     const map = new Map<string, Site>();
@@ -431,7 +419,36 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     : vpnActive ? 'VPN включён · выберите используемый узел'
     : splitTunnel ? 'VPN включён в системе, но приложение идёт напрямую'
     : isNativeApp() ? 'Прямое подключение · системный VPN выключен' : 'Маршрут выбран вручную · браузер';
+  /**
+   * Android не показывает чужой конфиг, поэтому единственный честный признак
+   * смены узла — новый выходной IP при том же VPN-клиенте. Раньше это молча
+   * игнорировалось, и карточки продолжали показывать отзыв прошлого узла.
+   */
+  useEffect(() => {
+    const next = { ip: activeIp, vpnPackage: currentConnection?.vpn_package };
+    const previous = lastRouteRef.current;
+    lastRouteRef.current = next;
+    if (!previous || !activeIp) return;
+    const change = detectExitChange(previous, next);
+    if (!change) return;
+    setExitChange(change);
+    setRoutePickerOpen(true);
+    // Память «клиент + IP» могла уже знать этот выход — предложим готовый узел.
+    const suggestionForExit = suggestActiveNode(profiles, {
+      vpnPackage: next.vpnPackage, exitIp: next.ip, remembered: loadRememberedRoutes(),
+    });
+    if (suggestionForExit && suggestionForExit.profile.id !== confirmationProfileId) {
+      setSuggestion(suggestionForExit.reason);
+      void onConfirmationRoute(suggestionForExit.profile.id);
+    }
+  }, [activeIp, currentConnection?.vpn_package, profiles, confirmationProfileId, onConfirmationRoute]);
+
   const matchFor = (pick: QuickPick, profile = activeProfile) => findAppConfirmation(confirmations, pick.id, profile, activeIp);
+  /** Сколько отзывов больше не описывают текущий маршрут. */
+  const needsRecheck = useMemo(() => added.filter(({ pick }) => {
+    const match = matchFor(pick);
+    return match ? confirmationStatus(match).recheck : false;
+  }).length, [added, confirmations, activeProfile, activeIp]);
   const openDetails = async (pick: QuickPick, result?: ScanSiteResult) => {
     setSelected({ pick, result }); setSelectedProfileId(confirmationProfileId);
     setAwaitingConfirmation(false); setRouteError(''); launchRoute.current = null; setRouteBusy(true);
@@ -574,6 +591,49 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           Добавить
         </button>
       </div>
+
+      {added.length > 0 && (exitChange || needsRecheck > 0 || routePickerOpen) && (
+        <div className="mb-2 rounded-2xl border p-3 space-y-2"
+          style={{ borderColor: 'rgb(var(--warning) / 0.5)', background: 'rgb(var(--warning) / 0.07)' }}>
+          <div className="text-[12px] font-bold" style={{ color: 'rgb(var(--warning))' }}>
+            {exitChange
+              ? exitChange.sameClient
+                ? 'Выходной IP сменился — похоже, в клиенте другой узел'
+                : 'Сменился маршрут: другой VPN-клиент или сеть'
+              : `Отзывов, которые пора перепроверить: ${needsRecheck}`}
+          </div>
+          <div className="text-[11px] leading-relaxed break-anywhere" style={{ color: 'var(--text-dim)' }}>
+            {exitChange
+              ? `Было ${exitChange.fromIp}, стало ${exitChange.toIp}. Android не раскрывает конфиг чужого клиента, поэтому узел нужно отметить здесь — иначе отзывы относятся к прошлой проверке.`
+              : 'Отзыв относится к другому выходу или устарел. Откройте карточку, запустите приложение и отметьте результат заново.'}
+          </div>
+          <label className="block text-[11px] font-semibold" style={{ color: 'var(--text-dim)' }}>
+            Узел, который сейчас включён в VPN-клиенте
+            <select
+              value={confirmationProfileId ?? ''}
+              disabled={routeBusy}
+              onChange={(event) => void chooseRoute(event.target.value ? Number(event.target.value) : null)}
+              className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--text)' }}
+            >
+              <option value="">{systemVpn ? 'Выберите узел — обязательное поле' : 'Не указан / прямой маршрут'}</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>{profile.name}</option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+            <span className="break-anywhere">{activeIp ? `Текущий выход ${activeIp}` : 'Выходной IP не определён'}{currentConnection?.vpn_app_name ? ` · клиент ${currentConnection.vpn_app_name}` : ''}</span>
+            {exitChange && (
+              <button type="button" onClick={() => { setExitChange(null); setRoutePickerOpen(false); }}
+                className="ml-auto shrink-0 rounded-full px-2.5 h-7 font-bold tap"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}>
+                Узел верный, скрыть
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {added.length === 0 ? (
         <div
@@ -724,7 +784,13 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       {/* ---------- Что именно доказала проверка ---------- */}
       <Sheet
         open={Boolean(selected)}
-        onClose={() => setSelected(null)}
+        onClose={() => {
+          setSelected(null);
+          // Снимок сети нужен только внутри карточки. Если его оставить, список
+          // продолжал бы показывать старый выходной IP и не заметил смену узла.
+          setFreshConnection(null);
+          setRouteError('');
+        }}
         title={selected?.pick.name || 'Проверка сервиса'}
         subtitle="Сайт и приложение — не одно и то же"
         size="sm"
@@ -795,11 +861,10 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
               {bypassReport && <Notice tone="info">{bypassReport}</Notice>}
               {!canConfirm && !routeBusy && !routeError && <Notice tone="warn">{!activeIp ? 'Внешний IP не определён. Откройте карточку заново после восстановления сети.' : 'Выберите используемый VPN-узел.'}</Notice>}
               {selectedMatch && (
-                <Notice tone={selectedMatch.confirmation.works ? 'ok' : 'bad'}>
+                <Notice tone={confirmationStatus(selectedMatch).tone === 'ok' ? 'ok' : confirmationStatus(selectedMatch).tone === 'bad' ? 'bad' : 'warn'}>
                   {selectedMatch.confirmation.works ? 'Вы подтвердили: приложение работает.' : 'Вы отметили: приложение не работает.'}
-                  {' '}{selectedMatch.matchedBy === 'ip' ? 'Совпадение найдено по внешнему IP, не по названию узла. '
-                    : selectedMatch.ipChanged ? 'Выходной IP с тех пор изменился — отзыв относится к этому узлу. ' : ''}
-                  {confirmationFreshness(selectedMatch.confirmation.confirmed_at) !== 'fresh'
+                  {' '}{confirmationStatus(selectedMatch).reason}
+                  {' '}{confirmationFreshness(selectedMatch.confirmation.confirmed_at) !== 'fresh' && !confirmationStatus(selectedMatch).recheck
                     ? 'Отзыв давний — ситуация могла измениться, перепроверьте. ' : ''}
                   {selectedMatch.confirmation.profile_name} · {new Date(selectedMatch.confirmation.confirmed_at).toLocaleString('ru-RU')}
                 </Notice>

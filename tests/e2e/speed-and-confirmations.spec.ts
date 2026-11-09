@@ -50,9 +50,9 @@ test('замер скорости показывает результат и с�
   await page.getByRole('button', { name: /Настройки замера/ }).click();
 
   const runOnce = async () => {
-    await page.getByRole('button', { name: 'Замерить' }).click();
+    await page.getByRole('button', { name: /^Замерить( снова)?$/ }).click();
     await expect(page.getByRole('button', { name: 'Остановить' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Замерить' })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole('button', { name: /^Замерить( снова)?$/ })).toBeVisible({ timeout: 90_000 });
   };
 
   // Порядок как у пользователя: сначала точка отсчёта без VPN, потом конфиг.
@@ -132,4 +132,80 @@ test('обмен отчётами работает без общего серв�
   await expect(page.getByText(/Добавлено 1/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole('button', { name: /Закрыть|Отмена/ }).first().click();
   await expect(page.getByText('E2E отчёт участника').first()).toBeVisible({ timeout: 15_000 });
+});
+
+test('история замеров подписывает источник интернета и маршрут', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'достаточно одного прогона');
+  test.setTimeout(120_000);
+  // Сначала открываем приложение: демо-сессия авторизует запросы к API.
+  await page.goto('/');
+  await page.getByRole('button', { name: /Скорость/ }).first().click();
+  // Два замера на разных сетях: без подписи источника они выглядели бы одинаково.
+  const make = (patch: Record<string, unknown>) => ({
+    created_at: new Date().toISOString(), download_mbps: 40, upload_mbps: 12, ping_ms: 25, jitter_ms: 3,
+    download_bytes: 5_000_000, upload_bytes: 1_000_000, server: 'Cloudflare (ближайший узел)',
+    network_kind: 'wifi', network_name: 'Домашний провайдер', route: 'direct', exit_ip: '203.0.113.10',
+    reliable: true, ...patch,
+  });
+  const wifi = await page.request.post('/api/speed-tests', { data: make({}) });
+  expect(wifi.ok(), await wifi.text()).toBeTruthy();
+  const lte = await page.request.post('/api/speed-tests', {
+    data: make({ network_kind: 'cellular', network_name: 'МТС', route: 'vpn', profile_name: '', vpn_app_name: 'v2rayNG', exit_ip: '198.51.100.7' }),
+  });
+  expect(lte.ok(), await lte.text()).toBeTruthy();
+  await page.goto('/');
+  await page.getByRole('button', { name: /Скорость/ }).first().click();
+  await page.getByText('История замеров').scrollIntoViewIfNeeded();
+  await expect(page.getByText('Wi-Fi · Домашний провайдер').first()).toBeVisible();
+  await expect(page.getByText('мобильная сеть · МТС').first()).toBeVisible();
+  await expect(page.getByText('напрямую · 203.0.113.10').first()).toBeVisible();
+  await expect(page.getByText('VPN · v2rayNG · 198.51.100.7').first()).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test('оценка качества YouTube учитывает ускорение 2×', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'достаточно одного прогона');
+  await page.goto('/');
+  await page.getByRole('button', { name: /Скорость/ }).first().click();
+  await page.getByText('YouTube: на какое качество хватит').scrollIntoViewIfNeeded();
+  // Скорость воспроизведения выбирается до замера и меняет требования к каналу.
+  await expect(page.getByRole('button', { name: '2×', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '1×', exact: true }).click();
+  await page.getByRole('button', { name: '2×', exact: true }).click();
+  await expect(page.getByText(/плеер расходует/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Замерить YouTube' })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test('смена выходного IP снимает зелёный статус и просит перепроверить', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'сценарий одинаков на обоих проектах, достаточно десктопа');
+  test.setTimeout(120_000);
+  // Пользователь переключает узел в VPN-клиенте: приложение видит только новый IP.
+  let exitIp = '203.0.113.10';
+  await page.route('**://ipwho.is/**', (route) => route.fulfill({
+    status: 200, headers: CORS,
+    json: { ip: exitIp, country_code: 'NL', country_name: 'Нидерланды', city: 'Амстердам',
+      connection: { isp: 'Test ISP', asn: 64500 }, success: true },
+  }));
+  await page.goto('/');
+  await page.getByText('ChatGPT', { exact: false }).first().click();
+  const select = page.locator('select').first();
+  await expect(select).toBeVisible({ timeout: 20_000 });
+  await select.selectOption({ index: 1 });
+  await expect(page.getByRole('button', { name: 'Работает', exact: true })).toBeEnabled({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'Работает', exact: true }).click();
+  await expect(page.getByText(/Вы подтвердили: приложение работает/)).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: /Закрыть|Отмена/ }).first().click();
+  await expect(page.getByRole('button', { name: 'приложение работает · подтверждено' }).first()).toBeVisible({ timeout: 15_000 });
+
+  // Тот же узел в списке, но выход сменился — прежний зелёный статус больше не врёт.
+  exitIp = '198.51.100.77';
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByRole('button', { name: /выход сменился, перепроверьте/ }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Выходной IP сменился — похоже, в клиенте другой узел')).toBeVisible();
+  await expect(page.getByText(/Было 203\.0\.113\.10, стало 198\.51\.100\.77/)).toBeVisible();
+  // Узел можно переназначить прямо здесь, не открывая каждую карточку.
+  await expect(page.getByText('Узел, который сейчас включён в VPN-клиенте')).toBeVisible();
 });

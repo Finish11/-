@@ -91,6 +91,81 @@ export function findAppConfirmation(
   return byIp ? { confirmation: byIp, matchedBy: 'ip' } : null;
 }
 
+export type ConfirmationTone = 'ok' | 'warn' | 'bad';
+
+export interface ConfirmationStatus {
+  tone: ConfirmationTone;
+  label: string;
+  /** Отзыв больше не описывает текущий маршрут — нужна перепроверка. */
+  recheck: boolean;
+  reason: string;
+}
+
+/**
+ * Что показывать в карточке приложения.
+ *
+ * Раньше смена выходного IP никак не меняла карточку: отзыв находился «по узлу»
+ * и продолжал светиться зелёным, хотя в VPN-клиенте человек уже переключил узел.
+ * Теперь смена выхода — это отдельное состояние «перепроверьте», а не прежний
+ * зелёный статус.
+ */
+export function confirmationStatus(match: ConfirmationMatch, now = Date.now()): ConfirmationStatus {
+  const { confirmation, matchedBy, ipChanged } = match;
+  const freshness = confirmationFreshness(confirmation.confirmed_at, now);
+  if (matchedBy === 'ip') {
+    return {
+      tone: 'warn', recheck: true,
+      label: 'отзыв другого узла с тем же IP',
+      reason: 'Отзыв оставлен на другом узле, совпал только внешний IP. Выберите свой узел и перепроверьте приложение.',
+    };
+  }
+  if (ipChanged) {
+    return {
+      tone: 'warn', recheck: true,
+      label: confirmation.works ? 'работало · выход сменился, перепроверьте' : 'не работало · выход сменился',
+      reason: `Отзыв оставлен на выходном IP ${confirmation.exit_ip || 'неизвестном'}, сейчас выход другой. В VPN-клиенте, вероятно, включён другой узел — отметьте результат заново.`,
+    };
+  }
+  if (confirmation.works && freshness === 'stale') {
+    return {
+      tone: 'warn', recheck: true,
+      label: 'приложение работало · отзыв давний',
+      reason: 'Блокировки меняются: отзыв старше месяца ничего не гарантирует.',
+    };
+  }
+  if (!confirmation.works) {
+    return { tone: 'bad', recheck: false, label: 'приложение не работает · ваш отзыв', reason: '' };
+  }
+  return {
+    tone: 'ok', recheck: false,
+    label: freshness === 'aging'
+      ? `приложение работает · ${confirmationAgeLabel(confirmation.confirmed_at, now)}`
+      : 'приложение работает · подтверждено',
+    reason: '',
+  };
+}
+
+export interface RouteChange {
+  fromIp: string;
+  toIp: string;
+  /** VPN-клиент тот же — значит внутри клиента сменился узел, а не приложение. */
+  sameClient: boolean;
+}
+
+/**
+ * Смена выходного IP при том же VPN-клиенте. Android не раскрывает чужой конфиг,
+ * поэтому это единственный честный признак, что человек переключил узел.
+ */
+export function detectExitChange(
+  before: { ip?: string; vpnPackage?: string } | null | undefined,
+  after: { ip?: string; vpnPackage?: string } | null | undefined
+): RouteChange | null {
+  const from = cleanIp(before?.ip);
+  const to = cleanIp(after?.ip);
+  if (!from || !to || from === to) return null;
+  return { fromIp: from, toIp: to, sameClient: (before?.vpnPackage || '') === (after?.vpnPackage || '') };
+}
+
 /** Отпечаток маршрута: клиент + выходной IP. По нему запоминаем выбранный узел. */
 export function routeFingerprint(vpnPackage: string | undefined, exitIp: string | null | undefined): string {
   const pkg = (vpnPackage || '').trim().toLowerCase();

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateSpeed, bytesToMbps, compareConfigs, formatBytes, formatSpeed, guessSpeedCap, jitterMs,
   latencyStats, planChunkBytes, planConnections, sliceRates, speedGaugeFraction, speedUsageVerdict,
-  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeTickMarks, gaugeCeilingValue, gaugeExceedsCeiling, gaugeAutoCeiling, GAUGE_TICKS,
+  summarizeByConfig, type SpeedRun, type SpeedSlice, speedTraceGeometry, configLabel, networkKindLabel, speedNetworkLabel, speedRouteLabel, bufferbloatVerdict, subscriptionSpeedRows, systemSpeedRoute, recordedSpeedRoute, speedInUnit, formatSpeedIn, speedUnitLabel, gaugeTicks, gaugeTickMarks, gaugeCeilingValue, gaugeExceedsCeiling, gaugeAutoCeiling, GAUGE_TICKS,
 } from '../src/lib/speedTest.ts';
 import { availableSpeedServers, CLOUDFLARE_SPEED, speedEndpointError } from '../src/lib/speedEndpoints.ts';
 
@@ -423,4 +423,29 @@ test('риски шкалы стоят по одному масштабу и н�
       }
     }
   }
+});
+
+
+test('история называет источник интернета и маршрут, а не только узел', () => {
+  const base = { network_kind: 'wifi', network_name: 'МТС', route: 'vpn' as const,
+    profile_name: 'Франкфурт', vpn_app_name: 'v2rayNG', exit_ip: '203.0.113.10' };
+  assert.equal(speedNetworkLabel(base), 'Wi-Fi · МТС');
+  assert.equal(speedNetworkLabel({ network_kind: 'cellular', network_name: 'Beeline' }), 'мобильная сеть · Beeline');
+  // Имя сети может быть неизвестно — тогда хотя бы транспорт, без выдумок.
+  assert.equal(speedNetworkLabel({ network_kind: 'wifi', network_name: '' }), 'Wi-Fi');
+  assert.equal(speedNetworkLabel({ network_kind: 'unknown' }), 'неизвестная сеть');
+  assert.equal(speedRouteLabel(base), 'VPN · Франкфурт · 203.0.113.10');
+  assert.equal(speedRouteLabel({ ...base, profile_name: '' }), 'VPN · v2rayNG · 203.0.113.10');
+  assert.equal(speedRouteLabel({ ...base, profile_name: '', vpn_app_name: '' }), 'VPN · узел не выбран · 203.0.113.10');
+  assert.equal(speedRouteLabel({ ...base, route: 'direct', profile_name: '' }), 'напрямую · 203.0.113.10');
+  assert.equal(speedRouteLabel({ ...base, route: 'unknown', profile_name: '', vpn_app_name: '', exit_ip: '' }), 'маршрут не подтверждён');
+});
+
+test('сводка конфигов помнит, на какой сети были замеры', () => {
+  const runs = [
+    run({ id: 1, network_kind: 'cellular', network_name: 'МТС' }),
+    run({ id: 2, network_kind: 'cellular', network_name: 'МТС' }),
+  ];
+  const summary = summarizeByConfig(runs)[0];
+  assert.equal(summary.networkLabel, 'мобильная сеть · МТС');
 });

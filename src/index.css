@@ -562,6 +562,17 @@ html.calm-motion .anim-overlay {
 }
 
 /* Указатель спидометра двигается плавно, но уважает «меньше анимации». */
+.gauge-arc {
+  transition: stroke-dashoffset 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+html.calm-motion .gauge-arc {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gauge-arc {
+    transition: none;
+  }
+}
 .gauge-needle {
   transition: x1 0.35s cubic-bezier(0.22, 1, 0.36, 1), y1 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     x2 0.35s cubic-bezier(0.22, 1, 0.36, 1), y2 0.35s cubic-bezier(0.22, 1, 0.36, 1);

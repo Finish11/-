@@ -99,11 +99,30 @@ test('во время замера цифры не перекрываются у
           overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           outside: texts.filter((r) => r.width > 0 && (r.right > box.right + 1 || r.left < box.left - 1)).length,
           navRows: new Set(Array.from(document.querySelectorAll('nav.fixed button')).map((b) => Math.round(b.getBoundingClientRect().top))).size,
+          arc: (() => {
+            const el = svg.querySelector('.gauge-arc');
+            if (!el) return null;
+            return { offset: Number(el.getAttribute('stroke-dashoffset')), seconds: parseFloat(getComputedStyle(el).transitionDuration) };
+          })(),
+          // Риски шкалы не должны наползать друг на друга: на автомасштабе они
+          // считались каждая по своей ступени и собирались в кучу у конца дуги.
+          labels: Array.from(svg.querySelectorAll('text')).map((el) => {
+            const r = el.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2, t: el.textContent || '' };
+          }),
         };
       });
       if (info.overflow > 1) problems.push(`${width}px #${i}: страница шире экрана`);
       if (info.outside) problems.push(`${width}px #${i}: подписи замера вылезли за шкалу`);
       if (info.navRows !== 1) problems.push(`${width}px #${i}: панель в ${info.navRows} ряда`);
+      if (info.arc && !(info.arc.offset >= 0 && info.arc.offset <= 1)) problems.push(`${width}px #${i}: дуга вне шкалы (${info.arc.offset})`);
+      if (info.arc && !(info.arc.seconds > 0)) problems.push(`${width}px #${i}: дуга не анимируется`);
+      for (let a = 0; a < info.labels.length; a += 1) {
+        for (let b = a + 1; b < info.labels.length; b += 1) {
+          const d = Math.hypot(info.labels[a].x - info.labels[b].x, info.labels[a].y - info.labels[b].y);
+          if (d < 13) problems.push(`${width}px #${i}: риски «${info.labels[a].t}» и «${info.labels[b].t}» слиплись (${Math.round(d)} px)`);
+        }
+      }
     }
   }
   expect(problems, problems.join('\n')).toEqual([]);

@@ -64,10 +64,16 @@ const SpeedGauge: React.FC<{
     <div className="relative mx-auto w-full" style={{ maxWidth: 260 }}>
       <svg viewBox="0 0 260 226" className="w-full block" role="img" aria-label={`Скорость ${formatSpeedIn(mbps, unit)} ${speedUnitLabel(unit)}`}>
         <path d={arc(startAngle, startAngle + sweep, radius)} fill="none" stroke="var(--surface-2)" strokeWidth="12" strokeLinecap="round" />
+        {/* Заполнение дуги едет вместе со стрелкой: раньше путь пересчитывался
+            каждый сэмпл и дуга скакала, пока стрелка шла плавно. Длина дуги
+            нормирована (pathLength=1), поэтому анимируется одно число. */}
         {!idle && (
           <path
-            d={arc(startAngle, startAngle + Math.max(0.6, sweep * fraction), radius)}
+            d={arc(startAngle, startAngle + sweep, radius)}
             fill="none" stroke="rgb(var(--accent))" strokeWidth="12" strokeLinecap="round"
+            pathLength={1} strokeDasharray="1 1"
+            strokeDashoffset={1 - Math.max(0.006, fraction)}
+            className="gauge-arc"
           />
         )}
         {/* Стрелка — короткий указатель в кольце шкалы: через цифры в центре

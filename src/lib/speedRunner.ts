@@ -30,6 +30,8 @@ export interface SpeedPhaseRequest {
   durationMs: number;
   chunkBytes: number;
   maxBytes: number;
+  /** Таймаут одной попытки. Мелким объектам CDN большой таймаут только вредит. */
+  timeoutMs?: number;
   onSample?: (slice: SpeedSlice) => void;
   signal?: AbortSignal;
 }
@@ -72,7 +74,7 @@ export function nativeTransport(): SpeedTransport {
         const result = await nativeSpeedPhase({
           runId: request.runId, direction: request.direction, urls: request.urls,
           connections: request.connections, durationMs: request.durationMs,
-          chunkBytes: request.chunkBytes, maxBytes: request.maxBytes,
+          chunkBytes: request.chunkBytes, maxBytes: request.maxBytes, timeoutMs: request.timeoutMs,
         });
         return { slices: result.slices, bytes: result.bytes, confirmed: result.confirmed, errors: result.errors, route: result.route };
       } finally {
@@ -152,9 +154,19 @@ export function browserTransport(): SpeedTransport {
       request.signal?.addEventListener('abort', onAbort);
       const timeLeft = () => performance.now() - started < request.durationMs && bytes < request.maxBytes;
 
+      // Отказ одного адреса переводит соединение на следующий живой, а не
+      // обрывает работника: иначе первый же 403 заканчивает замер без байтов.
+      const dead = new Set<string>();
+      const pick = (index: number) => {
+        for (let step = 0; step < request.urls.length; step++) {
+          const candidate = request.urls[(index + step) % request.urls.length];
+          if (!dead.has(candidate)) return candidate;
+        }
+        return request.urls[index % request.urls.length];
+      };
       const worker = async (index: number) => {
-        const url = request.urls[index % request.urls.length];
         while (timeLeft() && !request.signal?.aborted) {
+          const url = pick(index);
           const controller = new AbortController();
           set.add(controller);
           const target = `${url}${url.includes('?') ? '&' : '?'}pulse=${Date.now()}_${index}`;
@@ -164,7 +176,11 @@ export function browserTransport(): SpeedTransport {
               if (!response.ok) {
                 const retry = response.headers.get('Retry-After');
                 errors.push(`HTTP ${response.status}${retry ? ` Retry-After ${retry}` : ''}`);
-                break;
+                // 429/503 — просят сбавить темп, останавливаемся целиком.
+                if (response.status === 429 || response.status === 503) break;
+                dead.add(url);
+                if (dead.size >= request.urls.length && bytes === 0) break;
+                continue;
               }
               const reader = response.body?.getReader();
               if (!reader) { errors.push('Браузер не отдал поток ответа'); break; }
@@ -183,7 +199,7 @@ export function browserTransport(): SpeedTransport {
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', target, true);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-                xhr.timeout = 20000;
+                xhr.timeout = request.timeoutMs ?? 20000;
                 let counted = 0;
                 xhr.upload.onprogress = (event) => {
                   const delta = event.loaded - counted;

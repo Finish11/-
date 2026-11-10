@@ -202,3 +202,37 @@ test('внешняя отмена прерывает пробу сразу', asy
     assert.ok(Date.now() - started < 1000);
   } finally { globalThis.fetch = original; }
 });
+
+test('браузерная фаза: 403 одного адреса не обрывает замер, соединение берёт живой', async () => {
+  const original = globalThis.fetch;
+  const hits: string[] = [];
+  // Первый адрес отвечает 403 (как протухший videoplayback), второй отдаёт данные.
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    hits.push(url);
+    if (url.includes('dead.test')) {
+      return new Response('forbidden', { status: 403, headers: { 'Content-Type': 'text/plain' } });
+    }
+    const chunk = new Uint8Array(64 * 1024);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 8) { controller.close(); return; }
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    return new Response(stream, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+  }) as typeof fetch;
+  try {
+    const phase = await browserTransport().phase({
+      runId: 'yt-browser', direction: 'download',
+      urls: ['https://dead.test/videoplayback?itag=18', 'https://live.test/videoplayback?itag=18'],
+      // Одно соединение: без ротации оно бы навсегда осталось на отказавшем адресе.
+      connections: 1, durationMs: 700, chunkBytes: 65536, maxBytes: 4 * 1024 * 1024,
+    });
+    assert.ok(phase.confirmed > 0, 'живой адрес обязан дать байты, даже если первый отвечает 403');
+    assert.ok(phase.errors.some((item) => item.includes('403')), 'отказ не скрывается из отчёта');
+    assert.ok(new Set(hits.map((url) => url.split('/')[2])).size > 1, 'соединения попробовали оба адреса');
+  } finally { globalThis.fetch = original; }
+});

@@ -1,5 +1,5 @@
 import { aggregateSpeed, bytesToMbps, latencyStats, type SpeedAggregate } from './speedTest';
-import { defaultTransport, type SpeedTransport } from './speedRunner';
+import { defaultTransport, type SpeedPhaseResult, type SpeedTransport } from './speedRunner';
 import { isNativeApp } from './nativeBridge';
 
 /**
@@ -115,33 +115,67 @@ export const YOUTUBE_PING_URL = 'https://www.youtube.com/generate_204';
 export const YOUTUBE_VIDEO_PING_URL = 'https://redirector.googlevideo.com/generate_204';
 /** Ролик-«якорь» для поиска прямой ссылки: короткий, давно доступен. */
 export const YOUTUBE_SAMPLE_WATCH = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
-/** Картинки того же ролика: CDN YouTube, но не видеоголовка. */
+
+/**
+ * Адреса, с которых реально качаются байты YouTube.
+ *
+ * Почему не один: прямой адрес видеопотока (`videoplayback`) живёт минуты и
+ * привязан к клиенту — сервер штатно отвечает 403/410. Раньше такой ответ
+ * обрывал всю фазу, и замер заканчивался «0 бит», хотя YouTube работал.
+ * Теперь у каждого адреса свой шанс: один отказал — качаем с остальных.
+ */
 export const YOUTUBE_CDN_URLS = [
   'https://i.ytimg.com/vi/jNQXAC9IVRw/maxresdefault.jpg',
   'https://i.ytimg.com/vi/jNQXAC9IVRw/hq720.jpg',
   'https://i.ytimg.com/vi/jNQXAC9IVRw/sddefault.jpg',
+  'https://i.ytimg.com/vi/jNQXAC9IVRw/mqdefault.jpg',
 ];
 
-export type YoutubeSource = 'googlevideo' | 'ytimg';
+/** Служебные ответы YouTube: маленькие, без CORS-запрета на чтение. */
+export const YOUTUBE_PROBE_URLS = [
+  'https://www.youtube.com/generate_204',
+  'https://www.youtube.com/robots.txt',
+];
+
+export type YoutubeSource = 'googlevideo' | 'ytimg' | 'youtube';
+export type YoutubeVerdictKind = 'ok' | 'slow' | 'blocked' | 'offline' | 'unsupported' | 'aborted';
 
 export function youtubeSourceLabel(source: YoutubeSource): string {
-  return source === 'googlevideo' ? 'видеоголовка googlevideo' : 'CDN картинок ytimg';
+  return source === 'googlevideo' ? 'видеоголовка googlevideo'
+    : source === 'youtube' ? 'серверы youtube.com'
+    : 'CDN картинок ytimg';
 }
 
 /**
- * Прямая ссылка на видеопоток со страницы ролика. Берём только готовые `url`:
- * подписанные `signatureCipher` не расшифровываем — это отдельная задача, и
- * молча подменять её картинками было бы нечестно.
+ * Прямые ссылки на видеопоток со страницы ролика, по убыванию пригодности.
+ *
+ * Готовый `url` есть не всегда: современная страница чаще отдаёт
+ * `signatureCipher`. Поэтому видеоголовка — только один из источников:
+ * если ссылки нет или она отдала 403, замер продолжается на CDN и сайте.
  */
-export function extractGoogleVideoUrl(html: string): string | null {
-  if (!html) return null;
+export function extractGoogleVideoUrls(html: string): string[] {
+  if (!html) return [];
+  const found: string[] = [];
   const pattern = /"url"\s*:\s*"(https:\/\/[^"]*googlevideo\.com\/videoplayback[^"]*)"/g;
   for (const match of html.matchAll(pattern)) {
     const decoded = match[1].replace(/\\u0026/g, '&').replace(/\\\//g, '/').replace(/\\"/g, '"');
     // Ссылка должна быть пригодна для GET без расшифровки подписи.
-    if (!/signatureCipher|\\u0026sig=/.test(decoded) && /[?&](mime|itag)=/.test(decoded)) return decoded;
+    if (/signatureCipher|\\u0026sig=/.test(decoded)) continue;
+    if (!/[?&](mime|itag)=/.test(decoded)) continue;
+    if (!found.includes(decoded)) found.push(decoded);
   }
-  return null;
+  return found.sort(linkPriority);
+}
+
+/** Первая готовая ссылка — прежний API, которым пользуется остальной код. */
+export function extractGoogleVideoUrl(html: string): string | null {
+  return extractGoogleVideoUrls(html)[0] ?? null;
+}
+
+/** Лёгкие форматы первыми: меньше нужно байт, чтобы увидеть реальную скорость. */
+function linkPriority(a: string, b: string): number {
+  const rank = (link: string) => (link.includes('itag=18') ? 0 : link.includes('itag=22') ? 1 : 2);
+  return rank(a) - rank(b);
 }
 
 export interface YoutubeProbeResult {
@@ -158,6 +192,12 @@ export interface YoutubeProbeResult {
   /** Почему цифра получена именно так — показывается пользователю. */
   note: string;
   aborted: boolean;
+  /** Машинный вердикт: по нему UI выбирает тон и что советовать. */
+  verdict: YoutubeVerdictKind;
+  /** Сколько всего длился замер, мс: видно, что зависания нет. */
+  elapsedMs: number;
+  /** Цифра есть, но канала не хватает даже на 144p — это медленно, а не «ок». */
+  slow: boolean;
 }
 
 export interface YoutubeProbeOptions {
@@ -170,17 +210,50 @@ export interface YoutubeProbeOptions {
   watchUrl?: string;
   fetchHtml?: (url: string) => Promise<string>;
   durationMs?: number;
+  /** Жёсткий потолок на всю процедуру. Без него «нет сети» выглядело как зависание. */
+  deadlineMs?: number;
+  /** Где выполняется замер. По умолчанию определяется по Capacitor; в тестах задаётся явно. */
+  native?: boolean;
 }
 
 const EMPTY: YoutubeProbeResult = {
   ok: false, mbps: 0, aggregate: null, source: null, pingMs: null, videoPingMs: null,
-  bytes: 0, errors: [], note: '', aborted: false,
+  bytes: 0, errors: [], note: '', aborted: false, verdict: 'offline', elapsedMs: 0, slow: false,
 };
 
+/**
+ * Сколько ждать youtube.com, прежде чем честно сказать «не открывается».
+ * Без этого «нет сети» превращалось в бесконечную крутилку: таймауты копились
+ * (2 × 5 с пинг + 12 с страница + две фазы по 7 с), а вердикта всё не было.
+ */
+export const YOUTUBE_PING_TIMEOUT_MS = 4000;
+export const YOUTUBE_DEADLINE_MS = 26000;
+/** Ниже этой скорости цифра считается «на грани»: нужен честный тон в UI. */
+export const YOUTUBE_SLOW_MBPS = 0.35;
+
+/**
+ * Браузерное представление: YouTube отдаёт обычную страницу иначе, чем
+ * техническому клиенту. С клиентским User-Agent чаще приходит упрощённая
+ * разметка без данных плеера, и прямой ссылки в ней нет вовсе.
+ */
+export const YOUTUBE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 '
+  + '(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+
 async function defaultFetchHtml(url: string): Promise<string> {
-  const { fetchTextUniversal } = await import('./nativeBridge');
+  const bridge = await import('./nativeBridge');
+  const attempts: string[] = [];
+  if (bridge.isNativeApp()) {
+    try {
+      const res = await bridge.nativeGet(url, 12000, YOUTUBE_USER_AGENT, { 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8' });
+      if (res.status >= 200 && res.status < 300 && res.text) return res.text;
+      attempts.push(`нативный HTTP: сервер ответил ${res.status}`);
+    } catch (error) {
+      attempts.push(`нативный HTTP: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    throw new Error(`Страница YouTube не скачалась. ${attempts.join('; ')}`);
+  }
   try {
-    return await fetchTextUniversal(url, 12000);
+    return await bridge.fetchTextUniversal(url, 12000);
   } catch (error) {
     // Общий загрузчик говорит про подписки — здесь это сбивало бы с толку.
     const message = error instanceof Error ? error.message : String(error);
@@ -188,77 +261,197 @@ async function defaultFetchHtml(url: string): Promise<string> {
   }
 }
 
+function isWatchPage(url: string): boolean {
+  return /youtube\.com\/watch/.test(url);
+}
+
 /**
- * Замер до YouTube. Порядок: задержка → поиск прямой ссылки → прокачка байт.
- * Если видеоголовка не отдала ни байта, пробуем CDN картинок и честно помечаем
- * источник: это ответ YouTube, но не видеопоток.
+ * Обещание с предохранителем: если сигнал уже сработал, ждать зависший вызов
+ * бессмысленно. Возвращает заглушку, чтобы замер дошёл до вердикта.
+ */
+function untilAborted<T>(task: Promise<T>, signal: AbortSignal, fallback: () => T): Promise<T> {
+  if (signal.aborted) return Promise.resolve(fallback());
+  return new Promise<T>((resolve) => {
+    const done = (value: T) => { signal.removeEventListener('abort', onAbort); resolve(value); };
+    const onAbort = () => done(fallback());
+    signal.addEventListener('abort', onAbort);
+    task.then(done, () => done(fallback()));
+  });
+}
+
+/**
+ * Замер до YouTube: задержка → прямые адреса потока → CDN картинок.
+ *
+ * Ключевые правила, из-за которых раньше показывался ноль:
+ *  - отказ одного адреса (403/410 у videoplayback) не отменяет замер;
+ *  - у каждой стадии свой короткий бюджет, у всей процедуры — общий дедлайн;
+ *  - «нет байт» отделяется от «замер не состоялся»: у результата есть вердикт.
  */
 export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promise<YoutubeProbeResult> {
   const transport = options.transport ?? defaultTransport();
   const runId = `yt-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-  const result: YoutubeProbeResult = { ...EMPTY, errors: [] };
+  const result: YoutubeProbeResult = { ...EMPTY, errors: [], elapsedMs: 0 };
+  const startedAt = Date.now();
   const say = (message: string, mbps = 0) => options.onProgress?.(message, mbps);
   const durationMs = options.durationMs ?? (options.lite ? 4000 : 7000);
   const maxBytes = options.lite ? 8 * 1024 * 1024 : 25 * 1024 * 1024;
+  const budget = Math.max(8000, options.deadlineMs ?? YOUTUBE_DEADLINE_MS);
+  const native = options.native ?? isNativeApp();
+  const finish = (verdict: YoutubeVerdictKind, note: string): YoutubeProbeResult => {
+    cleanup();
+    result.verdict = verdict;
+    result.note = note;
+    result.elapsedMs = Date.now() - startedAt;
+    return result;
+  };
+  const stop = (): YoutubeProbeResult => {
+    result.aborted = true;
+    return finish('aborted', 'Замер остановлен до первых байт');
+  };
+  /** Остаток общего бюджета: стадии не должны выедать его друг у друга. */
+  const leftMs = () => Math.max(0, budget - (Date.now() - startedAt));
+
+  // Предохранитель: даже если транспорт завис на сокете и не вернул управление,
+  // замер обязан закончиться сам. Без него «нет сети» — вечная крутилка.
+  const guard = new AbortController();
+  let timedOut = false;
+  const onOuterAbort = () => guard.abort();
+  options.signal?.addEventListener('abort', onOuterAbort);
+  const guardTimer = setTimeout(() => { timedOut = true; guard.abort(); }, budget);
+  const cleanup = () => {
+    clearTimeout(guardTimer);
+    options.signal?.removeEventListener('abort', onOuterAbort);
+  };
 
   say('Проверяем задержку до YouTube…');
+  // Оба пинга идут параллельно: последовательные таймауты складывались в
+  // долгое «Начинаем…», которое выглядело как зависание.
   const [site, video] = await Promise.all([
-    transport.latency(YOUTUBE_PING_URL, 3, options.signal, 5000).catch(() => ({ samples: [] as number[], error: 'youtube.com не ответил' })),
-    transport.latency(YOUTUBE_VIDEO_PING_URL, 3, options.signal, 5000).catch(() => ({ samples: [] as number[], error: 'googlevideo не ответил' })),
+    // untilAborted обязателен: реализация транспорта может не заметить сигнал,
+    // и тогда ожидание пинга — это и есть то самое «зависание» без VPN.
+    untilAborted(
+      transport.latency(YOUTUBE_PING_URL, 3, guard.signal, YOUTUBE_PING_TIMEOUT_MS)
+        .catch(() => ({ samples: [] as number[], error: 'youtube.com не ответил' })),
+      guard.signal, () => ({ samples: [] as number[], error: 'youtube.com не ответил' }),
+    ),
+    untilAborted(
+      transport.latency(YOUTUBE_VIDEO_PING_URL, 2, guard.signal, YOUTUBE_PING_TIMEOUT_MS)
+        .catch(() => ({ samples: [] as number[], error: 'googlevideo не ответил' })),
+      guard.signal, () => ({ samples: [] as number[], error: 'googlevideo не ответил' }),
+    ),
   ]);
   result.pingMs = latencyStats(site.samples).pingMs;
   result.videoPingMs = latencyStats(video.samples).pingMs;
   if (site.error) result.errors.push(`youtube.com: ${site.error}`);
   if (video.error) result.errors.push(`googlevideo: ${video.error}`);
-  if (options.signal?.aborted) { result.aborted = true; result.note = 'Замер остановлен'; return result; }
+  if (options.signal?.aborted) return stop();
 
-  say('Ищем прямой адрес видеопотока…');
-  let streamUrl: string | null = null;
-  try {
-    const html = await (options.fetchHtml ?? defaultFetchHtml)(options.watchUrl || YOUTUBE_SAMPLE_WATCH);
-    streamUrl = extractGoogleVideoUrl(html);
-    if (!streamUrl) result.errors.push('На странице ролика нет готовой ссылки на поток (подпись не расшифровывается)');
-  } catch (error) {
-    result.errors.push(`Страница ролика не открылась: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (options.signal?.aborted) { result.aborted = true; result.note = 'Замер остановлен'; return result; }
-
-  const download = async (urls: string[], source: YoutubeSource, connections: number) => {
-    say(source === 'googlevideo' ? 'Качаем видеопоток…' : 'Качаем с CDN YouTube…');
-    const phase = await transport.phase({
+  // Ни один пинг не прошёл: байты всё равно попробуем (пинг может блокироваться
+  // отдельно от загрузки, и наоборот), но вердикт будет честный.
+  const noPing = site.samples.length === 0 && video.samples.length === 0;
+  // Ни один служебный адрес не ответил: страницу ролика (до 12 с) не ждём —
+  // это и было «зависание» без VPN. Байты проверим сразу на CDN, он короче.
+  const reachable = !noPing;
+  const networkDown = noPing && result.errors.some((item) => /DNS|не резолвится|ENOTFOUND|UnknownHost|network|сети|недоступ/i.test(item));
+  const download = async (urls: string[], source: YoutubeSource, connections: number, sliceMs: number) => {
+    const label = source === 'googlevideo' ? 'Качаем видеопоток…'
+      : source === 'ytimg' ? 'Качаем с CDN YouTube…' : 'Качаем данные YouTube…';
+    say(label);
+    const empty = { slices: [] as SpeedPhaseResult['slices'], bytes: 0, confirmed: 0, errors: [] as string[] };
+    const phase = await untilAborted(transport.phase({
       runId: `${runId}-${source}`, direction: 'download', urls,
-      connections, durationMs, chunkBytes: 1_000_000, maxBytes, signal: options.signal,
-      onSample: (slice) => say(source === 'googlevideo' ? 'Качаем видеопоток…' : 'Качаем с CDN YouTube…', bytesToMbps(slice.confirmed, slice.t)),
-    });
+      connections, durationMs: Math.max(1500, Math.min(sliceMs, leftMs())),
+      chunkBytes: 1_000_000, maxBytes, signal: guard.signal,
+      // Мелкие объекты CDN: один зависший адрес не должен держать всю фазу.
+      timeoutMs: source === 'ytimg' ? 6000 : 10000,
+      onSample: (slice) => say(label, bytesToMbps(slice.confirmed, slice.t)),
+    }), guard.signal, () => empty);
     result.errors.push(...phase.errors.map((item) => `${source}: ${item}`));
     return phase;
   };
 
-  let source: YoutubeSource = 'googlevideo';
-  let phase = streamUrl
-    ? await download([streamUrl], 'googlevideo', 2)
-    : { slices: [], bytes: 0, confirmed: 0, errors: [] as string[] };
-  if (!phase.confirmed && !options.signal?.aborted) {
-    source = 'ytimg';
-    phase = await download(YOUTUBE_CDN_URLS, 'ytimg', 3);
+  type Attempt = { source: YoutubeSource; phase: { slices: SpeedPhaseResult['slices']; bytes: number; confirmed: number } };
+  /** Итог по источнику: байты и срезы. Пустой массив — источник не дал ничего. */
+  const attempts: Attempt[] = [];
+
+  say(reachable ? 'Ищем прямой адрес видеопотока…' : 'YouTube не отвечает — проверяем CDN…');
+  const watchUrl = options.watchUrl || YOUTUBE_SAMPLE_WATCH;
+  let streamUrls: string[] = [];
+  let pageLoaded = false;
+  if (!reachable) result.errors.push('Служебные адреса YouTube не ответили, страницу ролика не запрашивали');
+  try {
+    if (!reachable) throw new Error('YouTube не отвечает');
+
+    const html = await untilAborted((options.fetchHtml ?? defaultFetchHtml)(watchUrl), guard.signal, () => '');
+    pageLoaded = /ytInitialPlayerResponse|"videoDetails"|<title>YouTube<\/title>/i.test(html);
+    streamUrls = extractGoogleVideoUrls(html);
+    if (!streamUrls.length && pageLoaded) {
+      result.errors.push('Готовая ссылка на поток в странице не пришла (подпись не расшифровывается)');
+    }
+  } catch (error) {
+    result.errors.push(`Страница ролика не открылась: ${error instanceof Error ? error.message : String(error)}`);
   }
+  if (options.signal?.aborted) return stop();
+
+  // 1. Прямой видеопоток: самый честный источник, но и самый хрупкий —
+  //    ссылка живёт минуты и легко отдаёт 403. Отказ не отменяет замер.
+  if (streamUrls.length) {
+    const phase = await download(streamUrls.slice(0, 2), 'googlevideo', 2, durationMs);
+    if (phase.confirmed) attempts.push({ source: 'googlevideo', phase });
+  } else if (networkDown) {
+    // Ссылку не достать и без сети: не тратим остаток бюджета на заведомые отказы.
+    result.errors.push('Сеть не отвечает: адрес потока получить не удалось');
+  }
+  // 2. CDN картинок: тот же хостинг YouTube, стабильные адреса.
+  if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {
+    const phase = await download(YOUTUBE_CDN_URLS, 'ytimg', 3, durationMs);
+    if (phase.confirmed) attempts.push({ source: 'ytimg', phase });
+  }
+  // 3. Сам сайт: если картинки не отдались, проверяем хотя бы канал до youtube.com.
+  if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {
+    const phase = await download(YOUTUBE_PROBE_URLS, 'youtube', 2, Math.min(durationMs, 4000));
+    if (phase.confirmed) attempts.push({ source: 'youtube', phase });
+  }
+  // aborted — только про действие пользователя. Истёкший бюджет — это не
+  // «остановлено», а честный вердикт «сеть не отвечает», иначе UI покажет отмену.
   result.aborted = Boolean(options.signal?.aborted);
-  result.bytes = phase.confirmed || phase.bytes;
-  if (!result.bytes) {
-    result.note = result.aborted
-      ? 'Замер остановлен до первых байт'
-      : isNativeApp()
-        ? 'YouTube не отдал ни байта: похож на блокировку. Обычный замер скорости при этом может показывать быстрый канал.'
-        : 'Браузер не даёт читать ответы YouTube (CORS), поэтому замер доступен только в Android-приложении. Отсутствие цифры здесь не означает блокировку.';
-    return result;
+
+  const best = attempts.find((item) => item.source === 'googlevideo') ?? attempts[0];
+  if (!best) {
+    result.elapsedMs = Date.now() - startedAt;
+    if (options.signal?.aborted) return finish('aborted', 'Замер остановлен до первых байт');
+    if (timedOut) {
+      return finish('offline', `YouTube не ответил за ${Math.round(budget / 1000)} с: похоже, сеть не пускает к видеоплощадке. Проверьте подключение или включите VPN.`);
+    }
+    // Различаем «нет сети» и «сеть есть, YouTube не отдаёт»: совет разный.
+    const noNetwork = result.errors.some((item) => /DNS|не резолвится|ENOTFOUND|UnknownHost|сети|network/i.test(item));
+    const browser = !native;
+    if (browser) {
+      return finish('unsupported', 'Браузер не даёт читать ответы YouTube (CORS), поэтому замер доступен в Android-приложении. Ноль здесь не означает блокировку.');
+    }
+    if (noNetwork) {
+      return finish('offline', `YouTube не открывается вовсе: ${result.errors[0] || 'сеть не отвечает'}. Проверьте подключение или включите VPN — без него YouTube в РФ не грузится.`);
+    }
+    return finish('blocked', 'YouTube не отдал ни байта: похоже на блокировку видеоплощадки. Обычный замер скорости при этом может показывать быстрый канал — это нормально, замедляют именно YouTube.');
   }
-  result.source = source;
-  result.aggregate = aggregateSpeed(phase.slices);
-  result.mbps = result.aggregate.mbps || bytesToMbps(result.bytes, durationMs);
-  result.ok = true;
-  result.note = source === 'googlevideo'
+
+  result.source = best.source;
+  result.bytes = best.phase.confirmed || best.phase.bytes;
+  result.aggregate = aggregateSpeed(best.phase.slices);
+  // Среднее по всей фазе честнее для коротких срезов: методика Ookla отбрасывает
+  // края, и на 4 секундах у неё остаётся слишком мало интервалов.
+  result.mbps = result.aggregate.mbps || result.aggregate.averageMbps || bytesToMbps(result.bytes, Math.max(1, result.aggregate.durationMs || durationMs));
+  result.ok = result.mbps > 0;
+  result.slow = result.ok && result.mbps < YOUTUBE_SLOW_MBPS;
+  result.elapsedMs = Date.now() - startedAt;
+  result.verdict = !result.ok ? 'blocked' : result.slow ? 'slow' : 'ok';
+  result.note = best.source === 'googlevideo'
     ? 'Измерено на прямом видеопотоке googlevideo — том самом хосте, который замедляют.'
-    : 'Прямую ссылку на поток получить не удалось, измерено на CDN картинок ytimg. Это ответ YouTube, но видеоголовку могут замедлять отдельно — оценка качества ориентировочная.';
-  if (!result.aggregate.reliable) result.note += ` ${result.aggregate.reason}`;
+    : 'Прямую ссылку на поток получить не удалось, измерено на CDN картинок ytimg. Это ответ YouTube, но видеоголовку могут замедлять отдельно — оценка ориентировочная.';
+  if (result.verdict === 'slow') {
+    result.note += ' Скорость ниже 0,35 Мбит/с: этого не хватает даже на 144p — похоже на сильное замедление.';
+  }
+  if (!result.aggregate.reliable && result.aggregate.reason) result.note += ` ${result.aggregate.reason}`;
+  cleanup();
   return result;
 }

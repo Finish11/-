@@ -575,7 +575,38 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
             {ytStatus}{ytLive > 0 ? ` · ${formatSpeedIn(ytLive, unit)} ${speedUnitLabel(unit)}` : ''}
           </div>
         )}
-        {ytResult && (() => {
+        {/* Замер без цифры: показываем причину и что делать, а не «0 бит». */}
+        {ytResult && !ytResult.ok && !ytResult.aborted && (() => {
+          const tone = ytResult.verdict === 'unsupported' ? 'info' : ytResult.verdict === 'offline' ? 'warning' : 'danger';
+          const title = ytResult.verdict === 'unsupported' ? 'В браузере YouTube не измерить'
+            : ytResult.verdict === 'offline' ? 'YouTube не открывается'
+            : 'YouTube не отдал данные';
+          return (
+            <div className="space-y-2">
+              <div className="rounded-2xl border p-3" style={{ borderColor: `rgb(var(--${tone}) / 0.45)`, background: `rgb(var(--${tone}) / 0.08)` }}>
+                <div className="text-[12.5px] font-extrabold break-anywhere" style={{ color: `rgb(var(--${tone}))` }}>{title}</div>
+                <div className="mt-1 text-[11px] leading-relaxed break-anywhere" style={{ color: 'var(--text-dim)' }}>{ytResult.note}</div>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                {ytResult.pingMs != null && <span>youtube.com {Math.round(ytResult.pingMs)} мс</span>}
+                {ytResult.videoPingMs != null && <span>видеоголовка {Math.round(ytResult.videoPingMs)} мс</span>}
+                {ytResult.elapsedMs > 0 && <span>замер занял {(ytResult.elapsedMs / 1000).toFixed(1)} с</span>}
+              </div>
+              {ytResult.errors.length > 0 && (
+                <details className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+                  <summary className="cursor-pointer font-semibold">Что помешало замеру ({ytResult.errors.length})</summary>
+                  <ul className="mt-1 space-y-0.5 break-anywhere">
+                    {ytResult.errors.slice(0, 6).map((item, index) => <li key={index}>· {item}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          );
+        })()}
+        {ytResult && ytResult.aborted && (
+          <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>{ytResult.note}</div>
+        )}
+        {ytResult?.ok && (() => {
           const verdict = youtubeQualityVerdict(ytResult.mbps, ytRate);
           const color = verdict.tone === 'ok' ? 'success' : verdict.tone === 'warn' ? 'warning' : 'danger';
           return (
@@ -592,6 +623,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
                 {ytResult.pingMs != null && <span>youtube.com {Math.round(ytResult.pingMs)} мс</span>}
                 {ytResult.videoPingMs != null && <span>видеоголовка {Math.round(ytResult.videoPingMs)} мс</span>}
                 {ytResult.bytes > 0 && <span>скачано {formatBytes(ytResult.bytes)}</span>}
+                {ytResult.elapsedMs > 0 && <span>замер занял {(ytResult.elapsedMs / 1000).toFixed(1)} с</span>}
               </div>
               <div className="divide-y" style={{ borderColor: 'var(--line)' }}>
                 {YOUTUBE_QUALITIES.filter((quality) => ['360p', '480p', '720p', '1080p', '1440p', '2160p'].includes(quality.id)).map((quality) => {

@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   YOUTUBE_QUALITIES, YOUTUBE_HEADROOM, requiredMbps, youtubeQualityVerdict, rateLabel,
-  extractGoogleVideoUrl, runYoutubeProbe, youtubeSourceLabel, YOUTUBE_CDN_URLS,
+  extractGoogleVideoUrl, extractGoogleVideoUrls, runYoutubeProbe, youtubeSourceLabel, YOUTUBE_CDN_URLS,
 } from '../src/lib/youtubeSpeed.ts';
+import { readFileSync } from 'node:fs';
 import type { SpeedTransport, SpeedPhaseRequest, SpeedPhaseResult } from '../src/lib/speedRunner.ts';
 
 test('2× требует вдвое больше канала, чем 1×', () => {
@@ -107,7 +108,8 @@ test('замер предпочитает видеоголовку и честн
 });
 
 test('если поток не отдал байты — переход на CDN с пометкой, а не молча', async () => {
-  const transport = fakeTransport({ failFirst: true });
+  // Пинги живые: страница ролика запрашивается, ссылка есть, но видеоголовка отдаёт 403.
+  const transport = fakeTransport({ failFirst: true, pingMs: 40, videoPingMs: 50 });
   const result = await runYoutubeProbe({
     transport, fetchHtml: async () => '{"url":"https://rr1.googlevideo.com/videoplayback?itag=18&mime=video%2Fmp4"}',
   });
@@ -132,7 +134,7 @@ test('полная недоступность YouTube не выдаётся за
 
 test('остановленный замер помечается и не продолжается', async () => {
   const controller = new AbortController();
-  const transport = fakeTransport({});
+  const transport = fakeTransport({ pingMs: 40, videoPingMs: 50 });
   const task = runYoutubeProbe({
     transport, signal: controller.signal,
     fetchHtml: async () => { controller.abort(); return ''; },
@@ -153,4 +155,156 @@ test('экономный режим тратит меньше трафика и 
   await runYoutubeProbe({ transport: full, fetchHtml: async () => '' });
   assert.ok(full.calls[0].durationMs > lite.durationMs);
   assert.ok(full.calls[0].maxBytes > lite.maxBytes);
+});
+
+// --------------------------------------------------- отказоустойчивость замера
+
+/** Транспорт, который ведёт себя как настоящий YouTube: часть адресов отказывает. */
+function resilientTransport(options: {
+  /** Адреса, отвечающие 403 — как протухшая ссылка videoplayback. */
+  refuse?: (url: string) => boolean;
+  /** Мбит/с, если адрес не отказал. */
+  mbps?: number;
+  pingError?: string;
+}): SpeedTransport & { calls: SpeedPhaseRequest[] } {
+  const calls: SpeedPhaseRequest[] = [];
+  return {
+    calls,
+    async latency() {
+      if (options.pingError) return { samples: [], error: options.pingError };
+      return { samples: [30, 32, 31] };
+    },
+    async phase(request) {
+      calls.push(request);
+      const alive = request.urls.filter((url) => !(options.refuse?.(url) ?? false));
+      if (!alive.length) return { slices: [], bytes: 0, confirmed: 0, errors: ['HTTP 403'] };
+      const bytesPerSecond = ((options.mbps ?? 12) * 1_000_000) / 8;
+      const span = Math.min(request.durationMs, 6000);
+      const slices = Array.from({ length: 12 }, (_, index) => {
+        const t = (span * (index + 1)) / 12;
+        const total = Math.round((bytesPerSecond * t) / 1000);
+        return { t, bytes: total, confirmed: total };
+      });
+      const last = slices[slices.length - 1];
+      return { slices, bytes: last.bytes, confirmed: last.confirmed, errors: [] };
+    },
+    abort() {},
+  };
+}
+
+test('403 у видеоголовки не обнуляет замер: цифра берётся с CDN', async () => {
+  // Ровно тот случай из жалобы: YouTube через VPN работает, а замер показывал 0 бит.
+  const transport = resilientTransport({ refuse: (url) => url.includes('googlevideo') });
+  const result = await runYoutubeProbe({
+    transport, fetchHtml: async () => '{"url":"https://rr1.googlevideo.com/videoplayback?itag=18&mime=video%2Fmp4"}',
+  });
+  assert.equal(result.ok, true, 'замер обязан дать цифру, а не ноль');
+  assert.ok(result.mbps > 0);
+  assert.equal(result.source, 'ytimg');
+  assert.equal(result.verdict, 'ok');
+  assert.ok(result.errors.some((item) => item.includes('403')));
+});
+
+test('замер не тянется бесконечно: у всей процедуры есть бюджет', async () => {
+  // Транспорт, который «висит» дольше любого разумного времени.
+  const hanging: SpeedTransport = {
+    async latency() { return { samples: [], error: 'timeout: сервер не ответил' }; },
+    async phase(request) { return { slices: [], bytes: 0, confirmed: 0, errors: ['timeout'] }; },
+    abort() {},
+  };
+  const startedAt = Date.now();
+  const result = await runYoutubeProbe({
+    transport: hanging, deadlineMs: 8000, native: true,
+    fetchHtml: async () => { throw new Error('timeout'); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.verdict, 'blocked');
+  assert.ok(Date.now() - startedAt < 9000, 'без сети замер обязан завершиться сам');
+  assert.ok(result.elapsedMs >= 0);
+});
+
+test('«нет сети» отличается от «YouTube заблокирован»', async () => {
+  const offline: SpeedTransport = {
+    async latency() { return { samples: [], error: 'DNS: домен не резолвится (UnknownHostException)' }; },
+    async phase() { return { slices: [], bytes: 0, confirmed: 0, errors: ['DNS: домен не резолвится'] }; },
+    abort() {},
+  };
+  const result = await runYoutubeProbe({
+    transport: offline, native: true, fetchHtml: async () => { throw new Error('DNS: домен не резолвится'); },
+  });
+  assert.equal(result.ok, false);
+  assert.ok(['offline', 'blocked'].includes(result.verdict));
+  assert.match(result.note, /не открывается|не отдал ни байта/);
+});
+
+test('очень медленный YouTube помечается отдельно от быстрого', async () => {
+  const slow = resilientTransport({ mbps: 0.08 });
+  const result = await runYoutubeProbe({ transport: slow, fetchHtml: async () => '' });
+  assert.equal(result.ok, true);
+  assert.equal(result.slow, true);
+  assert.equal(result.verdict, 'slow');
+  assert.match(result.note, /замедление/);
+});
+
+test('несколько прямых ссылок: в замер уходят первые две, лёгкий формат первым', () => {
+  const html = '{"url":"https://rr1.googlevideo.com/videoplayback?itag=137&mime=video%2Fmp4"}'
+    + '{"url":"https://rr1.googlevideo.com/videoplayback?itag=18&mime=video%2Fmp4"}';
+  const links = extractGoogleVideoUrls(html);
+  assert.equal(links.length, 2);
+  assert.match(links[0], /itag=18/, 'лёгкий 360p первым: быстрее показывает реальную скорость');
+  assert.equal(extractGoogleVideoUrl(html), links[0]);
+});
+
+test('нативный транспорт передаёт таймаут попытки в Java', async () => {
+  const source = readFileSync('android/app/src/main/java/ru/pulsenet/app/NetworkProbePlugin.java', 'utf8');
+  // Без своего таймаута зависший адрес держал фазу до конца бюджета.
+  assert.match(source, /call\.getInt\("timeoutMs", 15000\)/);
+  assert.match(source, /NetUtil\.open\(context, network, url, readTimeout/);
+  // 403/410 одного адреса не может отменять фазу целиком.
+  assert.match(source, /deadTargets\.add\(target\)/);
+  assert.match(source, /pickTarget\(targets, deadTargets\)/);
+});
+
+test('без VPN не ждём страницу ролика: сначала короткая проверка CDN', async () => {
+  let fetchedPages = 0;
+  const phases: SpeedPhaseRequest[] = [];
+  const dead: SpeedTransport = {
+    async latency() { return { samples: [], error: 'timeout: сервер не ответил' }; },
+    async phase(request) {
+      phases.push(request);
+      return { slices: [], bytes: 0, confirmed: 0, errors: ['HTTP 403'] };
+    },
+    abort() {},
+  };
+  const result = await runYoutubeProbe({
+    transport: dead, native: true,
+    fetchHtml: async () => { fetchedPages += 1; return ''; },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(fetchedPages, 0, 'страницу ролика не тянем, если служебные адреса молчат');
+  // CDN обязан быть испробован до вердикта: иначе «не отдал ни байта» — враньё.
+  assert.ok(phases[0]?.urls.every((url) => url.includes('ytimg')), `первая фаза — CDN, а не ${phases[0]?.urls[0]}`);
+  assert.ok(result.errors.some((item) => item.includes('не запрашивали')));
+  assert.equal(result.verdict, 'blocked');
+});
+
+test('зависший транспорт не держит экран: предохранитель заканчивает замер сам', async () => {
+  // Худший случай: сокет открылся, но ответа нет и промис не завершается никогда.
+  const never = <T,>() => new Promise<T>(() => {});
+  const stuck: SpeedTransport = {
+    latency: () => never(),
+    phase: () => never(),
+    abort() {},
+  };
+  const startedAt = Date.now();
+  const result = await runYoutubeProbe({
+    transport: stuck, native: true, deadlineMs: 8000,
+    fetchHtml: () => never(),
+  });
+  const spent = Date.now() - startedAt;
+  assert.ok(spent < 9000, `замер обязан завершиться сам, а не висеть (${spent} мс)`);
+  assert.equal(result.ok, false);
+  assert.equal(result.verdict, 'offline');
+  assert.match(result.note, /не ответил за 8 с/);
+  assert.equal(result.aborted, false, 'это не остановка пользователем');
 });

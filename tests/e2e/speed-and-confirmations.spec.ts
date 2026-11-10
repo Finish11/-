@@ -61,7 +61,9 @@ test('замер скорости показывает результат и с�
   // Порядок как у пользователя: сначала точка отсчёта без VPN, потом конфиг.
   // Догадка по IP показана как подсказка, но выбором не командует.
   await expect(page.getByText(/По внешнему IP выход похож на VPN/)).toBeVisible({ timeout: 20_000 });
-  const configSelect = page.locator('select').first();
+  // Именно поле на экране замера: в DOM остаются скрытые селекты соседних
+  // вкладок (они живут с классом hidden), и .first() иногда попадал в них.
+  const configSelect = page.getByLabel(/Конфиг, который сейчас включён/);
   await configSelect.selectOption({ value: '' });
   await runOnce();
   // Живой график появляется, как только пошли сэмплы загрузки.

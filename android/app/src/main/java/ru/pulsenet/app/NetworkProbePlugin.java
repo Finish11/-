@@ -29,6 +29,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -427,7 +428,10 @@ public class NetworkProbePlugin extends Plugin {
         final int durationMs = Math.max(1000, Math.min(30000, call.getInt("durationMs", 10000)));
         final int chunkBytes = Math.max(65536, Math.min(33554432, call.getInt("chunkBytes", 4194304)));
         final long maxBytes = call.getDouble("maxBytes", 104857600d).longValue();
-        final int timeout = call.getInt("timeoutMs", 15000);
+        // Сколько держать одну попытку. Для мелких объектов (картинки CDN) большой
+        // таймаут вреден: зависший адрес держал бы всю фазу до конца бюджета.
+        final int readTimeout = call.getInt("timeoutMs", 15000);
+
         if (urls == null || urls.length() == 0) { call.reject("Не переданы адреса замера"); return; }
 
         final Context context = getContext();
@@ -439,6 +443,11 @@ public class NetworkProbePlugin extends Plugin {
         final JSArray errors = new JSArray();
         final JSArray slices = new JSArray();
         final boolean upload = "upload".equals(direction);
+        // Отказ пришёл от конкретного адреса, а не от всего замера: счётчик нужен,
+        // чтобы отличить «протухшая подпись у videoplayback» от «YouTube недоступен».
+        final AtomicInteger failedTargets = new AtomicInteger();
+        // Адреса, которые уже отказали: их больше не трогаем, пока живы другие.
+        final java.util.Set<String> deadTargets = java.util.Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
         final String[] targets = new String[urls.length()];
         try {
             for (int i = 0; i < urls.length(); i++) targets[i] = urls.getString(i);
@@ -488,11 +497,13 @@ public class NetworkProbePlugin extends Plugin {
                             while (!aborted.get()
                                 && (System.nanoTime() - startedAt) / 1_000_000.0d < durationMs
                                 && received.get() < maxBytes) {
-                                String target = targets[workerIndex % targets.length];
+                                // Ротация: соединение берёт следующий живой адрес, а не
+                                // бьётся в один и тот же отказавший до конца бюджета.
+                                String target = pickTarget(targets, deadTargets);
                                 HttpURLConnection connection = null;
                                 try {
                                     String url = target + (target.contains("?") ? "&" : "?") + "pulse=" + System.nanoTime();
-                                    connection = NetUtil.open(context, network, url, timeout, upload ? "POST" : "GET");
+                                    connection = NetUtil.open(context, network, url, readTimeout, upload ? "POST" : "GET");
                                     if (upload) {
                                         connection.setDoOutput(true);
                                         connection.setFixedLengthStreamingMode(chunkBytes);
@@ -514,7 +525,12 @@ public class NetworkProbePlugin extends Plugin {
                                             completedRequests.incrementAndGet();
                                         } else {
                                             synchronized (errors) { errors.put("HTTP " + status); }
-                                            aborted.set(true);
+                                            // Отказ сервера на отдаче — проблема этого соединения.
+                                            // Фазу обрываем только при 429/503 (просят сбавить темп)
+                                            // или когда все адреса отказали и байт ещё нет.
+                                            if (status == 429 || status == 503
+                                                || (failedTargets.get() >= targets.length && received.get() == 0)) aborted.set(true);
+                                            else deadTargets.add(target);
                                         }
                                         InputStream stream = NetUtil.body(connection);
                                         if (stream != null) {
@@ -528,8 +544,18 @@ public class NetworkProbePlugin extends Plugin {
                                             synchronized (errors) {
                                                 errors.put("HTTP " + status + (retryAfter == null ? "" : " Retry-After " + retryAfter));
                                             }
-                                            aborted.set(true);
-                                            break;
+                                            // 403/410 у готового videoplayback — обычное дело: ссылка из
+                                            // HTML живёт минуты и привязана к клиенту. Это отказ одного
+                                            // адреса, а не всей фазы: другие соединения и адреса могут
+                                            // отдать байты. Останавливаемся только на 429/503 либо когда
+                                            // все адреса отказали и данных нет вовсе.
+                                            deadTargets.add(target);
+                                            int refused = failedTargets.incrementAndGet();
+                                            if (status == 429 || status == 503
+                                                || (refused >= targets.length && received.get() == 0)) aborted.set(true);
+                                            // Следующая попытка этого соединения возьмёт другой
+                                            // живой адрес: break убивал бы работника целиком.
+                                            continue;
                                         }
                                         InputStream stream = connection.getInputStream();
                                         byte[] buffer = new byte[65536];
@@ -546,8 +572,10 @@ public class NetworkProbePlugin extends Plugin {
                                     }
                                 } catch (Exception error) {
                                     synchronized (errors) { errors.put(NetUtil.describeError(error)); }
-                                    // Одна оборванная связь не отменяет фазу: остальные
-                                    // соединения продолжают замер, ошибка попадёт в отчёт.
+                                    // Оборванная связь — тоже отказ конкретного адреса: уводим
+                                    // соединение на другой, а не в тот же самый. Иначе на одном
+                                    // мёртвом хосте замер крутится до конца бюджета без байтов.
+                                    deadTargets.add(target);
                                     if (completedRequests.get() == 0 && received.get() == 0) {
                                         try { Thread.sleep(200); } catch (InterruptedException ignored) { break; }
                                     }
@@ -558,7 +586,7 @@ public class NetworkProbePlugin extends Plugin {
                     workers[index].start();
                 }
                 for (Thread worker : workers) {
-                    try { worker.join(durationMs + timeout + 2000L); } catch (InterruptedException ignored) { }
+                    try { worker.join(durationMs + readTimeout + 2000L); } catch (InterruptedException ignored) { }
                 }
                 aborted.set(true);
                 try { sampler.join(500); } catch (InterruptedException ignored) { }
@@ -577,5 +605,19 @@ public class NetworkProbePlugin extends Plugin {
                 call.resolve(ret);
             }
         }).start();
+    }
+
+    /**
+     * Следующий живой адрес для соединения.
+     *
+     * Без этого каждое соединение до конца фазы било в один и тот же адрес:
+     * первый же 403 у videoplayback оставлял замер без байтов, хотя рядом были
+     * рабочие адреса. Отказавшие адреса пропускаем, пока хоть один жив.
+     */
+    private static String pickTarget(String[] targets, java.util.Set<String> dead) {
+        for (String target : targets) {
+            if (!dead.contains(target)) return target;
+        }
+        return targets[0];
     }
 }

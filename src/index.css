@@ -97,7 +97,7 @@ html.light {
   --line-strong: rgba(38, 56, 47, 0.2);
   --text: #25352d;
   --text-dim: #4b5f54;
-  --text-muted: #74877c;
+  --text-muted: #5a7064;
   --accent: 17 109 81;
   --accent-2: 45 148 108;
   --accent-soft: rgba(17, 109, 81, 0.1);
@@ -134,6 +134,13 @@ html.light {
    ========================================================================== */
 body {
   background-color: var(--bg);
+  color: var(--text);
+}
+
+/* Подсветка выделения текста тоже из темы: синяя на зелёном фоне выглядела
+   чужой, а на светлой теме ещё и не читалась. */
+::selection {
+  background: rgb(var(--accent) / 0.28);
   color: var(--text);
 }
 

@@ -44,7 +44,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
   const [settings] = useSettings();
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<'all' | SiteCategory>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'blocked' | 'disabled'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'blocked' | 'stale' | 'disabled'>('all');
   const [roleFilter, setRoleFilter] = useState<'all' | 'whitelist' | 'neutral' | 'rkn'>('all');
   const [pingingIds, setPingIds] = useState<Set<number>>(new Set());
   const [checkingAll, setCheckingAll] = useState(false);
@@ -287,7 +287,11 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
         if (roleFilter !== 'all' && roleOf(s) !== roleFilter) return false;
         if (catFilter !== 'all' && s.category !== catFilter) return false;
         if (statusFilter === 'ok' && s.last_status !== 'ok' && s.last_status !== 'slow') return false;
-        if (statusFilter === 'blocked' && s.last_status !== 'blocked') return false;
+        // «Молчат» — только свежие отказы. Старый результат ничего не говорит о
+        // текущем маршруте, поэтому он попадает в отдельный фильтр, а не в «нет
+        // ответа»: иначе после смены VPN список выглядел доказанно заблокированным.
+        if (statusFilter === 'blocked' && (s.last_status !== 'blocked' || siteResultIsStale(s, now))) return false;
+        if (statusFilter === 'stale' && !siteResultIsStale(s, now)) return false;
         if (statusFilter === 'disabled' && Boolean(s.enabled)) return false;
         if (search.trim()) {
           const q = search.trim().toLowerCase();
@@ -299,7 +303,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
         }
         return true;
       }),
-    [sites, roleFilter, catFilter, statusFilter, search]
+    [sites, roleFilter, catFilter, statusFilter, search, now]
   );
 
   const enabledCount = sites.filter((s) => Boolean(s.enabled)).length;
@@ -403,6 +407,12 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
             onClick={() => setStatusFilter(statusFilter === 'blocked' ? 'all' : 'blocked')}
           >
             Молчат
+          </Chip>
+          <Chip
+            active={statusFilter === 'stale'}
+            onClick={() => setStatusFilter(statusFilter === 'stale' ? 'all' : 'stale')}
+          >
+            Без свежих данных
           </Chip>
           <Chip
             active={statusFilter === 'disabled'}

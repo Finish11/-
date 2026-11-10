@@ -396,3 +396,57 @@ test('нигде текст не сжат в столбик', async ({ page }) =
   if (problems.length) console.log(problems.join('\n'));
   expect(problems).toEqual([]);
 });
+
+test('светлая тема: текст не остаётся белым на белом', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'проверяем цвета один раз');
+  test.setTimeout(90_000);
+  await page.addInitScript(() => localStorage.setItem('pulsenet_settings_v1', JSON.stringify({ theme: 'light' })));
+  await page.goto('/');
+  const contrast = async (selector: string) => page.evaluate((sel) => {
+    const node = document.querySelector(sel);
+    if (!node) return null;
+    const parse = (value: string) => {
+      const nums = value.match(/[\d.]+/g)?.map(Number) ?? [];
+      return nums.length >= 3 ? nums.slice(0, 3) : null;
+    };
+    const lum = (rgb: number[]) => {
+      const [r, g, b] = rgb.map((channel) => {
+        const c = channel / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    // Полупрозрачный фон — не фон: идём вверх до первого непрозрачного слоя,
+    // иначе прозрачный body давал ложный «чёрный» и любой текст считался тёмным.
+    const alphaOf = (value: string) => {
+      const parts = value.match(/[\d.]+/g)?.map(Number) ?? [];
+      return parts.length >= 4 ? parts[3] : parts.length === 3 ? 1 : 0;
+    };
+    const fg = parse(getComputedStyle(node).color);
+    let back: number[] | null = null;
+    let parent: Element | null = node;
+    while (parent) {
+      const value = getComputedStyle(parent).backgroundColor;
+      if (alphaOf(value) > 0.9 && parse(value)) { back = parse(value); break; }
+      parent = parent.parentElement;
+    }
+    const resolvedBackground = back ?? [246, 248, 246];
+    if (!fg) return null;
+    const a = lum(fg), b = lum(resolvedBackground);
+    return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+  }, selector);
+
+  // Заголовок страницы раньше наследовал белый цвет из index.html и пропадал.
+  await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
+  const heading = await contrast('h1');
+  expect(heading, 'заголовок должен читаться на светлой теме').toBeGreaterThan(4.5);
+  const muted = await contrast('.text-muted');
+  expect(muted, 'приглушённый текст тоже').toBeGreaterThan(4.5);
+
+  // И на тёмной теме те же элементы не должны потемнеть.
+  await page.evaluate(() => localStorage.setItem('pulsenet_settings_v1', JSON.stringify({ theme: 'dark' })));
+  await page.reload();
+  await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
+  const darkHeading = await contrast('h1');
+  expect(darkHeading, 'на тёмной теме заголовок светлый').toBeGreaterThan(4.5);
+});

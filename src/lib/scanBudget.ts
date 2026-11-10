@@ -39,8 +39,10 @@ export interface ScanBudget {
 }
 
 export const SCAN_BUDGETS: Record<ScanSpeed, ScanBudget> = {
-  // Все сайты сразу, один запрос на сайт: длительность = самый долгий ответ.
-  fast: { perSiteMs: 3000, totalMs: 20000, concurrency: 64, retry: false, tcpFallback: false, controlMs: 2500,
+  // Один запрос на сайт, но не «все сразу»: 64 одновременные пробы на мобильном
+  // канале захлёбывали его, и живые сайты получали «нет ответа», хотя одиночный
+  // пинг тут же отвечал. 32 пробы — три волны, всё ещё секунды, но честнее.
+  fast: { perSiteMs: 3000, totalMs: 22000, concurrency: 32, retry: false, tcpFallback: false, controlMs: 2500,
     secondPass: true, secondPassPerSiteMs: 6000 },
   balanced: { perSiteMs: 5000, totalMs: 35000, concurrency: 24, retry: true, tcpFallback: true, controlMs: 3500,
     secondPass: true, secondPassPerSiteMs: 8000 },

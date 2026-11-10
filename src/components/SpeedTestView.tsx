@@ -13,7 +13,7 @@ import { availableSpeedServers, type SpeedServer } from '../lib/speedEndpoints';
 import {
   bufferbloatVerdict, compareConfigs, formatBytes, guessSpeedCap, networkKindLabel, speedGaugeFraction, speedNetworkLabel, speedRouteLabel,
   recordedSpeedRoute, speedTraceGeometry, speedUsageVerdict, subscriptionSpeedRows, systemSpeedRoute,
-  gaugeTickMarks, gaugeAutoCeiling, gaugeExceedsCeiling, speedUnitLabel, formatSpeedIn, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
+  gaugeTickMarks, gaugeAutoCeiling, gaugeExceedsCeiling, speedUnitLabel, formatSpeedIn, formatGaugeTick, speedCeilingLabel, type GaugeCeiling, type SpeedDisplayUnit, type SpeedRun, type SpeedTracePoint,
 } from '../lib/speedTest';
 import type { ClientConnectionInfo, VpnProfile, VpnSubscription } from '../types';
 import { Button, Chip, EmptyState, Notice, SectionTitle } from './ui/kit';
@@ -32,23 +32,29 @@ const PHASE_LABEL: Record<SpeedProgress['phase'], string> = {
 };
 
 /**
- * Спидометр как в Speedtest: дуга, стрелка, шкала с выбранным потолком и
- * единицы (Мбит/с или МБ/с). В центре до запуска — кнопка «Замерить», чтобы
- * не приходилось прокручивать экран вниз ради старта.
+ * Спидометр.
+ *
+ * Прежняя версия ставила цифры делений внутрь дуги и вела стрелку от центра к
+ * ним: на 360 px подписи наезжали друг на друга, а стрелка проходила прямо через
+ * надпись «Мбит/с». Здесь тяжёлое кольцо, крупная цифра в центре и всего две
+ * подписи на концах — крайние значения шкалы; вместо стрелки по дуге бежит
+ * светящаяся точка, перекрывать в центре нечего.
  */
 const SpeedGauge: React.FC<{
-  mbps: number; scaleMbps: number; running: boolean; phase: string; progress: number; direction?: string;
+  mbps: number; scaleMbps: number; running: boolean; phase: string; direction?: string;
   unit: SpeedDisplayUnit; ceiling: GaugeCeiling; idle: boolean; onStart: () => void;
-}> = ({ mbps, scaleMbps, running, phase, progress, direction, unit, ceiling, idle, onStart }) => {
-  // В режиме «без предела» масштаб берётся по пику замера: скорость дрогнула —
-  // шкала не перескакивает назад, иначе цифры под стрелкой жили бы своей жизнью.
+  /** Итог замера: до запуска показывает «—», после — зафиксированную цифру. */
+  resultMbps?: number | null; error?: string;
+}> = ({ mbps, scaleMbps, running, phase, direction, unit, ceiling, idle, onStart, resultMbps, error }) => {
+  // Масштаб не «дрожит»: в режиме «без предела» он берётся по пику замера.
   const scale = ceiling === 'auto' ? gaugeAutoCeiling(scaleMbps) : ceiling;
   const fraction = speedGaugeFraction(mbps, scale);
-  const startAngle = -210;
-  const sweep = 240;
-  const angle = startAngle + sweep * fraction;
-  const radius = 108;
-  const center = 130;
+  // Дуга как у Speedtest: почти полный круг снизу, разрыв — под подписи.
+  const startAngle = -212;
+  const sweep = 244;
+  const radius = 90;
+  const thickness = 16;
+  const center = 120;
   const polar = (deg: number, r: number) => {
     const rad = (deg * Math.PI) / 180;
     return { x: center + r * Math.cos(rad), y: center + r * Math.sin(rad) };
@@ -58,78 +64,105 @@ const SpeedGauge: React.FC<{
     const b = polar(to, r);
     return `M ${a.x} ${a.y} A ${r} ${r} 0 ${Math.abs(to - from) > 180 ? 1 : 0} 1 ${b.x} ${b.y}`;
   };
-  const needleFrom = polar(angle, radius - 34);
-  const needleTo = polar(angle, radius - 18);
-  const ticks = gaugeTickMarks(scale);
+  const angle = startAngle + sweep * fraction;
+  const dot = polar(angle, radius);
+  const marks = gaugeTickMarks(scale);
+  const first = marks[0];
+  const last = marks[marks.length - 1];
+  const shown = idle ? null : mbps;
+  const hasError = Boolean(error);
+  const labelFirst = polar(startAngle, radius + 22);
+  const labelLast = polar(startAngle + sweep, radius + 22);
   return (
-    <div className="relative mx-auto w-full" style={{ maxWidth: 260 }}>
-      <svg viewBox="0 0 260 226" className="w-full block" role="img" aria-label={`Скорость ${formatSpeedIn(mbps, unit)} ${speedUnitLabel(unit)}`}>
-        <path d={arc(startAngle, startAngle + sweep, radius)} fill="none" stroke="var(--surface-2)" strokeWidth="12" strokeLinecap="round" />
-        {/* Заполнение дуги едет вместе со стрелкой: раньше путь пересчитывался
-            каждый сэмпл и дуга скакала, пока стрелка шла плавно. Длина дуги
-            нормирована (pathLength=1), поэтому анимируется одно число. */}
-        {!idle && (
+    <div className="relative mx-auto w-full" style={{ maxWidth: 272 }}>
+      <svg viewBox="6 22 228 172" className="w-full block" role="img"
+        aria-label={idle ? 'Спидометр скорости, замер не начат'
+          : `Скорость ${formatSpeedIn(mbps, unit)} ${speedUnitLabel(unit)}${hasError ? `, ошибка: ${error}` : ''}`}>
+        <defs>
+          <linearGradient id="gauge-fill" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stopColor="rgb(var(--accent))" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="rgb(var(--accent))" />
+          </linearGradient>
+        </defs>
+        <path d={arc(startAngle, startAngle + sweep, radius)} fill="none" stroke="var(--surface-2)" strokeWidth={thickness} strokeLinecap="round" />
+        {!idle && !hasError && (
           <path
             d={arc(startAngle, startAngle + sweep, radius)}
-            fill="none" stroke="rgb(var(--accent))" strokeWidth="12" strokeLinecap="round"
+            fill="none" stroke="url(#gauge-fill)" strokeWidth={thickness} strokeLinecap="round"
             pathLength={1} strokeDasharray="1 1"
-            strokeDashoffset={1 - Math.max(0.006, fraction)}
+            strokeDashoffset={1 - Math.max(0.004, fraction)}
             className="gauge-arc"
           />
         )}
-        {/* Стрелка — короткий указатель в кольце шкалы: через цифры в центре
-            она больше не проходит и ничего не перекрывает. */}
+        {/* Только крайние значения: три-четыре подписи на 360 px не читались. */}
+        <text x={labelFirst.x} y={labelFirst.y} textAnchor="middle" dominantBaseline="middle"
+          fontSize="10.5" fill="var(--text-muted)" className="tabular-nums">{formatGaugeTick(first.value, unit)}</text>
+        <text x={labelLast.x} y={labelLast.y} textAnchor="middle" dominantBaseline="middle"
+          fontSize="10.5" fill="var(--text-muted)" className="tabular-nums">{formatGaugeTick(last.value, unit)}</text>
+        {/* Бегущая точка вместо стрелки. */}
         {!idle && (
-          <line
-            x1={needleFrom.x} y1={needleFrom.y} x2={needleTo.x} y2={needleTo.y}
-            stroke={running ? 'rgb(var(--accent))' : 'var(--text-muted)'} strokeWidth="4" strokeLinecap="round"
-            className="gauge-needle"
-          />
+          <>
+            <circle cx={dot.x} cy={dot.y} r={thickness / 2 + 6} fill={hasError ? 'rgb(var(--danger))' : 'rgb(var(--accent))'} opacity="0.18" className="gauge-needle" />
+            <circle cx={dot.x} cy={dot.y} r={thickness / 2 - 1} fill={hasError ? 'rgb(var(--danger))' : 'rgb(var(--accent))'} className="gauge-needle" />
+          </>
         )}
-        {ticks.map(({ value: tick, fraction: tickFraction }) => {
-          const tickAngle = startAngle + sweep * tickFraction;
-          const outer = polar(tickAngle, radius - 11);
-          const inner = polar(tickAngle, radius - 19);
-          const label = polar(tickAngle, radius - 45);
-          return (
-            <g key={tick}>
-              <line x1={outer.x} y1={outer.y} x2={inner.x} y2={inner.y} stroke="var(--line)" strokeWidth="2" />
-              <text x={label.x} y={label.y} textAnchor="middle" dominantBaseline="middle" fontSize="10" fill="var(--text-muted)">
-                {unit === 'MBps' ? Math.round((tick / 8) * 10) / 10 : tick}
-              </text>
-            </g>
-          );
-        })}
       </svg>
-      {/* Центр шкалы: кнопка старта или текущее значение — никогда одновременно. */}
-      <div className="absolute inset-x-0 mx-auto flex flex-col items-center justify-center" style={{ top: '34%', bottom: '20%', maxWidth: 128 }}>
+
+      {/* Центр: до старта — кнопка, после — цифра и подпись. */}
+      <div className="absolute inset-x-0 mx-auto flex flex-col items-center justify-center px-9"
+        style={{ top: '18%', bottom: '22%' }}>
         {idle ? (
           <button
             type="button"
             onClick={onStart}
-            className="grid place-items-center rounded-full text-[12.5px] font-extrabold uppercase tap"
+            className="grid place-items-center rounded-full text-[13px] font-extrabold uppercase tap"
             style={{ width: 100, height: 100, letterSpacing: '0.02em', border: '2px solid rgb(var(--accent))', color: 'rgb(var(--accent))', background: 'var(--surface)' }}
           >
             Замерить
           </button>
         ) : (
-          <>
-            <div className="text-[32px] font-black leading-none tabular-nums" style={{ color: 'var(--text)' }}>{formatSpeedIn(mbps, unit)}</div>
-            <div className="mt-1 text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
-              {direction === 'upload' ? '↑ ' : direction === 'download' ? '↓ ' : ''}{speedUnitLabel(unit)}
-            </div>
-            <div className="mt-1 w-full truncate text-center text-[11.5px] font-semibold" style={{ color: 'rgb(var(--accent))' }}>{phase}</div>
-          </>
+          hasError ? (
+            // Провал замера — не «0 Мбит/с»: ноль означал бы измеренную нулевую
+            // скорость, а здесь скорость просто не измерена.
+            <>
+              <div className="text-[15px] font-extrabold leading-tight text-center" style={{ color: 'rgb(var(--danger))' }}>
+                Замер не состоялся
+              </div>
+              <div className="mt-1 max-w-full text-center text-[10.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                скорость не измерена
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-baseline justify-center gap-1.5 tabular-nums">
+                <span className="font-black leading-none" style={{ fontSize: 46, letterSpacing: '-0.035em', color: 'var(--text)' }}>
+                  {shown == null ? '—' : formatSpeedIn(shown, unit)}
+                </span>
+              </div>
+              <div className="mt-1 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                {speedUnitLabel(unit)}
+              </div>
+              <div className="mt-2 max-w-full truncate text-center text-[11px] font-semibold"
+                style={{ color: 'rgb(var(--accent))' }} title={phase}>
+                {phase}
+              </div>
+              {running && direction && (
+                <div className="mt-0.5 text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                  {direction === 'upload' ? '↑ отдача' : '↓ загрузка'}
+                </div>
+              )}
+              {!running && resultMbps != null && (
+                <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  итог замера
+                </div>
+              )}
+            </>
+          )
         )}
       </div>
       {!idle && gaugeExceedsCeiling(mbps, scale) && (
         <div className="text-center text-[10px] font-semibold" style={{ color: 'rgb(var(--warning))' }}>
           выше предела шкалы — точное число в карточках ниже
-        </div>
-      )}
-      {running && (
-        <div className="mx-6 mt-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.round(progress * 100)}%`, background: 'rgb(var(--accent))' }} />
         </div>
       )}
     </div>
@@ -182,6 +215,8 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   const lite = settings.speedLite;
   const setLite = (value: boolean) => setSettings({ speedLite: value });
   const [tuneOpen, setTuneOpen] = useState(false);
+  /** Хоть один замер уже запускали: до этого спидометр показывает кнопку старта. */
+  const [started, setStarted] = useState(false);
   // Пик замера держит масштаб шкалы, чтобы она не прыгала на каждом сэмпле.
   const [peakMbps, setPeakMbps] = useState(0);
   const [trace, setTrace] = useState<SpeedTracePoint[]>([]);
@@ -290,6 +325,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
 
   const start = async () => {
     if (running) return;
+    setStarted(true);
     setRunning(true);
     setResult(null);
     setTrace([]);
@@ -366,6 +402,8 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
   };
 
   const liveMbps = running ? progress.mbps : result?.download.mbps ?? 0;
+  /** Показывать цифры замера: только когда он действительно состоялся. */
+  const showResults = Boolean(result?.ok);
   const scaleMbps = Math.max(peakMbps, liveMbps);
 
   return (
@@ -376,38 +414,57 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
 
       <div className="rounded-3xl border p-3 sm:p-4" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
         <SpeedGauge
-          mbps={liveMbps} scaleMbps={scaleMbps} running={running} progress={progress.progress} direction={progress.phase}
+          mbps={liveMbps} scaleMbps={scaleMbps} running={running} direction={progress.phase}
           phase={running || result ? PHASE_LABEL[progress.phase] : ''} unit={unit} ceiling={ceiling}
-          idle={!running && !result} onStart={() => void start()}
+          idle={!running && !started} onStart={() => void start()}
+          resultMbps={result?.ok ? result.download.mbps : null}
+          error={!running && result && !result.ok ? (result.error || 'нет сервера замера') : ''}
         />
 
-        {/* Кнопка сразу под шкалой: стартовать и остановить можно не прокручивая. */}
-        <div className="mt-2">
+        {/* Кнопка сразу под шкалой: стартовать и остановить можно не прокручивая.
+            Подписи разные — раньше «Замерить снова» и «Замерить YouTube» путались
+            и в интерфейсе, и в автотестах. */}
+        <div className="mt-3 space-y-1.5">
           {running ? (
             <Button variant="outline" block icon={<Square className="w-4 h-4" />} onClick={() => abortRef.current?.abort()}>
               Остановить
             </Button>
           ) : result ? (
-            <Button variant="primary" block icon={<Play className="w-4 h-4" />} onClick={() => void start()}>
-              Замерить снова
-            </Button>
+            <div className="flex gap-1.5">
+              <Button variant="primary" className="flex-1" icon={<Play className="w-4 h-4" />} onClick={() => void start()}>
+                Повторить
+              </Button>
+              <Button variant="outline" className="flex-1" icon={<SlidersHorizontal className="w-4 h-4" />} onClick={() => setTuneOpen((value) => !value)}>
+                Настройки
+              </Button>
+            </div>
           ) : null}
         </div>
 
         <div className="mt-2 text-center text-[10.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-          {running ? progress.message : `Трафик замера: до ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).download / 1024 / 1024)} МБ вниз и ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).upload / 1024 / 1024)} МБ вверх`}
+          {running ? progress.message
+            : result && !result.ok
+              ? 'Проверьте соединение или выберите точку замера вручную — повтор бесплатен'
+              : `Трафик замера: до ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).download / 1024 / 1024)} МБ вниз и ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).upload / 1024 / 1024)} МБ вверх`}
         </div>
 
         <SpeedTrace points={trace} unit={unit} />
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <MetricCard icon={<ArrowDown className="w-3.5 h-3.5" />} label="Загрузка" value={formatSpeedIn(result?.download.mbps, unit)} unit={speedUnitLabel(unit)}
-            hint={result ? formatBytes(result.download.bytes) : undefined} />
-          <MetricCard icon={<ArrowUp className="w-3.5 h-3.5" />} label="Отдача" value={formatSpeedIn(result?.upload.mbps, unit)} unit={speedUnitLabel(unit)}
-            hint={result ? formatBytes(result.upload.bytes) : undefined} />
-          <MetricCard icon={<Activity className="w-3.5 h-3.5" />} label="Задержка" value={result?.pingMs != null ? String(Math.round(result.pingMs)) : '—'} unit="мс"
-            hint={result ? (result.loadedPingMs != null ? `под нагрузкой ${Math.round(result.loadedPingMs)} мс` : 'под нагрузкой не измерена') : undefined} />
-          <MetricCard icon={<Waves className="w-3.5 h-3.5" />} label="Джиттер" value={result?.jitterMs != null ? String(Math.round(result.jitterMs)) : '—'} unit="мс" />
+          {/* Провал замера не показываем как «0 Мбит/с»: ноль — это измеренная
+              нулевая скорость, а не отсутствие замера. */}
+          <MetricCard icon={<ArrowDown className="w-3.5 h-3.5" />} label="Загрузка"
+            value={showResults ? formatSpeedIn(result!.download.mbps, unit) : '—'} unit={speedUnitLabel(unit)}
+            hint={showResults ? formatBytes(result!.download.bytes) : undefined} />
+          <MetricCard icon={<ArrowUp className="w-3.5 h-3.5" />} label="Отдача"
+            value={showResults ? formatSpeedIn(result!.upload.mbps, unit) : '—'} unit={speedUnitLabel(unit)}
+            hint={showResults ? formatBytes(result!.upload.bytes) : undefined} />
+          <MetricCard icon={<Activity className="w-3.5 h-3.5" />} label="Задержка"
+            value={showResults && result!.pingMs != null ? String(Math.round(result!.pingMs)) : '—'} unit="мс"
+            hint={showResults ? (result!.loadedPingMs != null ? `под нагрузкой ${Math.round(result!.loadedPingMs)} мс` : 'нагрузка не измерена') : undefined} />
+          <MetricCard icon={<Waves className="w-3.5 h-3.5" />} label="Джиттер"
+            value={showResults && result!.jitterMs != null ? String(Math.round(result!.jitterMs)) : '—'} unit="мс"
+            hint={showResults ? 'разброс задержки' : undefined} />
         </div>
 
         {/* Настройки замера — как в оригинале: единицы, потолок шкалы, расход. */}
@@ -416,12 +473,12 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           onClick={() => setTuneOpen((value) => !value)}
           aria-expanded={tuneOpen}
           aria-controls="speed-tune-panel"
-          className="mt-3 flex w-full items-center justify-between rounded-xl border px-3 py-2 text-[11.5px] font-semibold tap"
+          className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11.5px] font-semibold tap"
           style={{ borderColor: 'var(--line)', color: 'var(--text-muted)' }}
         >
           <span className="inline-flex items-center gap-1.5"><SlidersHorizontal className="w-3.5 h-3.5" /> Настройки замера</span>
-          <span className="text-[10.5px]">
-            {speedUnitLabel(unit)} · шкала {ceiling === 'auto' ? 'без предела' : unit === 'MBps' ? Math.round((ceiling / 8) * 10) / 10 : ceiling}
+          <span className="min-w-0 truncate text-right text-[10.5px]">
+            {speedUnitLabel(unit)} · шкала {ceiling === 'auto' ? 'без предела' : `${speedCeilingLabel(ceiling, unit)} ${speedUnitLabel(unit)}`}
             {lite ? ' · экономный' : ''}
           </span>
         </button>
@@ -440,7 +497,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {(['auto', 100, 250, 500, 1000] as const).map((value) => (
                   <Chip key={String(value)} active={ceiling === value} onClick={() => setSettings({ gaugeMax: value })}>
-                    {value === 'auto' ? 'Без предела' : unit === 'MBps' ? Math.round((value / 8) * 10) / 10 : value}
+                    {value === 'auto' ? 'Без предела' : speedCeilingLabel(value, unit)}
                   </Chip>
                 ))}
               </div>

@@ -155,6 +155,10 @@ export interface RouteChange {
 /**
  * Смена выходного IP при том же VPN-клиенте. Android не раскрывает чужой конфиг,
  * поэтому это единственный честный признак, что человек переключил узел.
+ *
+ * Выключение VPN — не «смена узла»: это возврат на прямой маршрут. Раньше такой
+ * случай попадал в тот же детектор, и человек, выключив VPN, видел устрашающее
+ * «выход сменился» вместо честного «снова напрямую».
  */
 export function detectExitChange(
   before: { ip?: string; vpnPackage?: string } | null | undefined,
@@ -163,7 +167,50 @@ export function detectExitChange(
   const from = cleanIp(before?.ip);
   const to = cleanIp(after?.ip);
   if (!from || !to || from === to) return null;
-  return { fromIp: from, toIp: to, sameClient: (before?.vpnPackage || '') === (after?.vpnPackage || '') };
+  const beforeClient = (before?.vpnPackage || '').trim();
+  const afterClient = (after?.vpnPackage || '').trim();
+  // Клиент исчез или появился: маршрут сменился целиком, это не переключение
+  // узла внутри одного клиента. Такое состояние показываем отдельно.
+  if (!beforeClient !== !afterClient) return null;
+  return { fromIp: from, toIp: to, sameClient: beforeClient === afterClient };
+}
+
+export type RouteTransition = 'node_switched' | 'vpn_off' | 'vpn_on' | 'network_switched' | null;
+
+/**
+ * Что именно произошло с маршрутом. Нужен, чтобы не показывать один и тот же
+ * текст на три разных события: смену узла, выключение VPN и смену сети.
+ */
+export function routeTransition(
+  before: { ip?: string; vpnPackage?: string } | null | undefined,
+  after: { ip?: string; vpnPackage?: string } | null | undefined
+): RouteTransition {
+  const from = cleanIp(before?.ip);
+  const to = cleanIp(after?.ip);
+  if (!from || !to || from === to) return null;
+  const hadVpn = Boolean((before?.vpnPackage || '').trim());
+  const hasVpn = Boolean((after?.vpnPackage || '').trim());
+  if (hadVpn && !hasVpn) return 'vpn_off';
+  if (!hadVpn && hasVpn) return 'vpn_on';
+  return hadVpn ? 'node_switched' : 'network_switched';
+}
+
+/**
+ * Узел, который хранится в настройках маршрута, больше не отражает реальность.
+ *
+ * Пользователь выключил VPN, а приложение продолжало считать выбранным узел
+ * «NLAMS Основной» — и отзыв, оставленный на прямом подключении, не находился.
+ * Возврат на прямой маршрут обязан происходить сам.
+ */
+export function routeSelectionMismatch(
+  selectedProfileId: number | null,
+  facts: { vpnPackage?: string; systemVpn: boolean; nativeApp: boolean },
+): boolean {
+  if (selectedProfileId == null) return false;
+  // В браузере VPN системы не видно: выбор пользователя не перепроверяем.
+  if (!facts.nativeApp) return false;
+  // VPN-клиент включён — узел остаётся выбором человека, даже если IP сменился.
+  return !facts.systemVpn;
 }
 
 /** Отпечаток маршрута: клиент + выходной IP. По нему запоминаем выбранный узел. */

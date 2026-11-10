@@ -13,9 +13,12 @@ const site = (id: number): Site => ({
 
 test('быстрый режим укладывается в секунды, а не в минуты', () => {
   const fast = SCAN_BUDGETS.fast;
-  assert.ok(fast.concurrency >= 48, 'сайты должны уходить одним залпом');
+  // Залп не «все 75 сразу»: 64 пробы на мобильном канале душили друг друга, и
+  // живые сайты получали «нет ответа». 32 — всё ещё секунды, но без захлёба.
+  assert.ok(fast.concurrency >= 24 && fast.concurrency < 64, `параллельных проб: ${fast.concurrency}`);
+  assert.ok(fast.concurrency * 3 >= 75, 'все сайты успевают за три волны');
   assert.equal(fast.retry, false, 'повторы — главная причина пятиминутного ожидания');
-  assert.ok(worstCaseSeconds(fast, 75) <= 20, `оценка ${worstCaseSeconds(fast, 75)} с`);
+  assert.ok(worstCaseSeconds(fast, 75) <= 22, `оценка ${worstCaseSeconds(fast, 75)} с`);
   // Прежде худший путь был 28 с на сайт при 8 параллельных — почти пять минут.
   const oldWorst = Math.ceil(75 / 8) * 28;
   assert.ok(oldWorst > 250 && worstCaseSeconds(fast, 75) * 10 < oldWorst);
@@ -99,7 +102,10 @@ test('75 сайтов одним залпом: время задаёт общи�
     { ...SCAN_BUDGETS.fast, totalMs: 1200, perSiteMs: 600, controlMs: 200 });
   // Раньше ожидание складывалось: волны × таймауты. Теперь — общий предел.
   assert.ok(outcome.elapsedMs < 2200, `проверка тянулась ${outcome.elapsedMs} мс`);
-  assert.ok(started >= 48, `залп должен уйти сразу, ушло ${started}`);
+  // Волн несколько, но параллельность высокая: стартовало заметно больше одной
+  // волны, и всё равно укладывается в общий предел (иначе тест ловил бы «все
+  // сразу» и закреплял именно ту перегрузку канала, из-за которой сайты лгали).
+  assert.ok(started >= 24, `залп должен уйти сразу, ушло ${started}`);
   assert.equal(outcome.results.length + outcome.incomplete, sites.length);
   assert.ok(outcome.incomplete > 0, 'зависшие сайты честно остались непроверенными');
   // Молчание — это измеренный таймаут с пустой задержкой, а не выдуманная причина.

@@ -42,11 +42,11 @@ export interface AppSettings {
 export type AccentTheme = 'sky' | 'violet' | 'emerald' | 'amber' | 'rose';
 
 export const ACCENTS: Array<{ id: AccentTheme; name: string; swatch: string }> = [
-  { id: 'sky', name: 'Небо', swatch: '#38bdf8' },
-  { id: 'violet', name: 'Индиго', swatch: '#a78bfa' },
-  { id: 'emerald', name: 'Изумруд', swatch: '#34d399' },
-  { id: 'amber', name: 'Янтарь', swatch: '#fbbf24' },
-  { id: 'rose', name: 'Роза', swatch: '#fb7185' },
+  { id: 'sky', name: 'Мята', swatch: '#52c798' },
+  { id: 'violet', name: 'Индиго', swatch: '#9e89e8' },
+  { id: 'emerald', name: 'Изумруд', swatch: '#52c798' },
+  { id: 'amber', name: 'Янтарь', swatch: '#e2b04a' },
+  { id: 'rose', name: 'Роза', swatch: '#e2848c' },
 ];
 
 /** Красит интерфейс в выбранный акцент (см. переменные в index.css). */

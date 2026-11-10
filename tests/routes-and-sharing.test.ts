@@ -5,6 +5,7 @@ import { mapLimit } from '../src/lib/nativeBridge.ts';
 import {
   confirmationAgeDays, confirmationAgeLabel, confirmationFreshness, confirmationWeight,
   findAppConfirmation, recommendConfirmedNodes, routeFingerprint, routeIdentity, suggestActiveNode, confirmationStatus, detectExitChange,
+  routeSelectionMismatch, routeTransition,
 } from '../src/lib/appConfirmations.ts';
 import { communityInviteLink, exportIncidentBundle, importIncidentBundle, readCommunityInvite } from '../src/lib/incidentShare.ts';
 import type { AppConfirmation, Incident, VpnProfile } from '../src/types.ts';
@@ -298,4 +299,29 @@ test('смена узла видна по выходному IP при том ж
   assert.equal(detectExitChange(before, { ip: '', vpnPackage: 'com.v2ray.ang' }), null);
   assert.equal(detectExitChange(null, before), null);
   assert.equal(detectExitChange(before, { ip: '—' }), null);
+});
+
+test('выключение VPN возвращает прямой маршрут, а не «выход сменился»', () => {
+  // Пользователь выключил VPN в клиенте: узел в настройках не должен остаться.
+  assert.equal(routeSelectionMismatch(7, { systemVpn: false, nativeApp: true }), true);
+  assert.equal(routeSelectionMismatch(7, { systemVpn: true, nativeApp: true }), false,
+    'VPN включён — узел остаётся выбором человека, даже если IP сменился');
+  assert.equal(routeSelectionMismatch(null, { systemVpn: false, nativeApp: true }), false);
+  // В браузере системный VPN не виден: чужой выбор не сбрасываем.
+  assert.equal(routeSelectionMismatch(7, { systemVpn: false, nativeApp: false }), false);
+
+  // Прямой маршрут не считается сменой узла: это другое событие.
+  assert.equal(routeTransition({ ip: '203.0.113.10', vpnPackage: 'com.v2ray.ang' },
+    { ip: '198.51.100.1', vpnPackage: '' }), 'vpn_off');
+  assert.equal(routeTransition({ ip: '203.0.113.10', vpnPackage: '' },
+    { ip: '198.51.100.1', vpnPackage: 'com.v2ray.ang' }), 'vpn_on');
+  assert.equal(routeTransition({ ip: '203.0.113.10', vpnPackage: 'com.v2ray.ang' },
+    { ip: '198.51.100.1', vpnPackage: 'com.v2ray.ang' }), 'node_switched');
+  // Другая сеть без VPN — это смена оператора, а не узла.
+  assert.equal(routeTransition({ ip: '203.0.113.10' }, { ip: '198.51.100.1' }), 'network_switched');
+  assert.equal(routeTransition({ ip: '203.0.113.10' }, { ip: '203.0.113.10' }), null);
+
+  // detectExitChange не выдаёт выключение VPN за переключение узла.
+  assert.equal(detectExitChange({ ip: '203.0.113.10', vpnPackage: 'com.v2ray.ang' },
+    { ip: '198.51.100.1', vpnPackage: '' }), null);
 });

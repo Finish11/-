@@ -42,3 +42,8 @@ Thumbs.db
 # временный деплой-конфиг Cloudflare
 community/.wrangler-deploy.toml
 .wrangler/
+
+# Исходники сайта-компаньона собираются отдельно (см. web/README-ARCHIVE.md)
+web/node_modules/
+web/dist/
+web/artifacts/

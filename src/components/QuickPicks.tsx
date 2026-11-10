@@ -5,7 +5,7 @@ import { apiFetch } from '../lib/api';
 import { detectNetworkContext, networkSnapshotKey, toClientConnection, verifyTunnelBypass } from '../lib/networkInfo';
 import { confirmationRouteStillValid, routeFingerprint, routeIdentity, suggestActiveNode, confirmationFreshness, confirmationAgeLabel } from '../lib/appConfirmations';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
-import { confirmationNodeKey, confirmationStatus, detectExitChange, findAppConfirmation, type ConfirmationMatch, type RouteChange } from '../lib/appConfirmations';
+import { confirmationNodeKey, confirmationStatus, detectExitChange, findAppConfirmation, routeSelectionMismatch, routeTransition, type ConfirmationMatch, type RouteChange, type RouteTransition } from '../lib/appConfirmations';
 import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
 import { Sheet } from './ui/Sheet';
 import { Button, Chip, EmptyState, Notice } from './ui/kit';
@@ -229,6 +229,8 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   const [exitChange, setExitChange] = useState<RouteChange | null>(null);
   const lastRouteRef = useRef<{ ip?: string; vpnPackage?: string } | null>(null);
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
+  /** Что произошло с маршрутом: смена узла, выключение VPN или смена сети. */
+  const [transition, setTransition] = useState<RouteTransition>(null);
 
   const byDomain = useMemo(() => {
     const map = new Map<string, Site>();
@@ -428,10 +430,38 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     const next = { ip: activeIp, vpnPackage: currentConnection?.vpn_package };
     const previous = lastRouteRef.current;
     lastRouteRef.current = next;
-    if (!previous || !activeIp) return;
+    if (!activeIp) return;
+
+    /**
+     * VPN выключили в клиенте — маршрут стал прямым, и выбранный ранее узел
+     * больше не описывает то, что происходит. Это не «смена узла»: человек
+     * вернулся в обычный интернет, и приложение обязано вернуть прямой маршрут
+     * само, а не требовать ручного выбора.
+     */
+    if (routeSelectionMismatch(confirmationProfileId, {
+      vpnPackage: next.vpnPackage, systemVpn, nativeApp: isNativeApp(),
+    })) {
+      setExitChange(null);
+      setRoutePickerOpen(false);
+      setTransition('vpn_off');
+      void onConfirmationRoute(null);
+      return;
+    }
+
+    if (!previous) return;
+    const event = routeTransition(previous, next);
+    if (event === 'vpn_off') {
+      // Трафик снова идёт напрямую: убираем узел, а не пугаем «выход сменился».
+      setExitChange(null);
+      setRoutePickerOpen(false);
+      setTransition('vpn_off');
+      if (confirmationProfileId != null) void onConfirmationRoute(null);
+      return;
+    }
     const change = detectExitChange(previous, next);
     if (!change) return;
     setExitChange(change);
+    setTransition(event === 'node_switched' ? 'node_switched' : event);
     setRoutePickerOpen(true);
     // Память «клиент + IP» могла уже знать этот выход — предложим готовый узел.
     const suggestionForExit = suggestActiveNode(profiles, {
@@ -441,7 +471,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       setSuggestion(suggestionForExit.reason);
       void onConfirmationRoute(suggestionForExit.profile.id);
     }
-  }, [activeIp, currentConnection?.vpn_package, profiles, confirmationProfileId, onConfirmationRoute]);
+  }, [activeIp, currentConnection?.vpn_package, systemVpn, profiles, confirmationProfileId, onConfirmationRoute]);
 
   const matchFor = (pick: QuickPick, profile = activeProfile) => findAppConfirmation(confirmations, pick.id, profile, activeIp);
   /** Сколько отзывов больше не описывают текущий маршрут. */
@@ -596,16 +626,20 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
         <div className="mb-2 rounded-2xl border p-3 space-y-2"
           style={{ borderColor: 'rgb(var(--warning) / 0.5)', background: 'rgb(var(--warning) / 0.07)' }}>
           <div className="text-[12px] font-bold" style={{ color: 'rgb(var(--warning))' }}>
-            {exitChange
-              ? exitChange.sameClient
-                ? 'Выходной IP сменился — похоже, в клиенте другой узел'
-                : 'Сменился маршрут: другой VPN-клиент или сеть'
-              : `Отзывов, которые пора перепроверить: ${needsRecheck}`}
+            {transition === 'vpn_off' || (isNativeApp() && !systemVpn && confirmationProfileId != null)
+              ? 'VPN выключен — вернули прямой маршрут'
+              : exitChange
+                ? exitChange.sameClient
+                  ? 'Выходной IP сменился — похоже, в клиенте другой узел'
+                  : transition === 'network_switched' ? 'Сменилась сеть: другой оператор или Wi-Fi' : 'Сменился маршрут: другой VPN-клиент'
+                : `Отзывов, которые пора перепроверить: ${needsRecheck}`}
           </div>
           <div className="text-[11px] leading-relaxed break-anywhere" style={{ color: 'var(--text-dim)' }}>
-            {exitChange
-              ? `Было ${exitChange.fromIp}, стало ${exitChange.toIp}. Android не раскрывает конфиг чужого клиента, поэтому узел нужно отметить здесь — иначе отзывы относятся к прошлой проверке.`
-              : 'Отзыв относится к другому выходу или устарел. Откройте карточку, запустите приложение и отметьте результат заново.'}
+            {transition === 'vpn_off' || (isNativeApp() && !systemVpn && confirmationProfileId != null)
+              ? 'Маршрут в настройках обновлён: отзывы снова относятся к прямому подключению, а не к прошлому узлу. Отдельно выбирать «прямой» не нужно.'
+              : exitChange
+                ? `Было ${exitChange.fromIp}, стало ${exitChange.toIp}. Android не раскрывает конфиг чужого клиента, поэтому узел нужно отметить здесь — иначе отзывы относятся к прошлой проверке.`
+                : 'Отзыв относится к другому выходу или устарел. Откройте карточку, запустите приложение и отметьте результат заново.'}
           </div>
           <label className="block text-[11px] font-semibold" style={{ color: 'var(--text-dim)' }}>
             Узел, который сейчас включён в VPN-клиенте
@@ -624,9 +658,17 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           </label>
           <div className="flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
             <span className="break-anywhere">{activeIp ? `Текущий выход ${activeIp}` : 'Выходной IP не определён'}{currentConnection?.vpn_app_name ? ` · клиент ${currentConnection.vpn_app_name}` : ''}</span>
-            {exitChange && (
-              <button type="button" onClick={() => { setExitChange(null); setRoutePickerOpen(false); }}
+            {confirmationProfileId != null && (
+              <button type="button" disabled={routeBusy}
+                onClick={() => { setExitChange(null); setRoutePickerOpen(false); setTransition(null); void onConfirmationRoute(null); }}
                 className="ml-auto shrink-0 rounded-full px-2.5 h-7 font-bold tap"
+                style={{ background: 'rgb(var(--accent) / 0.14)', color: 'rgb(var(--accent))' }}>
+                Я напрямую — сбросить узел
+              </button>
+            )}
+            {exitChange && (
+              <button type="button" onClick={() => { setExitChange(null); setRoutePickerOpen(false); setTransition(null); }}
+                className="shrink-0 rounded-full px-2.5 h-7 font-bold tap"
                 style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}>
                 Узел верный, скрыть
               </button>

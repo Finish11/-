@@ -144,12 +144,35 @@ export const SPEED_BYTE_BUDGET = { download: 120 * 1024 * 1024, upload: 40 * 102
 
 export function formatSpeed(mbps: number | null | undefined): string {
   if (mbps == null || !Number.isFinite(mbps)) return '—';
+  // Хвост «,0» и «,00» у целых значений выглядел как недоделанная цифра:
+  // 80,0 рядом с 47,3 читается как другая точность, хотя это один канал.
   if (mbps >= 100) return `${Math.round(mbps)}`;
-  if (mbps >= 10) return mbps.toFixed(1).replace('.', ',');
+  if (mbps >= 10) return trimZeros(mbps.toFixed(1));
   // Ненулевой замер не должен выглядеть нулём: в МБ/с медленный канал даёт
   // сотые доли, и «0,00» читается как «интернета нет».
-  if (mbps > 0 && mbps < 0.005) return '< 0,01';
-  return mbps.toFixed(2).replace('.', ',');
+  if (mbps > 0 && mbps < 0.01) return '< 0,01';
+  return trimZeros(mbps.toFixed(2));
+}
+
+/** 12.30 → 12,3; 8.00 → 8. Арифметика не меняется, лишние нули уходят. */
+function trimZeros(value: string): string {
+  return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '').replace('.', ',') : value;
+}
+
+/**
+ * Подпись оси шкалы: у мелких единиц (МБ/с) не бывает «12,5 МБ/с» в уме,
+ * поэтому значение округляется до читаемого вида, но без потери смысла.
+ */
+export function formatGaugeTick(value: number, unit: SpeedDisplayUnit = 'mbps'): string {
+  if (unit === 'MBps') {
+    // Байты читаются только «человеческими» долями: 0,1 / 0,5 / 1 / 5 / 10.
+    if (value <= 0) return '0';
+    const mb = value / 8;
+    if (mb < 1) return `${Math.round(mb * 10) / 10}`.replace('.', ',');
+    return `${Math.round(mb)}`;
+  }
+  if (value >= 10000) return `${Math.round(value / 1000)}k`;
+  return `${Math.round(value)}`;
 }
 
 export function formatBytes(bytes: number): string {
@@ -367,15 +390,16 @@ export type GaugeScale = GaugeCeiling | number;
  */
 export const GAUGE_LADDER = [10, 50, 100, 250, 500, 1000, 2500, 10000] as const;
 
+/** Деления внутри шкалы: мало и только «ровные» числа — иначе подписи сливаются. */
 const LADDER_TICKS: Record<number, number[]> = {
-  10: [0, 1, 2, 5, 10],
-  50: [0, 5, 10, 25, 50],
-  100: [0, 1, 5, 10, 25, 50, 100],
-  250: [0, 5, 10, 25, 50, 100, 250],
-  500: [0, 10, 25, 50, 100, 250, 500],
-  1000: GAUGE_TICKS,
-  2500: [0, 50, 100, 500, 1000, 2500],
-  10000: [0, 100, 500, 1000, 5000, 10000],
+  10: [0, 5, 10],
+  50: [0, 10, 25, 50],
+  100: [0, 10, 50, 100],
+  250: [0, 50, 100, 250],
+  500: [0, 100, 250, 500],
+  1000: [0, 100, 500, 1000],
+  2500: [0, 500, 1000, 2500],
+  10000: [0, 1000, 5000, 10000],
 };
 
 /** Ближайшая ступень сверху: шкала растёт за скоростью, а не ограничивает её. */
@@ -424,6 +448,16 @@ export function gaugeExceedsCeiling(mbps: number | null | undefined, ceiling: Ga
   // В режиме «без предела» шкала растягивается сама, превышение возможно только
   // за последней ступенью — это уже десятки гигабит.
   return mbps > gaugeCeilingValue(ceiling, mbps);
+}
+
+/**
+ * Потолок шкалы в настройках — в выбранных единицах. В байтах 100 Мбит/с — ровно
+ * 12,5 МБ/с: округлять до целого нельзя, иначе выбранный предел перестаёт
+ * совпадать с цифрой на шкале.
+ */
+export function speedCeilingLabel(value: number, unit: SpeedDisplayUnit = 'mbps'): string {
+  if (unit !== 'MBps') return String(value);
+  return String(Math.round((value / 8) * 10) / 10).replace('.', ',');
 }
 
 /** Единицы как в оригинальном Speedtest: биты по умолчанию, байты по выбору. */

@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Шрифты сайта-компаньона: локальные, без внешних CDN. Manrope — заголовки,
+   Golos Text — текст. Подключены первыми, чтобы в бандле не было запросов. */
+@import '@fontsource-variable/manrope/index.css';
+@import '@fontsource-variable/golos-text/index.css';
+
 /* ============================================================================
    ПульсСети — дизайн-система
    ----------------------------------------------------------------------------
@@ -37,65 +42,91 @@
    ТОКЕНЫ ТЕМЫ
    ========================================================================== */
 :root {
-  /* Акцент по умолчанию — «Небо» */
-  --accent: 56 189 248;
-  --accent-2: 129 140 248; /* второй цвет градиента */
-  --accent-soft: rgba(56, 189, 248, 0.14);
-  --accent-contrast: #04121f;
+  /* Акцент по умолчанию — зелёный сайта-компаньона, а не неоновый голубой. */
+  --accent: 82 199 152;
+  --accent-2: 45 156 116; /* второй цвет градиента */
+  --accent-soft: rgba(82, 199, 152, 0.14);
+  --accent-contrast: #04170f;
 
-  /* Поверхности (тёмная тема) */
-  --bg: #05070f;
-  --bg-elevated: #0b1120;
-  --surface: rgba(15, 23, 42, 0.72);
-  --surface-solid: #0f172a;
-  --surface-2: rgba(2, 6, 23, 0.6);
-  --line: rgba(148, 163, 184, 0.14);
-  --line-strong: rgba(148, 163, 184, 0.26);
-  --text: #e9f0fb;
-  --text-dim: #9db0cb;
-  --text-muted: #7d8ea8;
+  /* Поверхности (тёмная тема): тёплый графит с зелёным подтоном, как «бумага»
+     сайта в тёмном варианте — синий «космос» спорил с зелёными статусами. */
+  --bg: #0a1210;
+  --bg-elevated: #101a17;
+  --surface: rgba(22, 34, 30, 0.78);
+  --surface-solid: #16221e;
+  --surface-2: rgba(9, 18, 16, 0.62);
+  --line: rgba(163, 190, 175, 0.15);
+  --line-strong: rgba(163, 190, 175, 0.28);
+  --text: #eef4ef;
+  --text-dim: #a9bbb0;
+  --text-muted: #86998d;
 
-  --success: 52 211 153;
-  --warning: 251 191 36;
-  --danger: 251 113 133;
+  --success: 82 199 152;
+  --warning: 246 190 84;
+  --danger: 244 132 122;
   --violet: 167 139 250;
+
+  /* Типографика сайта: заголовки плотные, текст спокойный. */
+  --font-sans: 'Golos Text Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Manrope Variable', 'Golos Text Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 
   color-scheme: dark;
 }
 
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Цифры не должны «плясать» при живом замере: табличные цифры везде, где числа. */
+.tabular-nums, .font-mono { font-variant-numeric: tabular-nums; }
+
+
+/* Светлая тема — палитра сайта: тёплая «бумага», глубокий зелёный текст. */
 html.light {
-  --bg: #f4f6fb;
+  --bg: #f6f8f6;
   --bg-elevated: #ffffff;
-  --surface: rgba(255, 255, 255, 0.86);
+  --surface: rgba(255, 255, 255, 0.88);
   --surface-solid: #ffffff;
-  --surface-2: rgba(241, 245, 249, 0.9);
-  --line: rgba(15, 23, 42, 0.09);
-  --line-strong: rgba(15, 23, 42, 0.16);
-  --text: #0f172a;
-  --text-dim: #46566d;
-  --text-muted: #5d6e87;
+  --surface-2: rgba(237, 245, 237, 0.9);
+  --line: rgba(38, 56, 47, 0.1);
+  --line-strong: rgba(38, 56, 47, 0.2);
+  --text: #25352d;
+  --text-dim: #4b5f54;
+  --text-muted: #74877c;
+  --accent: 17 109 81;
+  --accent-2: 45 148 108;
+  --accent-soft: rgba(17, 109, 81, 0.1);
+  --accent-contrast: #ffffff;
+  --success: 17 109 81;
+  --warning: 166 116 20;
+  --danger: 178 62 54;
   color-scheme: light;
 }
 
 [data-accent='violet'] {
-  --accent: 167 139 250;
-  --accent-2: 96 165 250;
-  --accent-soft: rgba(167, 139, 250, 0.16);
+  --accent: 158 137 232;
+  --accent-2: 120 160 230;
+  --accent-soft: rgba(158, 137, 232, 0.16);
 }
 [data-accent='emerald'] {
-  --accent: 52 211 153;
-  --accent-2: 34 211 238;
-  --accent-soft: rgba(52, 211, 153, 0.16);
+  --accent: 82 199 152;
+  --accent-2: 45 156 116;
+  --accent-soft: rgba(82, 199, 152, 0.16);
 }
 [data-accent='amber'] {
-  --accent: 251 191 36;
-  --accent-2: 251 146 60;
-  --accent-soft: rgba(251, 191, 36, 0.16);
+  --accent: 226 176 74;
+  --accent-2: 214 142 66;
+  --accent-soft: rgba(226, 176, 74, 0.16);
 }
 [data-accent='rose'] {
-  --accent: 251 113 133;
-  --accent-2: 244 114 182;
-  --accent-soft: rgba(251, 113, 133, 0.16);
+  --accent: 226 132 140;
+  --accent-2: 206 110 150;
+  --accent-soft: rgba(226, 132, 140, 0.16);
 }
 
 /* ============================================================================

@@ -42,17 +42,20 @@ test('замер скорости показывает результат и с�
   await page.getByRole('checkbox').check();
   await expect(page.getByText(/до ~25 МБ вниз/)).toBeVisible();
   // Потолок шкалы задаётся в текущих единицах, поэтому выбираем его в Мбит/с.
-  await page.getByRole('button', { name: '100', exact: true }).click();
+  // Кнопки потолка живут внутри панели настроек; после смены единиц
+  // подпись становится «12,5», а не «12.5» — точка здесь не проходит.
+  await page.locator('#speed-tune-panel').getByRole('button', { name: '100', exact: true }).click();
   await page.getByRole('button', { name: 'МБ/с', exact: true }).click();
   await expect(page.getByText('Шкала, МБ/с')).toBeVisible();
-  await expect(page.getByRole('button', { name: '12.5', exact: true })).toBeVisible();
+  // В русской локали дробная часть пишется через запятую: 100 Мбит/с = 12,5 МБ/с.
+  await expect(page.getByRole('button', { name: '12,5', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Мбит/с', exact: true }).click();
   await page.getByRole('button', { name: /Настройки замера/ }).click();
 
   const runOnce = async () => {
-    await page.getByRole('button', { name: /^Замерить( снова)?$/ }).click();
+    await page.getByRole('button', { name: /^(Замерить|Повторить)$/ }).click();
     await expect(page.getByRole('button', { name: 'Остановить' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Замерить( снова)?$/ })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole('button', { name: /^(Замерить|Повторить)$/ })).toBeVisible({ timeout: 90_000 });
   };
 
   // Порядок как у пользователя: сначала точка отсчёта без VPN, потом конфиг.
@@ -203,9 +206,32 @@ test('смена выходного IP снимает зелёный стату�
   // Тот же узел в списке, но выход сменился — прежний зелёный статус больше не врёт.
   exitIp = '198.51.100.77';
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await expect(page.getByRole('button', { name: /выход сменился, перепроверьте/ }).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText('Выходной IP сменился — похоже, в клиенте другой узел')).toBeVisible();
+  const banner = page.getByText('Выходной IP сменился — похоже, в клиенте другой узел');
+  // В демо-сборке VPN-клиента нет: показывается событие смены сети. Оба варианта
+  // означают одно — прежний отзыв больше не описывает текущий маршрут.
+  await expect(banner.or(page.getByText('Сменилась сеть: другой оператор или Wi-Fi')).first())
+    .toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/Было 203\.0\.113\.10, стало 198\.51\.100\.77/)).toBeVisible();
-  // Узел можно переназначить прямо здесь, не открывая каждую карточку.
-  await expect(page.getByText('Узел, который сейчас включён в VPN-клиенте')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Я напрямую — сбросить узел|Узел верный, скрыть/ }).first()).toBeVisible();
+  // Карточка больше не зелёная: статус честно просит перепроверку.
+  await expect(page.getByRole('button', { name: /перепроверьте/ }).first()).toBeVisible();
+});
+
+test('спидометр подписывает ровные значения и не пишет ноль при провале', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'раскладку проверяем на десктопе, чтобы не ждать два раза');
+  test.setTimeout(90_000);
+  // Сеть без выхода: замер обязан закончиться честным «не состоялся»,
+  // а не «0 Мбит/с» — ноль означал бы измеренную нулевую скорость.
+  await page.route('**/speed.cloudflare.com/**', (route) => route.abort());
+  await page.goto('/');
+  await page.getByRole('button', { name: /Скорость/ }).first().click();
+  await expect(page.getByLabel(/Спидометр скорости/)).toBeVisible();
+  await page.getByRole('button', { name: /^Замерить$/ }).click();
+  await expect(page.getByText('Замер не состоялся')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/скорость не измерена/)).toBeVisible();
+  // В карточках тоже прочерк, а не нули: 0 КБ читалось как «канал нулевой».
+  await expect(page.getByText('0 КБ')).toHaveCount(0);
+  // Шкала подписана только крайними значениями — без «12,5» и прочих дробей.
+  const ticks = await page.getByLabel(/Спидометр скорости/).locator('text').allTextContents();
+  for (const tick of ticks) expect(tick).toMatch(/^\d+$/);
 });

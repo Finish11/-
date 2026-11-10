@@ -304,12 +304,14 @@ test('проверка всех сайтов укладывается в обе�
   await expect(page.getByRole('button', { name: 'Проверка сети', exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Каталог сайтов', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible();
-  // Быстрый режим обещает предел 20 секунд — подсказка не должна врать.
-  await expect(page.getByText(/предел 20 с/)).toBeVisible();
+  // Быстрый режим обещает предел 22 секунды и пачки по 32 запроса — подсказка
+  // не должна врать: прежний текст обещал «все сайты одновременно».
+  await expect(page.getByText(/пачками по 32/)).toBeVisible();
+  await expect(page.getByText(/22 с/).first()).toBeVisible();
   const started = Date.now();
   await page.getByRole('button', { name: 'Проверить все сайты' }).click();
   // Пока идёт проверка, видно секундомер и предел — «зависло на 5%» больше нет.
-  await expect(page.getByText(/Идёт проверка: прошло \d+ с из 20 с/)).toBeVisible();
+  await expect(page.getByText(/Идёт проверка: прошло \d+ с из 22 с/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить все сайты' })).toBeVisible({ timeout: 60_000 });
   const elapsed = Date.now() - started;
   expect(elapsed, `проверка шла ${elapsed} мс`).toBeLessThan(45_000);

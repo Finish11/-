@@ -173,6 +173,16 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     }
   };
 
+  /**
+   * Бюджет одиночного пинга. Режим «быстро» жертвует повтором ради 75 сайтов —
+   * для одного сайта экономить нечего, поэтому повтор и второй проход включены
+   * всегда: короткий таймаут не должен превращать живой сайт в «не отвечает».
+   */
+  const pingBudget = useMemo(() => {
+    const base = scanBudgetFor(settings.scanSpeed);
+    return { ...base, retry: true, secondPass: true, totalMs: Math.max(base.totalMs, 12_000) };
+  }, [settings.scanSpeed]);
+
   const saveMeasurement = async (site: Site, patch: Partial<Site>) => {
     setSites((prev) => prev.map((item) => item.id !== site.id ? item :
       item.last_checked_at && patch.last_checked_at && Date.parse(item.last_checked_at) > Date.parse(patch.last_checked_at) ? item : { ...item, ...patch }));
@@ -182,12 +192,21 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
     if (checkingAll || pingingIds.has(site.id)) return;
     setPingIds((prev) => new Set(prev).add(site.id));
     try {
+      // Одиночный пинг должен идти тем же алгоритмом, что и «Проверить все»:
+      // раньше он брал другой режим (экономнее и без второго прохода) и для
+      // одного и того же сайта возвращал другой вердикт, чем только что
+      // показанная общая проверка. Отсюда и было «не отвечает, а пинг отвечает».
       const result = IS_DEMO_BUILD && !isNativeApp() ? await probeSingleSite(site, 'live')
-        : (await runRealSiteScan([site], () => undefined, undefined, 8000, { withVpn: false }, undefined, scanBudgetFor(settings.scanSpeed))).results[0];
-      if (!result) return;
-      await saveMeasurement(site, siteMeasurementPatch(result));
-      showToast(result.network_status === 'ok' || result.network_status === 'slow' ? 'info' : 'warning',
-        `${site.name}: ${siteStatusLabel({ ...site, ...siteMeasurementPatch(result) })}`);
+        : (await runRealSiteScan([site], () => undefined, undefined, 8000, { withVpn: false }, undefined, pingBudget)).results[0];
+      if (!result) {
+        showToast('warning', `${site.name}: сеть не ответила ни на одну пробу — прежний результат сохранён`);
+        return;
+      }
+      const patch = siteMeasurementPatch(result);
+      await saveMeasurement(site, patch);
+      const answered = result.network_status === 'ok' || result.network_status === 'slow';
+      showToast(answered ? 'info' : 'warning',
+        `${site.name}: ${siteStatusLabel({ ...site, ...patch })}${answered && patch.last_latency_ms != null ? ` · ${Math.round(patch.last_latency_ms)} мс` : ''}`);
     } catch (error) { showToast('error', error instanceof Error ? error.message : 'Проверка не завершена; прежний результат сохранён'); }
     finally { setPingIds((prev) => { const next = new Set(prev); next.delete(site.id); return next; }); }
   };
@@ -321,9 +340,10 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
       )}
       <div className="text-[11px] text-dim">
         Режим «{settings.scanSpeed === 'fast' ? 'Быстро' : settings.scanSpeed === 'balanced' ? 'Сбалансированно' : 'Подробно'}»:
-        все сайты запрашиваются одновременно, предел {Math.round(scanBudgetFor(settings.scanSpeed).totalMs / 1000)} с
+        сайты уходят пачками по {scanBudgetFor(settings.scanSpeed).concurrency}, вся проверка ограничена
+        {' '}{Math.round(scanBudgetFor(settings.scanSpeed).totalMs / 1000)} с
         {enabledCount > 0 ? `, обычно укладывается в ${worstCaseSeconds(scanBudgetFor(settings.scanSpeed), enabledCount)} с` : ''}.
-        Не успевшие сайты остаются непроверенными. Режим меняется в настройках.
+        Молчавшие переспрашиваются — вердикт «не отвечает» без повтора не выносится. Режим меняется в настройках.
       </div>
       <Notice tone="info">Это история проб, а не постоянный мониторинг. После смены Wi-Fi/VPN запустите проверку заново.
         «Ответ адреса» не означает работу приложения; старые результаты помечены временем проверки.</Notice>
@@ -371,24 +391,24 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
           })}
         </div>
 
-        <div className="chip-rail">
-          <Chip active={catFilter === 'all'} onClick={() => setCatFilter('all')}>
+        <div className="chip-rail" role="group" aria-label="Фильтр по результату проверки">
+          <Chip active={statusFilter === 'all' && catFilter === 'all'} onClick={() => { setStatusFilter('all'); setCatFilter('all'); }}>
             Все ({sites.length})
           </Chip>
           <Chip active={statusFilter === 'ok'} onClick={() => setStatusFilter(statusFilter === 'ok' ? 'all' : 'ok')}>
-            Доступные
+            Отвечают
           </Chip>
           <Chip
             active={statusFilter === 'blocked'}
             onClick={() => setStatusFilter(statusFilter === 'blocked' ? 'all' : 'blocked')}
           >
-            Недоступные
+            Молчат
           </Chip>
           <Chip
             active={statusFilter === 'disabled'}
             onClick={() => setStatusFilter(statusFilter === 'disabled' ? 'all' : 'disabled')}
           >
-            Отключённые
+            Отключены
           </Chip>
           {(Object.keys(CATEGORY_META) as SiteCategory[])
             .filter((c) => sites.some((s) => s.category === c))
@@ -477,6 +497,15 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
                       <StatusIcon status={siteResultIsStale(site, now) ? 'unknown' : site.last_status} className="w-3 h-3 shrink-0" />
                       <span className="text-[10.5px] text-dim min-w-0 break-words">
                         {pingingIds.has(site.id) ? 'проверяем…' : siteStatusLabel(site)}
+                        {/* «Нет подтверждённого ответа» — не приговор: часть сайтов
+                            отвечает только приложению или только повтору. Такие
+                            помечаем честно, вместо уверенного «не работает». */}
+                        {!pingingIds.has(site.id) && site.last_status === 'blocked' && !siteResultIsStale(site, now) && (
+                          <span className="ml-1 rounded px-1 py-0.5 text-[9px] font-bold align-middle"
+                            style={{ background: 'rgb(var(--warning) / 0.14)', color: 'rgb(var(--warning))' }}>
+                            пробуем ещё
+                          </span>
+                        )}
                         {site.last_latency_ms != null && !pingingIds.has(site.id) ? ` · ${Math.round(site.last_latency_ms)} мс` : ''}
                       </span>
                     </div>

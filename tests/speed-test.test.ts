@@ -340,10 +340,27 @@ test('конфиг быстрее прямого канала не называ�
   assert.equal(verdict.tone, 'ok');
 });
 
+test('скорость не показывает лишние нули, а ось шкалы — только ровные числа', async () => {
+  const { formatGaugeTick, speedCeilingLabel } = await import('../src/lib/speedTest.ts');
+  // 80,0 рядом с 47,3 читалось как разная точность — хвост нулей убран.
+  assert.equal(formatSpeed(80), '80');
+  assert.equal(formatSpeed(80.04), '80');
+  assert.equal(formatSpeed(47.32), '47,3');
+  assert.equal(formatSpeed(12.3), '12,3');
+  assert.equal(formatSpeed(9.99), '9,99');
+  // Ось шкалы не превращается в таблицу: 1 и 12,5 на дуге не читались.
+  assert.deepEqual([0, 10, 50, 100].map((v) => formatGaugeTick(v)), ['0', '10', '50', '100']);
+  assert.equal(formatGaugeTick(10000), '10k');
+  // Потолок в байтах — 100 Мбит/с = 12,5 МБ/с, а не «13».
+  assert.equal(speedCeilingLabel(100, 'MBps'), '12,5');
+  assert.equal(speedCeilingLabel(250, 'MBps'), '31,3');
+  assert.equal(speedCeilingLabel(500), '500');
+});
+
 test('единицы и шкала настраиваются как в оригинальном Speedtest', () => {
   assert.equal(speedInUnit(80, 'MBps'), 10);
-  assert.equal(formatSpeedIn(80, 'MBps'), '10,0');
-  assert.equal(formatSpeedIn(80, 'mbps'), '80,0');
+  assert.equal(formatSpeedIn(80, 'MBps'), '10');
+  assert.equal(formatSpeedIn(80, 'mbps'), '80');
   assert.equal(speedUnitLabel('MBps'), 'МБ/с');
   assert.equal(speedInUnit(null, 'MBps'), null);
   assert.equal(formatSpeedIn(undefined), '—');
@@ -352,7 +369,8 @@ test('единицы и шкала настраиваются как в ориг
   assert.equal(gaugeCeilingValue('auto'), 100);
   assert.equal(gaugeCeilingValue('auto', 900), 1000);
   assert.equal(gaugeCeilingValue(250), 250);
-  assert.deepEqual(gaugeTicks(100), [0, 1, 5, 10, 25, 50, 100]);
+  // Подписи оси — четыре ровных числа: семь на 360 px сливались в кашу.
+  assert.deepEqual(gaugeTicks(100), [0, 10, 50, 100]);
   // Закреплённая шкала: значение на потолке даёт полную дугу, выше — не выходит.
   assert.equal(speedGaugeFraction(100, 100), 1);
   assert.equal(speedGaugeFraction(500, 100), 1);
@@ -365,7 +383,7 @@ test('ненулевая скорость не показывается нулё
   // 0,03 Мбит/с = 0,00375 МБ/с: округление до сотых дало бы «0,00».
   assert.equal(formatSpeedIn(0.03, 'MBps'), '< 0,01');
   assert.equal(formatSpeedIn(0.4, 'MBps'), '0,05');
-  assert.equal(formatSpeedIn(0, 'MBps'), '0,00');
+  assert.equal(formatSpeedIn(0, 'MBps'), '0');
   assert.equal(formatSpeedIn(null, 'MBps'), '—');
 });
 
@@ -401,16 +419,16 @@ test('шкала без предела растягивается за скор�
     assert.equal(gaugeExceedsCeiling(mbps, 'auto'), false);
   }
   // Деления соответствуют подобранной ступени.
-  assert.deepEqual(gaugeTicks('auto', 7), [0, 1, 2, 5, 10]);
-  assert.deepEqual(gaugeTicks('auto', 900), GAUGE_TICKS);
-  assert.deepEqual(gaugeTicks('auto', 2400), [0, 50, 100, 500, 1000, 2500]);
+  assert.deepEqual(gaugeTicks('auto', 7), [0, 5, 10]);
+  assert.deepEqual(gaugeTicks('auto', 900), [0, 100, 500, 1000]);
+  assert.deepEqual(gaugeTicks('auto', 2400), [0, 500, 1000, 2500]);
 });
 
 test('риски шкалы стоят по одному масштабу и не сбиваются в кучу', () => {
   for (const scale of ['auto', 100, 250, 500, 1000] as const) {
     for (const mbps of [undefined, 3, 90, 900, 2400]) {
       const marks = gaugeTickMarks(scale, mbps);
-      assert.ok(marks.length >= 4, 'рисок должно быть несколько');
+      assert.ok(marks.length >= 3, 'рисок должно быть несколько');
       assert.equal(marks[0].value, 0);
       assert.equal(marks[0].fraction, 0);
       // Последняя риска — конец дуги, промежуточные строго по возрастанию и

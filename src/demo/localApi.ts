@@ -682,6 +682,14 @@ async function handle(path: string, method: string, body: any): Promise<Response
         }
       }
 
+      // Не ссылка вовсе (нет http/https): в настоящем APK демо-узлы были бы
+      // обманом — «не ссылка» превращалась в «Демо-подписку» с 8 узлами.
+      // В браузерном предпросмотре демо-набор остаётся, но только явно
+      // демонстрационный.
+      if (isNativeApp()) {
+        return json({ error: 'Ссылка должна начинаться с http:// или https:// — скопируйте её из панели провайдера целиком.' }, 400);
+      }
+
       await sleep(1100);
       const demoNodes = [
         { name: '🇳🇱 Амстердам • Reality', proto: 'VLESS + Reality', loc: 'Нидерланды', cc: 'NL', host: 'aeza.net', port: 443, dpi: 'high' },

@@ -572,12 +572,16 @@ html.light .overlay-scrim {
 /* ============================================================================
    Утилиты
    ========================================================================== */
-.line-clamp-2 {
+.line-clamp-2,
+.line-clamp-3 {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.line-clamp-2 { -webkit-line-clamp: 2; }
+/* Длинный тост («Узел «Нидерланды Амстердам … пометками» добавлен») занимал
+   три строки и закрывал кнопку под собой: ограничиваем его тремя строками. */
+.line-clamp-3 { -webkit-line-clamp: 3; }
 
 .ring-accent {
   box-shadow: 0 0 0 2px rgb(var(--accent) / 0.55);

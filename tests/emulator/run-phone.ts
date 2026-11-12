@@ -432,7 +432,64 @@ async function main() {
   });
   await phone.shot('youtube-auto-confirmed');
 
-  // 12. Обновление приложения: релиз новее установленного → видимый прогресс →
+  // 12. Тост не должен перехватывать клики и растягиваться на пол-экрана.
+  //     На экране «VPN-узлы» плашка «Узел добавлен» висела ровно над кнопкой
+  //     «Проверить»: тап уходил в пустую плашку, проверка узлов не запускалась.
+  await phone.step('узел вручную: тост не перекрывает кнопки', 'VPN-узлы → Узел вручную → Сохранить', async () => {
+    await phone.tap('VPN-узлы', { exact: true });
+    await page.waitForTimeout(900);
+    await phone.tap('Узел вручную', { exact: true });
+    await page.waitForTimeout(900);
+    await page.getByPlaceholder('NL Амстердам — Reality')
+      .fill('Эмулятор: длинное название узла для проверки переноса');
+    await page.getByPlaceholder('nl1.example.com').fill('nl1.example.com');
+    await page.getByRole('button', { name: 'Сохранить' }).click();
+    await page.waitForTimeout(800);
+    const toast = await page.evaluate(() => {
+      const el = document.querySelector('[role="status"]') as HTMLElement | null;
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { h: Math.round(r.height), pointer: getComputedStyle(el).pointerEvents };
+    });
+    if (!toast) throw new Error('тост о добавлении узла не появился');
+    if (toast.h > 96) throw new Error(`тост раздулся до ${toast.h} px и закрывает экран`);
+    if (toast.pointer === 'auto') throw new Error('тост перехватывает клики: кнопки под ним недоступны');
+    // Список узлов перерисовывается после сохранения: ждём кнопку, а не
+    // фиксированную паузу.
+    const check = page.getByRole('button', { name: /^Проверить$/ }).first();
+    await check.waitFor({ timeout: 10_000 });
+    await check.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    const box = await check.boundingBox();
+    if (!box) throw new Error('нет кнопки «Проверить» после добавления узла');
+    const under = await page.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null;
+      return el?.closest('button')?.textContent?.trim().slice(0, 20) || el?.tagName || 'null';
+    }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    if (under !== 'Проверить') throw new Error(`в точке «Проверить» лежит «${under}» — тап не дойдёт`);
+  });
+  await phone.shot('vpn-manual-node');
+
+  // 13. Ссылка подписки без http:// не должна превращаться в демо-набор узлов.
+  //     В APK это выглядело как «подписка загружена: 8 узлов», хотя ссылки нет.
+  await phone.step('подписка: строка без http отклоняется', 'Добавить подписку → Загрузить', async () => {
+    const before = await page.evaluate(() => document.querySelectorAll('[role="dialog"]').length);
+    await phone.tap('Добавить подписку', { exact: true });
+    await page.waitForTimeout(900);
+    const after = await page.evaluate(() => document.querySelectorAll('[role="dialog"]').length);
+    if (after <= before) throw new Error('окно подписки не открылось');
+    await page.getByPlaceholder('https://panel.example.com/sub/…').fill('просто текст');
+    await page.getByRole('button', { name: 'Загрузить подписку' }).click();
+    await page.waitForTimeout(2500);
+    const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+    if (/Подписка загружена/.test(text)) throw new Error('строка без http принята как подписка');
+    if (!/начинаться с http/i.test(text)) throw new Error('нет объяснения, что ссылка должна начинаться с http: ' + text.slice(0, 140));
+    await page.getByRole('button', { name: /Отмена|Закрыть|Скрыть/ }).first().click().catch(() => undefined);
+    await page.waitForTimeout(600);
+  });
+  await phone.shot('subscription-invalid');
+
+  // 14. Обновление приложения: релиз новее установленного → видимый прогресс →
   //     установщик. Раньше мок плагина не совпадал с Java, и путь не
   //     проверялся вовсе: пользователь видел «всегда ошибка».
   await phone.step('обновление: прогресс и установщик', 'Скачать и установить → установка', async () => {

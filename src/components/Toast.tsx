@@ -15,6 +15,11 @@ interface ToastContainerProps {
 /**
  * Сообщения снизу — так они не перекрывают шапку и не «прыгают» перед глазами.
  * Показываем не больше трёх, остальные ждут в очереди.
+ *
+ * Тост висит ровно над нижней навигацией — на экране «VPN-узлы» он закрывал
+ * кнопку «Проверить» и первую карточку узла, а длинное название сервиса
+ * растягивало плашку на три строки. Поэтому текст ограничен тремя строками с
+ * многоточием: полный текст всегда есть в том месте, откуда тост пришёл.
  */
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
   const visible = toasts.slice(-3);
@@ -36,7 +41,12 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
           <div
             key={t.id}
             role="status"
-            className="pointer-events-auto w-full max-w-sm flex items-start gap-2.5 rounded-2xl px-3.5 py-2.5 anim-fade-up"
+            /**
+             * Сам тост клики не ловит: он висит над навигацией и перекрывал
+             * кнопки («Проверить» после «Узел добавлен» — тап уходил в пустую
+             * плашку). Нажимается только крестик.
+             */
+            className="w-full max-w-sm flex items-start gap-2.5 rounded-2xl px-3.5 py-2.5 anim-fade-up"
             style={{
               background: 'color-mix(in srgb, var(--bg-elevated) 92%, transparent)',
               border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
@@ -45,11 +55,11 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
             }}
           >
             <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
-            <div className="flex-1 min-w-0 text-[12.5px] leading-snug">{t.message}</div>
+            <div className="flex-1 min-w-0 text-[12.5px] leading-snug line-clamp-3 break-words" title={t.message}>{t.message}</div>
             <button
               type="button"
               onClick={() => onDismiss(t.id)}
-              className="tap-icon tap shrink-0 -mr-1 -mt-0.5 text-dim hover:text-[color:var(--text)]"
+              className="tap-icon tap shrink-0 -mr-1 -mt-0.5 text-dim hover:text-[color:var(--text)] pointer-events-auto"
               aria-label="Скрыть"
             >
               <X className="w-3.5 h-3.5" />

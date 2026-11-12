@@ -554,6 +554,15 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
       showToast('warning', 'Вставьте ссылку подписки');
       return;
     }
+    // Строка без схемы раньше проваливалась мимо настоящего импорта в
+    // демо-ветку: «не ссылка» превращалась в 8 узлов «Демо-подписки», и в APK
+    // это выглядело как успешно загруженная подписка. Проверяем до запроса.
+    if (!/^https?:\/\//i.test(subUrl.trim())) {
+      const message = 'Ссылка должна начинаться с http:// или https:// — скопируйте её из панели провайдера целиком.';
+      setSubError(message);
+      showToast('warning', message);
+      return;
+    }
     setSubSaving(true);
     setSubError(null);
     try {

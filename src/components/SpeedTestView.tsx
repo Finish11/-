@@ -455,7 +455,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         <div className="mt-2 text-center text-[10.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
           {running ? progress.message
             : result && !result.ok
-              ? 'Проверьте соединение или выберите точку замера вручную — повтор бесплатен'
+              ? 'Проверьте соединение: замеры по одной точке. Можно выбрать другую точку вручную и повторить'
               : `Трафик замера: до ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).download / 1024 / 1024)} МБ вниз и ~${Math.round((lite ? SPEED_TRAFFIC.lite : SPEED_TRAFFIC.full).upload / 1024 / 1024)} МБ вверх`}
         </div>
 

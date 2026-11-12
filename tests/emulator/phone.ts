@@ -39,6 +39,14 @@ export interface PhoneState {
   state: string | null;
   /** Версия установленного APK — от неё зависит предложение обновления. */
   installedVersionCode: number;
+  /**
+   * Выходной IP. Задаётся явно, чтобы проверять смену узла в VPN-клиенте:
+   * раньше адрес был зашит в моке, и сценарий «сменил сервер — отзыв должен
+   * перепровериться» проверить было нельзя.
+   */
+  exitIp: string;
+  /** IP без VPN. */
+  directIp: string;
 }
 
 export const DEFAULT_PHONE: PhoneState = {
@@ -54,6 +62,8 @@ export const DEFAULT_PHONE: PhoneState = {
   deadSpeedHosts: [],
   state: null,
   installedVersionCode: 111002091,
+  exitIp: '198.51.100.7',
+  directIp: '203.0.113.20',
   /** Разрешена ли установка APK из приложения (Android: canRequestPackageInstalls). */
   canInstallApk: true,
 };
@@ -245,7 +255,7 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
         installedVpnApps: [{ package: 'com.v2ray.ang', name: 'v2rayNG' }],
       }),
       ipEcho: () => phone.connected
-        ? { ok: true, ip: phone.appUsesVpn ? '198.51.100.7' : '203.0.113.20', route: routeName(),
+        ? { ok: true, ip: phone.appUsesVpn ? phone.exitIp : phone.directIp, route: routeName(),
             latency_ms: phone.latencyMs, source: 'phone' }
         : noNetwork(),
       realDelay: (options) => {
@@ -312,7 +322,7 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
         if (!phone.connected) throw new Error('DNS: домен не резолвится');
         const json = (value) => ({ status: 200, url, headers: { 'content-type': 'application/json' }, data: JSON.stringify(value) });
         const text = (value) => ({ status: 200, url, headers: { 'content-type': 'text/html; charset=utf-8' }, data: value });
-        const ip = phone.appUsesVpn ? '198.51.100.7' : '203.0.113.20';
+        const ip = phone.appUsesVpn ? phone.exitIp : phone.directIp;
         if (url.includes('ipwho.is')) {
           return json({ success: true, ip, country_code: 'NL', country_name: 'Нидерланды', city: 'Амстердам',
             region: 'Noord-Holland', connection: { isp: 'Datacamp Limited', org: 'Datacamp', asn: 212238 },

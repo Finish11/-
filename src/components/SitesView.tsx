@@ -313,7 +313,8 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
       <header className="space-y-2">
         <h1 className="text-[22px] font-black tracking-tight">Каталог сайтов</h1>
         <p className="text-[12.5px] text-dim leading-snug">
-          Активно {enabledCount} из {sites.length}. Белый список Минцифры — {roleCounts.whitelist},
+          Включено для проверки: {enabledCount} из {sites.length} — это про список, а не про доступность.
+          Белый список Минцифры — {roleCounts.whitelist},
           нейтральные — {roleCounts.neutral}, заблокированы РКН — {roleCounts.rkn}. Статусы сверены
           на ноябрь 2026. Здесь показан ответ веб-страницы; ручные проверки приложений находятся
           в карточках «Мои сервисы» и не помечают сайт как недоступный.

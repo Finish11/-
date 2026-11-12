@@ -67,6 +67,24 @@ test('отзыв на выбранный узел не исчезает при �
   assert.equal(exact!.ipChanged, undefined);
 });
 
+test('VPN без указанного узла: отзыв находится и не считается свежим при смене IP', () => {
+  const saved = confirmation({ node_key: 'vpn:unknown', profile_id: null, profile_name: 'VPN без указанного узла' });
+  const exact = findAppConfirmation([saved], 'youtube', null, '203.0.113.10', true);
+  assert.ok(exact, 'отзыв «VPN без узла» обязан находиться, когда узел так и не указан');
+  assert.equal(exact!.matchedBy, 'node_ip');
+  assert.equal(exact!.ipChanged, undefined);
+
+  // Включили другой узел в клиенте — приложение этого не видит, но выход сменился.
+  const changed = findAppConfirmation([saved], 'youtube', null, '198.51.100.77', true);
+  assert.ok(changed, 'иначе плитка остаётся зелёной на прошлом выходе');
+  assert.equal(changed!.ipChanged, true);
+  assert.equal(confirmationStatus(changed!).recheck, true);
+  assert.equal(confirmationStatus(changed!).tone, 'warn');
+
+  // VPN выключен: чужой отзыв к прямому маршруту не относим.
+  assert.equal(findAppConfirmation([saved], 'youtube', null, '203.0.113.10', false), null);
+});
+
 test('прямой маршрут не забирает отзыв, оставленный на VPN-узле', () => {
   assert.equal(findAppConfirmation([confirmation()], 'youtube', null, '203.0.113.10'), null);
   const direct = confirmation({ node_key: 'direct', profile_id: null, profile_name: 'Прямое подключение' });

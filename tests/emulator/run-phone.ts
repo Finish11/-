@@ -432,6 +432,36 @@ async function main() {
   });
   await phone.shot('youtube-auto-confirmed');
 
+  // 11a. Подтверждение привязано к выходу. Человек подтвердил YouTube, потом в
+  //      VPN-клиенте переключил узел — плитка обязана пожелтеть. Раньше она
+  //      оставалась зелёной: кнопка «Понятно» закрывала карточку, не выбрасывая
+  //      снимок сети, и список продолжал видеть старый выходной IP.
+  await phone.step('Смена выхода: подтверждение под вопросом', 'Проверка → YouTube → Работает → Понятно → сменить выход', async () => {
+    const tileText = () => page.evaluate(() => {
+      const node = Array.from(document.querySelectorAll('*'))
+        .find((el) => el.children.length === 0 && (el.textContent || '').trim() === 'YouTube');
+      let box = node?.parentElement;
+      for (let i = 0; i < 3 && box; i++) {
+        if ((box.textContent || '').includes('приложение') || (box.textContent || '').includes('подтвержд')) break;
+        box = box.parentElement;
+      }
+      return (box?.textContent || '').replace(/\s+/g, ' ').trim();
+    });
+    if (!/приложение работает/.test(await tileText())) throw new Error('перед сменой выхода плитка должна быть подтверждена');
+    // Меняем выходной IP так, как это делает VPN-клиент при переключении узла.
+    await page.evaluate(() => (window as unknown as { __phone: { patch(v: unknown): void } }).__phone.patch({ exitIp: '203.0.113.99' }));
+    let tile = '';
+    for (let i = 0; i < 15; i++) {
+      await page.waitForTimeout(1000);
+      tile = await tileText();
+      if (/выход сменился/.test(tile)) break;
+    }
+    if (!/выход сменился/.test(tile)) throw new Error('плитка не заметила смену выходного IP: ' + tile.slice(0, 160));
+    if (/приложение работает · подтверждено/.test(tile)) throw new Error('плитка осталась зелёной на прошлом выходе: ' + tile.slice(0, 160));
+    if (!/перепроверьте/.test(tile)) throw new Error('в плитке нет призыва перепроверить: ' + tile.slice(0, 160));
+    await phone.shot('exit-changed-tile-warns');
+  });
+
   // 12. Настоящий замер сайтов: ветка «через VPN». Раньше в проходе её не было,
   //     и дефект мока (HTML на favicon) делал её «зелёной»: все 75 сайтов
   //     помечались заблокированными, а вёрстка вердикта обрезала вывод.

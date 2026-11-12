@@ -109,6 +109,20 @@ export function findAppConfirmation(
     if (byNode) return { confirmation: byNode, matchedBy: 'node', ipChanged: Boolean(ip) && cleanIp(byNode.exit_ip) !== ip };
   }
 
+  // Узел не указан: VPN включён, но конфиг клиента приложению недоступен.
+  // Отзыв привязан к одному внешнему IP, поэтому смена выхода означает другой
+  // узел внутри клиента. Показываем отзыв с пометкой «перепроверьте» — иначе
+  // плитка либо оставалась зелёной на прошлом маршруте, либо теряла отзыв.
+  if (!profile && vpnActive && ip) {
+    const byUnknownNode = newest(service.filter((item) => item.node_key === 'vpn:unknown'));
+    if (!byUnknownNode) return null;
+    return {
+      confirmation: byUnknownNode,
+      matchedBy: 'node',
+      ipChanged: cleanIp(byUnknownNode.exit_ip) !== ip,
+    };
+  }
+
   // Для прямого подключения не переносим отзыв с VPN даже при совпадении IP.
   if (!profile || !ip) return null;
   const byIp = newest(service.filter((item) => item.profile_id != null && cleanIp(item.exit_ip) === ip));

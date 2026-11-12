@@ -481,6 +481,20 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     const match = matchFor(pick);
     return match ? confirmationStatus(match).recheck : false;
   }).length, [added, confirmations, activeProfile, activeIp]);
+
+  /**
+   * Закрыть карточку и выбросить снимок сети.
+   *
+   * Снимок нужен только внутри карточки. Раньше кнопка «Понятно» просто
+   * снимала выбор, а сброс жил в onClose шторки: после закрытия кнопкой плитка
+   * продолжала видеть старый выходной IP и оставалась зелёной, хотя в клиенте
+   * уже был включён другой узел.
+   */
+  const closeDetails = () => {
+    setSelected(null);
+    setFreshConnection(null);
+    setRouteError('');
+  };
   const openDetails = async (pick: QuickPick, result?: ScanSiteResult) => {
     setSelected({ pick, result }); setSelectedProfileId(confirmationProfileId);
     setAwaitingConfirmation(false); setRouteError(''); launchRoute.current = null; setRouteBusy(true);
@@ -835,13 +849,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       {/* ---------- Что именно доказала проверка ---------- */}
       <Sheet
         open={Boolean(selected)}
-        onClose={() => {
-          setSelected(null);
-          // Снимок сети нужен только внутри карточки. Если его оставить, список
-          // продолжал бы показывать старый выходной IP и не заметил смену узла.
-          setFreshConnection(null);
-          setRouteError('');
-        }}
+        onClose={closeDetails}
         title={selected?.pick.name || 'Проверка сервиса'}
         subtitle="Сайт и приложение — не одно и то же"
         size="sm"
@@ -978,7 +986,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                 Официальный источник <ExternalLink className="w-3.5 h-3.5" />
               </a>
             )}
-            <Button variant="primary" block onClick={() => setSelected(null)}>Понятно</Button>
+            <Button variant="primary" block onClick={closeDetails}>Понятно</Button>
           </div>
         )}
       </Sheet>

@@ -350,6 +350,131 @@ async function main() {
   });
   await phone.shot('speed-settings');
 
+  // 10. Замер YouTube даёт цифру, а не «не отдал данные». Мок сети отдаёт
+  //     байты — значит любая пустота здесь означает дефект приложения.
+  await phone.step('YouTube: замер даёт цифру', 'Скорость → Замерить YouTube', async () => {
+    // Предыдущий шаг оставил открытой шторку настроек: она перекрывала нижнюю
+    // навигацию, и тап по «Скорость» не доходил (клик перехватывал оверлей).
+    if (await phone.visible('Готово', { exact: true })) {
+      await phone.tap('Готово', { exact: true });
+      await page.waitForTimeout(700);
+    }
+    // Раньше проход намеренно ломал сеть (без VPN, мёртвые хосты). Для замера
+    // YouTube возвращаем нормальный маршрут — иначе проверяем не замер, а
+    // последствия предыдущего шага.
+    await page.evaluate(() => (window as unknown as { __phone: { patch(v: unknown): void } }).__phone.patch({
+      connected: true, kind: 'wifi', systemVpn: true, appUsesVpn: true,
+      vpnPackage: 'com.v2ray.ang', vpnAppName: 'v2rayNG',
+      blockedHosts: [], deadSpeedHosts: [], mbps: 62, latencyMs: 34,
+    }));
+    await page.waitForTimeout(1800);
+    await phone.tap('Скорость', { exact: true });
+    // Блок YouTube ниже спидометра: ждём кнопку, а не фиксированную паузу.
+    // Раньше шаг тапал в пустоту — кнопка ещё не была отрисована.
+    const ytButton = page.getByRole('button', { name: /^(Замерить YouTube|Повторить замер YouTube)$/ });
+    await ytButton.first().waitFor({ timeout: 15_000 });
+    await ytButton.first().scrollIntoViewIfNeeded();
+    await ytButton.first().click();
+    let verdict = '';
+    for (let i = 0; i < 30; i++) {
+      await page.waitForTimeout(1000);
+      const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+      const bad = text.match(/YouTube не отдал данные|YouTube не открывается|не отдал ни байта/);
+      if (bad) { verdict = bad[0]; break; }
+      if (/Хватит на/.test(text) || /YouTube: на какое качество хватит\s*\d/.test(text)) { verdict = 'ok'; break; }
+    }
+    if (verdict !== 'ok') throw new Error('замер не дал цифры: ' + (verdict || 'нет вердикта за 30 с'));
+  });
+  await phone.shot('youtube-measured');
+
+  // 11. Успешный замер сам подтверждает сервис: ручное «Работает» не нужно.
+  //     Раньше статус жил отдельно от замера — человек видел цифру и
+  //     одновременно «приложение не подтверждено».
+  await phone.step('YouTube: статус подтверждён замером', 'Скорость → замер → Проверка → YouTube', async () => {
+    let confirmed = false;
+    for (let i = 0; i < 12; i++) {
+      confirmed = await page.evaluate(async () => {
+        try {
+          const res = await fetch('/api/app-confirmations');
+          if (!res.ok) return false;
+          const data = (await res.json()) as { confirmations?: Array<{ service_id: string; works: boolean }> };
+          return Boolean(data.confirmations?.some((item) => item.service_id === 'youtube' && item.works));
+        } catch { return false; }
+      });
+      if (confirmed) break;
+      await page.waitForTimeout(1000);
+    }
+    if (!confirmed) throw new Error('замер прошёл, но подтверждение сервиса не сохранилось');
+    // Чистый вход на вкладку: после шагов с поломанной сетью на экране
+    // остаётся прошлая серия «0/75», и её текст перебивает карточку сервиса.
+    // Человек в такой ситуации просто перезапускает экран.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3500);
+    await phone.tap('Проверка сети', { exact: true });
+    await page.waitForTimeout(2000);
+    // Статус читаем в блоке «Мои сервисы» — именно там человек видит плитку
+    // «YouTube · приложение работает · подтверждено». Раньше шаг кликал по
+    // тексту и попадал не в карточку: шторка не открывалась, а «не
+    // подтверждено» находилось где-то ниже в списке сайтов.
+    const tile = await page.evaluate(() => {
+      const node = Array.from(document.querySelectorAll('*'))
+        .find((el) => el.children.length === 0 && (el.textContent || '').trim() === 'YouTube');
+      let box = node?.parentElement;
+      for (let i = 0; i < 3 && box; i++) {
+        if ((box.textContent || '').includes('приложение') || (box.textContent || '').includes('подтвержд')) break;
+        box = box.parentElement;
+      }
+      return (box?.textContent || '').replace(/\s+/g, ' ').trim();
+    });
+    if (!tile) throw new Error('плитка YouTube не найдена в «Моих сервисах»');
+    if (/не подтверждено/.test(tile)) throw new Error('плитка YouTube всё ещё «не подтверждено» после успешного замера: ' + tile.slice(0, 160));
+    if (!/приложение работает/.test(tile)) throw new Error('плитка YouTube без статуса «приложение работает»: ' + tile.slice(0, 160));
+  });
+  await phone.shot('youtube-auto-confirmed');
+
+  // 12. Обновление приложения: релиз новее установленного → видимый прогресс →
+  //     установщик. Раньше мок плагина не совпадал с Java, и путь не
+  //     проверялся вовсе: пользователь видел «всегда ошибка».
+  await phone.step('обновление: прогресс и установщик', 'Скачать и установить → установка', async () => {
+    await page.route('**/api.github.com/**', (route) => route.fulfill({
+      status: 200,
+      headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        html_url: 'https://github.com/Finish11/-/releases/tag/android-latest',
+        body: 'Версия: 9.9.9 (versionCode 999999999)',
+        assets: [{ name: 'pulsenet-debug.apk', size: 4_914_631,
+          browser_download_url: 'https://github.com/Finish11/-/releases/download/android-latest/pulsenet-debug.apk' }],
+      }),
+    }));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3000);
+    const seen: string[] = [];
+    let ready = false;
+    for (let i = 0; i < 15; i++) {
+      await page.waitForTimeout(800);
+      const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+      const progress = text.match(/Скачиваем APK: (\d+)%/);
+      if (progress) seen.push(progress[0]);
+      if (/Скачать и установить/.test(text)) { ready = true; break; }
+    }
+    if (!ready) throw new Error('карточка обновления не появилась: ' + seen.join(', '));
+    await phone.tap('Скачать и установить', { exact: true });
+    let reached = '';
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(700);
+      const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+      const progress = text.match(/Скачиваем APK: (\d+)%/);
+      if (progress) seen.push(progress[0]);
+      if (/Установщик открыт/.test(text)) { reached = 'install'; break; }
+      if (/Нужно разрешение/.test(text)) { reached = 'permission'; break; }
+      if (/Загрузка прервалась|Не удалось скачать/.test(text)) { reached = 'error'; break; }
+    }
+    if (reached === 'error') throw new Error('обновление закончилось ошибкой при живом «DownloadManager»: ' + seen.join(', '));
+    if (!reached) throw new Error('загрузка не дошла до установки за 14 с: ' + (seen.join(', ') || 'нет процентов'));
+    if (!seen.length) throw new Error('прогресс загрузки не показывался — «окно загрузки» отсутствует');
+  });
+  await phone.shot('update-progress');
+
   const result = await close();
   await writeFile(path.join(outDir, 'README.md'), renderReport(result), 'utf8');
   printSummary(result.findings, result.steps, outDir);

@@ -50,8 +50,30 @@ export function confirmationAgeLabel(confirmedAt: string | null | undefined, now
   return `подтверждено больше ${months === 1 ? 'месяца' : `${months} месяцев`} назад`;
 }
 
-export function confirmationNodeKey(profile: Pick<VpnProfile, 'id'> | null): string {
-  return profile ? `vpn:${profile.id}` : 'direct';
+/**
+ * Ключ маршрута, к которому привязан отзыв.
+ *
+ * `vpn:unknown` — VPN включён, но пользователь не указал, какой узел внутри
+ * клиента. Android не показывает чужой конфиг, а список профилей в приложении
+ * может быть пустым: раньше в этом состоянии кнопки «Работает»/«Не работает»
+ * были отключены, и подтвердить факт было нельзя вовсе — человек жаловался,
+ * что «сам нажал, а приложение не учло».
+ */
+export function confirmationNodeKey(
+  profile: Pick<VpnProfile, 'id'> | null,
+  vpnActive = false
+): string {
+  if (profile) return `vpn:${profile.id}`;
+  return vpnActive ? 'vpn:unknown' : 'direct';
+}
+
+/** Человеческое имя маршрута для тостов и карточек. */
+export function confirmationRouteLabel(
+  profile: Pick<VpnProfile, 'name'> | null,
+  vpnActive = false
+): string {
+  if (profile) return profile.name;
+  return vpnActive ? 'VPN без указанного узла' : 'прямого подключения';
 }
 
 const cleanIp = (ip: string | null | undefined): string =>
@@ -69,10 +91,12 @@ export function findAppConfirmation(
   confirmations: AppConfirmation[],
   serviceId: string,
   profile: Pick<VpnProfile, 'id'> | null,
-  exitIp: string | null | undefined
+  exitIp: string | null | undefined,
+  /** VPN включён, но узел не выбран: искать отзыв «VPN без узла». */
+  vpnActive = false
 ): ConfirmationMatch | null {
   const ip = cleanIp(exitIp);
-  const nodeKey = confirmationNodeKey(profile);
+  const nodeKey = confirmationNodeKey(profile, vpnActive);
   const service = confirmations.filter((item) => item.service_id === serviceId);
   const exact = newest(service.filter((item) => item.node_key === nodeKey && cleanIp(item.exit_ip) === ip));
   if (exact) return { confirmation: exact, matchedBy: 'node_ip' };

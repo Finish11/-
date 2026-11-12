@@ -119,36 +119,89 @@ export function hasUpdate(
   return releaseBuild > 0 && installedBuild > 0 && releaseBuild > installedBuild;
 }
 
-/**
- * Спрашивает последний релиз на GitHub. Возвращает null, если обновление не нужно
- * или сеть недоступна (обновление никогда не должно ломать запуск приложения).
- */
-export async function checkForUpdate(): Promise<UpdateInfo | null> {
-  if (!isNativeApp()) return null;
+/** Почему проверка не дала обновление — чтобы UI не врал «последняя версия». */
+export type UpdateCheckFailure =
+  | 'not-native'
+  | 'network'
+  | 'rate-limit'
+  | 'no-apk'
+  | 'no-version'
+  | 'up-to-date';
 
+export interface UpdateCheckResult {
+  update: UpdateInfo | null;
+  /** Заполняется, только когда обновления нет. */
+  reason?: UpdateCheckFailure;
+  /** Понятное человеку объяснение причины. */
+  message?: string;
+}
+
+/**
+ * Спрашивает последний релиз на GitHub.
+ *
+ * Раньше функция возвращала `null` и на «обновлений нет», и на любую сетевую
+ * ошибку: интерфейс не мог отличить одно от другого и писал «Установлена
+ * последняя версия», даже когда GitHub был недоступен (в РФ api.github.com
+ * регулярно не отвечает). Из-за этого же не показывалось «Не удалось проверить
+ * обновления» — сообщение было недостижимым. Теперь причина возвращается явно.
+ */
+export async function checkForUpdateResult(): Promise<UpdateCheckResult> {
+  if (!isNativeApp()) {
+    return { update: null, reason: 'not-native', message: 'Проверка обновлений работает в приложении для Android' };
+  }
+
+  let release: {
+    body?: string;
+    html_url?: string;
+    assets?: Array<{ name: string; browser_download_url: string; size: number }>;
+  };
   try {
-    const [currentVersion, currentBuildNumber] = await Promise.all([getCurrentVersion(), getCurrentBuildNumber()]);
     const res = await fetch(RELEASE_API, {
       headers: { Accept: 'application/vnd.github+json' },
+      // Без таймаута запрос мог висеть десятки секунд, и кнопка «Проверить»
+      // выглядела зависшей.
+      signal: typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+        ? AbortSignal.timeout(12000)
+        : undefined,
     });
-    if (!res.ok) return null;
-
-    const release = (await res.json()) as {
-      body?: string;
-      html_url?: string;
-      assets?: Array<{ name: string; browser_download_url: string; size: number }>;
-    };
-
-    const apk = (release.assets || []).find((a) => a.name.endsWith('.apk'));
-    if (!apk) return null;
-
-    const body = release.body || '';
-    const versionMatch = body.match(/Верси[яи]:\s*([0-9]+(?:\.[0-9]+){1,3})/i);
-    const version = versionMatch ? versionMatch[1] : '';
-    const buildNumber = parseBuildNumber(body);
-    if (!hasUpdate(version, buildNumber, currentVersion, currentBuildNumber)) return null;
-
+    if (res.status === 403 || res.status === 429) {
+      return {
+        update: null,
+        reason: 'rate-limit',
+        message: 'GitHub временно ограничил проверку обновлений. Попробуйте через несколько минут — скачать APK можно со страницы релиза.',
+      };
+    }
+    if (!res.ok) {
+      return { update: null, reason: 'network', message: `GitHub ответил ${res.status}. Проверьте соединение или скачайте APK со страницы релиза.` };
+    }
+    release = (await res.json()) as typeof release;
+  } catch (error) {
     return {
+      update: null,
+      reason: 'network',
+      message: `Не удалось связаться с GitHub: ${error instanceof Error ? error.message : String(error)}. Это сеть, а не установленная версия.`,
+    };
+  }
+
+  const [currentVersion, currentBuildNumber] = await Promise.all([getCurrentVersion(), getCurrentBuildNumber()]);
+  const apk = (release.assets || []).find((a) => a.name.endsWith('.apk'));
+  if (!apk) {
+    return { update: null, reason: 'no-apk', message: 'В релизе нет APK-файла — обновляться нечем. Откройте страницу релиза.' };
+  }
+
+  const body = release.body || '';
+  const versionMatch = body.match(/Верси[яи]:\s*([0-9]+(?:\.[0-9]+){1,3})/i);
+  const version = versionMatch ? versionMatch[1] : '';
+  const buildNumber = parseBuildNumber(body);
+  if (!version) {
+    return { update: null, reason: 'no-version', message: 'В описании релиза нет номера версии — сравнить не с чем.' };
+  }
+  if (!hasUpdate(version, buildNumber, currentVersion, currentBuildNumber)) {
+    return { update: null, reason: 'up-to-date' };
+  }
+
+  return {
+    update: {
       version,
       currentVersion,
       buildNumber,
@@ -157,7 +210,17 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
       notes: body,
       sizeMb: Math.round((apk.size / 1048576) * 10) / 10,
       pageUrl: release.html_url || RELEASE_PAGE,
-    };
+    },
+  };
+}
+
+/**
+ * Совместимая обёртка: обновление или null. Для фоновой автопроверки, где
+ * причина не нужна и ошибка не должна ничего показывать.
+ */
+export async function checkForUpdate(): Promise<UpdateInfo | null> {
+  try {
+    return (await checkForUpdateResult()).update;
   } catch {
     return null;
   }

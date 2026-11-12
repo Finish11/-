@@ -42,6 +42,7 @@ import { QuickPicks } from './QuickPicks';
 import { ResultGlossary } from './ResultGlossary';
 import { isNativeApp } from '../lib/nativeBridge';
 import { runRealSiteScan } from '../lib/realScan';
+import { confirmationFreshness, confirmationNodeKey } from '../lib/appConfirmations';
 import { SCAN_SPEED_LABEL, scanBudgetFor } from '../lib/scanBudget';
 import { createUiBatch } from '../lib/uiBatch';
 import { useSettings } from '../lib/appSettings';
@@ -343,9 +344,23 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Замеры всегда настоящие: сетевые запросы идут и в браузере, и в APK.
     // Отличается только глубина проверки — в браузере недоступно содержимое
     // страниц, поэтому результат помечается как оценочный.
+    // Свежий отзыв «работает» на текущем маршруте — тоже доказательство, что
+    // сервис доступен. Без этого карточка оставалась «не подтверждено», даже
+    // когда человек уже подтвердил работу вручную.
+    const vpnOn = Boolean(conn.vpn_detected || conn.system_vpn);
+    const confirmedServices = new Set(
+      confirmations
+        .filter((item) => item.works
+          && confirmationFreshness(item.confirmed_at) !== 'stale'
+          && (item.node_key === confirmationNodeKey(null, vpnOn) || item.profile_id != null))
+        .map((item) => item.service_id)
+    );
     const outcome = await runRealSiteScan(sites, progressCb, ctrl.signal, 8000, {
       withVpn: vpnMode === 'with_vpn',
       countryCode: conn.country_code,
+      appConfirmed: confirmedServices.size > 0,
+      confirmedBy: confirmedServices.size > 0 ? 'user' : null,
+      confirmedServiceIds: [...confirmedServices],
     }, undefined, scanBudgetFor(appSettings.scanSpeed)).finally(() => { ui.flush(); setScanStartedAt(null); });
     if (outcome.incomplete > 0 && !ctrl.signal.aborted) {
       showToast('warning', `Проверено ${outcome.results.length} из ${enabledSitesCount} за ${Math.round(outcome.elapsedMs / 1000)} с. ${outcome.incomplete} не успели ответить — им вердикт не выдуман, запустите проверку ещё раз.`);

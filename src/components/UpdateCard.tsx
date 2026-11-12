@@ -4,7 +4,7 @@ import { ArrowDownToLine, CheckCircle2, Download, Loader2, Sparkles, TriangleAle
 import { Button } from './ui/kit';
 import {
   ApkUpdater,
-  checkForUpdate,
+  checkForUpdateResult,
   isUpdateSupported,
   RELEASE_PAGE,
   type UpdateInfo,
@@ -54,10 +54,10 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     let alive = true;
     // Не мешаем старту приложения: проверяем через пару секунд после загрузки
     const timer = setTimeout(() => {
-      checkForUpdate()
-        .then((found) => {
-          if (!alive || !found) return;
-          setInfo(found);
+      checkForUpdateResult()
+        .then((result) => {
+          if (!alive || !result.update) return;
+          setInfo(result.update);
           setPhase('ready');
           // APK не скачивается в фоне без ведома пользователя: на мобильной
           // сети это несколько мегабайт, а установщик не должен неожиданно
@@ -150,11 +150,20 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     setError('');
 
     try {
-      const { downloadId: id } = await ApkUpdater.download({
+      const started = await ApkUpdater.download({
         url: target.downloadUrl,
         fileName: `pulsenet-${target.version}.apk`,
       });
       if (generation !== downloadGeneration.current) return;
+      // Без downloadId опрашивать нечего: раньше undefined превращался в
+      // state 0 и приложение пять раз сообщало «Android не нашёл системную
+      // загрузку». Проверяем сразу и говорим прямо.
+      const id = Number(started && started.downloadId);
+      if (!Number.isFinite(id) || id <= 0) {
+        setPhase('error');
+        setError('Android не начал загрузку APK. Проверьте, что в системе включён «Загрузчик» (Download Manager), и попробуйте снова.');
+        return;
+      }
       downloadId.current = id;
       let missingStatusCount = 0;
 

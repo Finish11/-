@@ -5,6 +5,20 @@ export interface ServiceAccessContext {
   withVpn: boolean;
   /** Страна внешнего IP на начало замера. */
   countryCode?: string | null;
+  /**
+   * Приложение уже проверено на этом маршруте: свежий отзыв пользователя или
+   * успешный замер скорости до сервиса.
+   *
+   * Раньше этот признак не учитывался вовсе. `applyServiceAccessPolicy` ставил
+   * `app_unconfirmed` по одному лишь HTTP-ответу, а успешный замер YouTube на
+   * статус не влиял: человек мерил скорость, получал цифру — и всё равно видел
+   * «приложение не подтверждено» и должен был подтверждать вручную.
+   */
+  appConfirmed?: boolean;
+  /** Чем подтверждено — попадает в подпись, чтобы не выдавать отзыв за тест. */
+  confirmedBy?: 'measurement' | 'user' | null;
+  /** Сервисы, которые уже проверены на этом маршруте (по service_id). */
+  confirmedServiceIds?: string[];
 }
 
 interface RegionPolicy {
@@ -51,6 +65,28 @@ const APP_ONLY_DOMAINS = new Set([
 
 const normalized = (domain: string) => domain.toLowerCase().replace(/^www\./, '');
 
+/**
+ * Домены сервиса — для сопоставления подтверждения с проверяемым сайтом.
+ * YouTube подтверждается замером скорости, но проверяется по youtube.com.
+ */
+const SERVICE_DOMAINS: Record<string, string[]> = {
+  youtube: ['youtube.com', 'm.youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+};
+
+/** Подтверждён ли именно этот сайт на текущем маршруте. */
+export function isServiceConfirmed(
+  site: { domain: string; id?: number },
+  context: ServiceAccessContext
+): boolean {
+  const host = normalized(site.domain);
+  const confirmed = context.confirmedServiceIds || [];
+  if (!confirmed.length) return context.appConfirmed === true;
+  return confirmed.some((id) => {
+    if (site.id != null && id === String(site.id)) return true;
+    return (SERVICE_DOMAINS[id] || []).some((domain) => host === domain || host.endsWith(`.${domain}`));
+  });
+}
+
 function regionPolicyFor(domain: string): RegionPolicy | undefined {
   const host = normalized(domain);
   return REGION_POLICIES.find((policy) => policy.domains.includes(host));
@@ -91,6 +127,22 @@ export function applyServiceAccessPolicy(
   if (!appRelevant) return result;
 
   if (result.status === 'blocked' || result.intercepted) {
+    // Страница не дала распознаваемого ответа, но сам сервис уже проверен:
+    // замер скорости прошёл или человек подтвердил работу. Это не делает
+    // блокировку доказанной, однако и «не подтверждено» писать нельзя —
+    // именно из-за этого успешный замер YouTube ничего не менял в статусе.
+    if (isServiceConfirmed(site, context)) {
+      return {
+        ...result,
+        block_reason: 'unknown',
+        intercepted: false,
+        proof: 'opaque',
+        access_scope: 'web_only',
+        note: context.confirmedBy === 'measurement'
+          ? 'Страница не дала распознаваемого ответа, но замер скорости до сервиса прошёл: доступ есть, а не «блокировка». Приложение может работать иначе — это отдельная проверка.'
+          : 'Страница не дала распознаваемого ответа; работу приложения вы подтвердили вручную на этом маршруте.',
+      };
+    }
     return {
       ...result,
       block_reason: 'unknown',

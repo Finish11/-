@@ -27,7 +27,7 @@ import {
 } from '../lib/appSettings';
 import {
   type UpdateInfo,
-  checkForUpdate,
+  checkForUpdateResult,
   getCurrentVersion,
   isUpdateSupported,
   RELEASE_PAGE,
@@ -122,12 +122,19 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
         showToast('info', 'Проверка обновлений работает в приложении для Android');
         return;
       }
-      const found = await checkForUpdate();
-      setAvailable(found);
-      showToast(
-        found ? 'success' : 'info',
-        found ? `Доступна версия ${found.version}` : 'Установлена последняя версия'
-      );
+      // Раньше здесь всегда был успех: checkForUpdate() глотал сетевую ошибку и
+      // возвращал null, поэтому «Не удалось проверить обновления» было
+      // недостижимым, а человек видел «Установлена последняя версия» при
+      // недоступном GitHub. Теперь причина различается.
+      const result = await checkForUpdateResult();
+      setAvailable(result.update);
+      if (result.update) {
+        showToast('success', `Доступна версия ${result.update.version}`);
+      } else if (result.reason === 'up-to-date') {
+        showToast('info', 'Установлена последняя версия');
+      } else {
+        showToast('warning', result.message || 'Не удалось проверить обновления');
+      }
     } catch {
       showToast('error', 'Не удалось проверить обновления');
     } finally {

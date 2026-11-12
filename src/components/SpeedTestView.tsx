@@ -24,6 +24,12 @@ interface SpeedTestViewProps {
   subscriptions?: VpnSubscription[];
   confirmationProfileId: number | null;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
+  /**
+   * Успешный замер до YouTube сам засчитывается как подтверждение работы
+   * сервиса на этом маршруте. Раньше человеку приходилось идти в карточку и
+   * вручную нажимать «Работает» — хотя цифра замера уже всё доказала.
+   */
+  onServiceMeasured?: (result: YoutubeProbeResult) => void;
 }
 
 const PHASE_LABEL: Record<SpeedProgress['phase'], string> = {
@@ -201,7 +207,7 @@ const MetricCard: React.FC<{ icon: React.ReactNode; label: string; value: string
   </div>
 );
 
-export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profiles, subscriptions = [], confirmationProfileId, showToast }) => {
+export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profiles, subscriptions = [], confirmationProfileId, showToast, onServiceMeasured }) => {
   const [progress, setProgress] = useState<SpeedProgress>({ phase: 'select', mbps: 0, progress: 0, message: '' });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SpeedTestResult | null>(null);
@@ -279,6 +285,9 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
         onProgress: (message, mbps) => { setYtStatus(message); if (Number.isFinite(mbps)) setYtLive(mbps); },
       });
       setYtResult(measured);
+      // Цифра получена — сервис проверен. Отдельное ручное подтверждение больше
+      // не требуется: статус обновится автоматически.
+      if (measured.ok) onServiceMeasured?.(measured);
       if (!measured.ok && !measured.aborted) showToast('warning', measured.note || 'YouTube не отдал данные');
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Замер до YouTube не состоялся');

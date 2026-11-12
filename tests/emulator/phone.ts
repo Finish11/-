@@ -54,6 +54,8 @@ export const DEFAULT_PHONE: PhoneState = {
   deadSpeedHosts: [],
   state: null,
   installedVersionCode: 111002091,
+  /** Разрешена ли установка APK из приложения (Android: canRequestPackageInstalls). */
+  canInstallApk: true,
 };
 
 export interface PhoneOptions {
@@ -94,7 +96,10 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
   window.__phone = {
     log,
     snapshot: () => JSON.parse(JSON.stringify(phone)),
-    patch: (values) => { Object.assign(phone, values); bumpSequence(); emit('networkChanged'); },
+    // Любая правка состояния — это смена сети: sequence растёт, подписчики
+    // получают networkChanged. Раньше здесь остался вызов удалённой emit(),
+    // и patch() падал с ReferenceError на любом вызове.
+    patch: (values) => { Object.assign(phone, values); bumpSequence(); emitEvent('ApkUpdater:networkChanged', window.__phone.snapshot()); },
     calls: () => log.map((entry) => entry.pluginId + '.' + entry.methodName),
   };
   if (!NATIVE) return;
@@ -108,6 +113,14 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
   // callbackId. React StrictMode монтирует эффект дважды, и отписка «старого»
   // монтирования не должна снимать живую подписку. Раньше здесь лежал один
   // колбэк на имя события — из-за этого события сети терялись.
+  // ---- «DownloadManager»: загрузка APK идёт в фоне, статус — через status() ---
+  const downloads = new Map();
+  let downloadSeq = 0;
+  const downloadTimers = [];
+  Object.assign(phone, { downloads: [], installCalls: [], installSettingsOpened: 0, installed: false });
+  // Счётчики обновления живут на самом window.__phone: тест читает их из
+  // страницы, а не из замыкания init-скрипта.
+  const installState = phone;
   const listeners = new Map();
   let counter = Math.floor(Math.random() * 100000);
   const emitEvent = (key, payload) => {
@@ -177,11 +190,45 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
       stateRead: () => ({ exists: phone.state != null, value: phone.state == null ? '' : phone.state }),
       stateWrite: (options) => { phone.state = String(options.value == null ? '' : options.value); return { ok: true, bytes: phone.state.length }; },
       openInstalledApp: () => ({ opened: false, installed: false }),
-      status: () => ({ versionCode: phone.installedVersionCode, versionName: '1.11.2', canInstall: true, downloaded: false }),
-      getPermissionState: () => ({ granted: true }),
-      openInstallSettings: () => ({ ok: true }),
-      install: () => ({ ok: true }),
-      download: () => ({ ok: true }),
+      // Java: status() в этом плагине не про версию приложения, а про загрузку
+      // APK — { state, progress, bytes, total }. Версию отдаёт App.getInfo().
+      status: (options) => {
+        const id = Number(options && options.downloadId);
+        const entry = downloads.get(id);
+        if (!entry) return { state: 0, progress: 0 };
+        return { state: entry.state, progress: Math.min(100, Math.round((entry.bytes / entry.total) * 100)),
+          bytes: entry.bytes, total: entry.total };
+      },
+      // Java отдаёт { canInstall, androidSdk }, а не { granted }. С чужим полем
+      // приложение считало, что разрешение не выдано, и уходило в «Нужно
+      // разрешение» вместо установщика.
+      getPermissionState: () => ({ canInstall: phone.canInstallApk, androidSdk: 34 }),
+      openInstallSettings: () => { phone.installSettingsOpened += 1; return { ok: true }; },
+      // Контракт Java: install отдаёт { needsPermission }, download — { downloadId }.
+      install: (options) => {
+        const id = Number(options && options.downloadId);
+        phone.installCalls.push(id);
+        if (!phone.canInstallApk) return { needsPermission: true };
+        if (!downloads.has(id) || downloads.get(id).state !== 8) throw new Error('Файл ещё не скачан');
+        phone.installed = true;
+        return { needsPermission: false };
+      },
+      download: (options) => {
+        const id = ++downloadSeq;
+        const state = { bytes: 0, total: 4_914_631, state: 1, url: String(options && options.url),
+          name: String(options && options.fileName) };
+        downloads.set(id, state);
+        phone.downloads.push({ id, url: state.url, name: state.name });
+        // Как DownloadManager: загрузка идёт в фоне, статус опрашивается через status().
+        const timer = setInterval(() => {
+          if (!phone.connected) { state.state = 16; clearInterval(timer); return; }
+          state.bytes = Math.min(state.total, state.bytes + Math.round(state.total / 5));
+          state.state = 2;
+          if (state.bytes >= state.total) { state.state = 8; clearInterval(timer); }
+        }, 400);
+        downloadTimers.push(timer);
+        return { downloadId: id };
+      },
       tcpProbe: (options) => {
         if (!phone.connected) return { ok: false, route: 'unknown', error: 'DNS: домен не резолвится' };
         if (wantStatus(options.host, 1)) return { ok: false, route: routeName(), error: 'connection reset: таймаут' };
@@ -338,6 +385,11 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
   // patch() в тестах меняет сеть: эмулируем то же, что делает Android, —
   // новый sequence и событие networkChanged для тех, кто подписан.
   window.__phone.listenerKeys = () => Array.from(listeners.keys());
+  // Итоги обновления APK — те же поля, что выставляет «Java» выше.
+  window.__phone.installState = () => ({
+    downloads: installState.downloads, installCalls: installState.installCalls,
+    settingsOpened: installState.installSettingsOpened, installed: installState.installed,
+  });
   window.__phone.setNetwork = (values) => {
     Object.assign(phone, values);
     sequenceValue += 1;

@@ -137,12 +137,31 @@ export const YOUTUBE_PROBE_URLS = [
   'https://www.youtube.com/robots.txt',
 ];
 
+/**
+ * Крупные файлы с хостов youtube.com — настоящий источник цифры.
+ *
+ * Раньше, если страница ролика отдавала только `signatureCipher` (так делает
+ * современный YouTube), замер падал на CDN картинок: `maxresdefault.jpg` —
+ * это 30–150 КБ, а `mqdefault` — вообще 10 КБ. На быстром канале такие файлы
+ * приходят одним пакетом, делятся на почти нулевое время и дают либо ноль,
+ * либо случайные десятки мегабит. В худшем случае всё упиралось в таймаут 6 с
+ * и вердикт «YouTube не отдал ни байта» при полностью рабочем YouTube.
+ *
+ * player JS и каталог станций — мегабайты с того же youtube.com, по которому
+ * видно и задержку, и реальную пропускную способность до площадки.
+ */
+export const YOUTUBE_BULK_URLS = [
+  'https://www.youtube.com/s/player/2f2b8b6b/player_ias.vflset/ru_RU/base.js',
+  'https://www.youtube.com/iframe_api',
+  'https://www.youtube.com/robots.txt',
+];
+
 export type YoutubeSource = 'googlevideo' | 'ytimg' | 'youtube';
 export type YoutubeVerdictKind = 'ok' | 'slow' | 'blocked' | 'offline' | 'unsupported' | 'aborted';
 
 export function youtubeSourceLabel(source: YoutubeSource): string {
   return source === 'googlevideo' ? 'видеоголовка googlevideo'
-    : source === 'youtube' ? 'серверы youtube.com'
+    : source === 'youtube' ? 'файлы youtube.com (player JS)'
     : 'CDN картинок ytimg';
 }
 
@@ -402,12 +421,28 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
     // Ссылку не достать и без сети: не тратим остаток бюджета на заведомые отказы.
     result.errors.push('Сеть не отвечает: адрес потока получить не удалось');
   }
-  // 2. CDN картинок: тот же хостинг YouTube, стабильные адреса.
+  // 2. CDN картинок: тот же хостинг YouTube, стабильные адреса. Раньше это
+  //    был единственный резерв после видеоголовки, но файлы тут мелкие
+  //    (10–150 КБ): на быстром канале они приходят одним пакетом, и цифра —
+  //    случайная. Поэтому CDN остаётся первым быстрым ответом «YouTube жив»,
+  //    а настоящую пропускную способность уточняет фаза крупных файлов.
   if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {
     const phase = await download(YOUTUBE_CDN_URLS, 'ytimg', 3, durationMs);
     if (phase.confirmed) attempts.push({ source: 'ytimg', phase });
   }
-  // 3. Сам сайт: если картинки не отдались, проверяем хотя бы канал до youtube.com.
+  // 3. Крупные файлы с youtube.com: если прямой поток не отдался (обычный
+  //    случай в РФ — страница приходит с signatureCipher), а CDN картинок молчит
+  //    или отдал крохи, это единственный источник, где видна настоящая скорость,
+  //    а не время установки TCP. Если цифра уже есть — не трогаем её: лишняя
+  //    фаза только съедает бюджет и путает источник.
+  // Если цифра уже есть, лишняя фаза только съедает бюджет и путает источник.
+  // Она нужна ровно тогда, когда ни видеоголовка, ни CDN ничего не отдали:
+  // иначе вердикт «YouTube не отдал ни байта» при живом YouTube.
+  if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {
+    const phase = await download(YOUTUBE_BULK_URLS, 'youtube', 3, durationMs);
+    if (phase.confirmed > 0) attempts.push({ source: 'youtube', phase });
+  }
+  // 4. Служебные адреса: последняя проверка, что канал до сайта живой.
   if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {
     const phase = await download(YOUTUBE_PROBE_URLS, 'youtube', 2, Math.min(durationMs, 4000));
     if (phase.confirmed) attempts.push({ source: 'youtube', phase });
@@ -447,7 +482,9 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
   result.verdict = !result.ok ? 'blocked' : result.slow ? 'slow' : 'ok';
   result.note = best.source === 'googlevideo'
     ? 'Измерено на прямом видеопотоке googlevideo — том самом хосте, который замедляют.'
-    : 'Прямую ссылку на поток получить не удалось, измерено на CDN картинок ytimg. Это ответ YouTube, но видеоголовку могут замедлять отдельно — оценка ориентировочная.';
+    : best.source === 'youtube'
+      ? 'Прямую ссылку на поток получить не удалось, измерено на крупных файлах youtube.com (player JS). Видеоголовку могут замедлять отдельно — оценка ориентировочная.'
+      : 'Прямую ссылку на поток получить не удалось, измерено на CDN картинок ytimg. Файлы мелкие, поэтому цифра ориентировочная.';
   if (result.verdict === 'slow') {
     result.note += ' Скорость ниже 0,35 Мбит/с: этого не хватает даже на 144p — похоже на сильное замедление.';
   }

@@ -37,6 +37,8 @@ import { SitesView } from './components/SitesView';
 import { VpnMonitorView } from './components/VpnMonitorView';
 import { IncidentsView } from './components/IncidentsView';
 import { SpeedTestView } from './components/SpeedTestView';
+import { confirmationNodeKey } from './lib/appConfirmations';
+import type { YoutubeProbeResult } from './lib/youtubeSpeed';
 import { HistoryView } from './components/HistoryView';
 import { PermissionOnboarding } from './components/PermissionOnboarding';
 
@@ -297,6 +299,40 @@ export function App() {
     });
   };
 
+  /**
+   * Успешный замер до YouTube — это и есть проверка сервиса. Пишем тот же отзыв,
+   * что человек ставил вручную («работает»), только автоматически, с честной
+   * пометкой источника. Без этого замер жил отдельно от статуса: человек видел
+   * цифру и одновременно «приложение не подтверждено».
+   */
+  const handleServiceMeasured = async (result: YoutubeProbeResult) => {
+    const ip = connection?.ip && connection.ip !== '—' ? connection.ip : '';
+    if (!result.ok || !ip) return;
+    const profile = vpnProfiles.find((item) => item.id === confirmationProfileId) || null;
+    const vpnOn = Boolean(connection?.vpn_detected || connection?.system_vpn);
+    try {
+      const response = await apiFetch<{ confirmation: AppConfirmation }>('/api/app-confirmations', {
+        method: 'POST',
+        body: JSON.stringify({
+          service_id: 'youtube',
+          domain: 'youtube.com',
+          node_key: confirmationNodeKey(profile, vpnOn),
+          profile_id: profile?.id ?? null,
+          profile_name: profile?.name || (vpnOn ? 'VPN без указанного узла' : 'Прямое подключение'),
+          exit_ip: ip,
+          vpn_package: connection?.vpn_package || '',
+          route_source: isNativeApp() ? 'system' : 'browser-manual',
+          works: true,
+        }),
+      });
+      handleConfirmationSaved(response.confirmation);
+      void loadWorkspaceData();
+      showToast('info', `YouTube: замер прошёл, сервис подтверждён автоматически (${result.mbps.toFixed(1)} Мбит/с).`);
+    } catch {
+      // Тихая неудача: замер важнее записи (например, нет связи с сервером).
+    }
+  };
+
   const handleConfirmationRoute = async (profileId: number | null) => {
     const res = await apiFetch<{ profileId: number | null }>('/api/app-confirmations/route', {
       method: 'PUT', body: JSON.stringify({ profile_id: profileId }),
@@ -423,6 +459,7 @@ export function App() {
                 subscriptions={subscriptions}
                 confirmationProfileId={confirmationProfileId}
                 showToast={showToast}
+                onServiceMeasured={(result) => void handleServiceMeasured(result)}
               />
             )}
 

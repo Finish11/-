@@ -5,7 +5,7 @@ import { apiFetch } from '../lib/api';
 import { detectNetworkContext, networkSnapshotKey, toClientConnection, verifyTunnelBypass } from '../lib/networkInfo';
 import { confirmationRouteStillValid, routeFingerprint, routeIdentity, suggestActiveNode, confirmationFreshness, confirmationAgeLabel } from '../lib/appConfirmations';
 import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
-import { confirmationNodeKey, confirmationStatus, detectExitChange, findAppConfirmation, routeSelectionMismatch, routeTransition, type ConfirmationMatch, type RouteChange, type RouteTransition } from '../lib/appConfirmations';
+import { confirmationNodeKey, confirmationRouteLabel, confirmationStatus, detectExitChange, findAppConfirmation, routeSelectionMismatch, routeTransition, type ConfirmationMatch, type RouteChange, type RouteTransition } from '../lib/appConfirmations';
 import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
 import { Sheet } from './ui/Sheet';
 import { Button, Chip, EmptyState, Notice } from './ui/kit';
@@ -418,7 +418,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   const activeIp = currentConnection?.ip && currentConnection.ip !== '—' ? currentConnection.ip : '';
   const routeLabel = !routeKnown ? 'Маршрут не определён'
     : activeProfile ? `Выбран вами: ${activeProfile.name}${vpnActive ? ' · через VPN' : splitTunnel ? ' · приложение вне туннеля' : ''}`
-    : vpnActive ? 'VPN включён · выберите используемый узел'
+    : vpnActive ? 'VPN включён · узел не указан (необязательно)'
     : splitTunnel ? 'VPN включён в системе, но приложение идёт напрямую'
     : isNativeApp() ? 'Прямое подключение · системный VPN выключен' : 'Маршрут выбран вручную · браузер';
   /**
@@ -473,7 +473,9 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   }, [activeIp, currentConnection?.vpn_package, systemVpn, profiles, confirmationProfileId, onConfirmationRoute]);
 
-  const matchFor = (pick: QuickPick, profile = activeProfile) => findAppConfirmation(confirmations, pick.id, profile, activeIp);
+  const matchFor = (pick: QuickPick, profile = activeProfile) => findAppConfirmation(
+    confirmations, pick.id, profile, activeIp, Boolean(systemVpn || vpnActive)
+  );
   /** Сколько отзывов больше не описывают текущий маршрут. */
   const needsRecheck = useMemo(() => added.filter(({ pick }) => {
     const match = matchFor(pick);
@@ -519,8 +521,13 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     ? null
     : profiles.find((profile) => profile.id === selectedProfileId) || null;
   const selectedMatch = selected ? matchFor(selected.pick, selectedProfile) : null;
-  const canConfirm = !routeBusy && !routeError && routeKnown && Boolean(activeIp)
-    && (!isNativeApp() || !systemVpn || Boolean(selectedProfile));
+  // Раньше при включённом VPN без выбранного узла кнопки были отключены:
+  // человек жал «Работает», а ничего не происходило. Android не отдаёт чужой
+  // конфиг, и список профилей может быть пустым — это не повод терять отзыв.
+  // Маршрут «VPN без указанного узла» привязывается к VPN-клиенту и выходу.
+  const canConfirm = !routeBusy && !routeError && routeKnown && Boolean(activeIp);
+  /** Ключ маршрута: узел, «VPN без узла» или прямое подключение. */
+  const routeNodeKey = confirmationNodeKey(selectedProfile, systemVpn || vpnActive);
   const chooseRoute = async (id: number | null) => {
     const before = selectedProfileId; setSelectedProfileId(id); setRouteBusy(true);
     try { await onConfirmationRoute(id); launchRoute.current = null; setAwaitingConfirmation(false); setRouteError(''); }
@@ -534,7 +541,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       showToast('info', 'Запуск установленных приложений доступен в Android APK');
       return;
     }
-    if (!canConfirm || !selected) { showToast('warning', 'Сначала определите маршрут и выберите включённый VPN-узел'); return; }
+    if (!canConfirm || !selected) { showToast('warning', 'Сначала дождитесь, пока определится маршрут и внешний IP'); return; }
     setOpeningApp(true);
     try {
       const ctx = await detectNetworkContext(); const conn = toClientConnection(ctx);
@@ -545,7 +552,8 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       }
       launchRoute.current = {
         networkKey: routeIdentity(networkSnapshotKey({ connected: conn.connection_kind !== 'none', kind: conn.connection_kind || 'unknown', vpn: conn.vpn_detected, sequence: conn.native_sequence, vpnPackage: conn.vpn_package })),
-        exitIp: conn.ip, nodeKey: confirmationNodeKey(selectedProfile), vpnPackage: conn.vpn_package,
+        exitIp: conn.ip, nodeKey: confirmationNodeKey(selectedProfile, Boolean(conn.vpn_detected || conn.system_vpn)),
+        vpnPackage: conn.vpn_package,
       };
       setFreshConnection(conn);
       const result = await launchInstalledApp(pick.packageNames);
@@ -566,12 +574,13 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     setSavingConfirmation(true);
     try {
       const ctx = await detectNetworkContext(); const conn = toClientConnection(ctx);
+      const vpnOn = Boolean(conn.vpn_detected || conn.system_vpn);
+      const liveNodeKey = confirmationNodeKey(selectedProfile, vpnOn);
       const after = {
         networkKey: routeIdentity(networkSnapshotKey({ connected: conn.connection_kind !== 'none', kind: conn.connection_kind || 'unknown', vpn: conn.vpn_detected, sequence: conn.native_sequence, vpnPackage: conn.vpn_package })),
-        exitIp: conn.ip, nodeKey: confirmationNodeKey(selectedProfile), vpnPackage: conn.vpn_package,
+        exitIp: conn.ip, nodeKey: liveNodeKey, vpnPackage: conn.vpn_package,
       };
       if (ctx.changedDuringCheck || !conn.ip || (isNativeApp() && conn.vpn_source !== 'system')
-          || (isNativeApp() && (conn.vpn_detected || conn.system_vpn) && !selectedProfile)
           || (launchRoute.current && !confirmationRouteStillValid(launchRoute.current, after))) {
         setFreshConnection(conn); launchRoute.current = null; setAwaitingConfirmation(false);
         throw new Error('Сеть, VPN или IP изменились после запуска. Откройте приложение ещё раз и подтвердите текущий результат.');
@@ -582,9 +591,9 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
         body: JSON.stringify({
           service_id: selected.pick.id,
           domain: selected.pick.domain,
-          node_key: confirmationNodeKey(selectedProfile),
+          node_key: liveNodeKey,
           profile_id: selectedProfile?.id ?? null,
-          profile_name: selectedProfile?.name || 'Прямое подключение',
+          profile_name: selectedProfile?.name || (vpnOn ? 'VPN без указанного узла' : 'Прямое подключение'),
           exit_ip: conn.ip,
           vpn_package: conn.vpn_package || '',
           route_source: isNativeApp() ? 'system' : 'browser-manual',
@@ -596,7 +605,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       setAwaitingConfirmation(false);
       showToast(
         works ? 'success' : 'warning',
-        `${selected.pick.name}: результат сохранён для ${selectedProfile?.name || 'прямого подключения'}`
+        `${selected.pick.name}: результат сохранён для ${confirmationRouteLabel(selectedProfile, vpnOn)}`
       );
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Не удалось сохранить подтверждение');
@@ -650,7 +659,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
               className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
               style={{ borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--text)' }}
             >
-              <option value="">{systemVpn ? 'Выберите узел — обязательное поле' : 'Не указан / прямой маршрут'}</option>
+              <option value="">{systemVpn ? 'VPN включён, узел не указан (можно так)' : 'Не указан / прямой маршрут'}</option>
               {profiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>{profile.name}</option>
               ))}
@@ -875,17 +884,22 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                     className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
                     style={{ borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--text)' }}
                   >
-                    <option value="">{vpnActive || systemVpn ? 'Выберите узел — обязательное поле' : 'Не указан / прямой маршрут'}</option>
+                    <option value="">{vpnActive || systemVpn ? 'VPN включён, узел не указан (можно так)' : 'Не указан / прямой маршрут'}</option>
                     {profiles.map((profile) => (
                       <option key={profile.id} value={profile.id}>{profile.name}</option>
                     ))}
                   </select>
                 </label>
               ) : (
-                <div className="text-[11px] text-dim">{routeKnown ? 'Системный VPN выключен; отзыв для прямого подключения.' : 'Системный маршрут не определён. Подтверждение недоступно.'}{activeIp ? ` IP ${activeIp}` : ''}</div>
+                <div className="text-[11px] text-dim">{!routeKnown
+                  ? 'Системный маршрут не определён. Подтверждение недоступно.'
+                  : systemVpn
+                    ? 'VPN включён; отзыв привяжется к текущему выходу и IP, даже если узел не указан.'
+                    : 'Системный VPN выключен; отзыв для прямого подключения.'}{activeIp ? ` IP ${activeIp}` : ''}</div>
               )}
               {(vpnActive || systemVpn) && <p className="text-[10.5px] leading-relaxed text-muted">Android показывает VPN-клиент, но не его внутренний конфиг.
-                Сверьте имя сервера в клиенте и выберите его здесь. Выбор сохранится и в следующий раз подставится автоматически; звёздочка «основной» ничего не переключает.</p>}
+                Узел указывать не обязательно: без него отзыв привяжется к текущему выходу и IP. Если выберете узел, отзыв
+                привяжется к нему и выбор подставится в следующий раз; звёздочка «основной» ничего не переключает.</p>}
               {suggestion && <Notice tone="info">Узел подставлен автоматически. {suggestion}</Notice>}
               {vpnDiagnostics?.vpnAppName && <div className="text-[11px] text-dim">VPN-клиент системы: <b>{vpnDiagnostics.vpnAppName}</b>{vpnDiagnostics.lockdown ? ' · постоянный VPN' : ''}</div>}
               {splitTunnel && (

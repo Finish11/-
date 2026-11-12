@@ -460,6 +460,115 @@ async function main() {
     if (/приложение работает · подтверждено/.test(tile)) throw new Error('плитка осталась зелёной на прошлом выходе: ' + tile.slice(0, 160));
     if (!/перепроверьте/.test(tile)) throw new Error('в плитке нет призыва перепроверить: ' + tile.slice(0, 160));
     await phone.shot('exit-changed-tile-warns');
+
+  // 11b. Отзыв на прямом маршруте не должен исчезать. Человек выключил VPN,
+  //      отметил «Не работает», включил VPN, потом вернулся — и раньше видел
+  //      пустую плитку «не проверялся». Причина была в том, что отзыв искался
+  //      строго по IP: оператор выдаёт новый адрес при каждом переподключении.
+  await phone.step('Прямой маршрут: отзыв переживает смену IP', 'VPN выкл → Не работает → смена IP → VPN вкл/выкл', async () => {
+    const cardText = () => page.evaluate(() => {
+      const card = document.querySelector('[data-quick-id="telegram"]');
+      return (card?.textContent || '').replace(/\s+/g, ' ').trim();
+    });
+    const setNetwork = async (values: Record<string, unknown>) => {
+      await page.evaluate((vals) => (window as unknown as { __phone: { setNetwork(v: unknown): void } }).__phone.setNetwork(vals), values);
+      await page.waitForTimeout(3500);
+    };
+    await setNetwork({ systemVpn: false, appUsesVpn: false });
+    // Отмечаем «Не работает» на прямом маршруте.
+    await page.evaluate(() => {
+      const span = Array.from(document.querySelectorAll('span')).find((el) => (el.textContent || '').trim() === 'Telegram');
+      (span?.closest('button, [role="button"], div[class*="rounded"]') as HTMLElement | null)?.click();
+    });
+    await page.waitForTimeout(2500);
+    await page.getByRole('button', { name: /^Не работает$/ }).last().click({ timeout: 10000 });
+    await page.waitForTimeout(2200);
+    await page.getByRole('button', { name: 'Понятно' }).last().click().catch(() => undefined);
+    await page.waitForTimeout(900);
+    const marked = await cardText();
+    if (!/не работает/.test(marked)) throw new Error('отметка «Не работает» не попала в плитку: ' + marked.slice(0, 160));
+
+    // Оператор выдал другой прямой IP — так бывает при переподключении LTE.
+    await page.evaluate(() => (window as unknown as { __phone: { patch(v: unknown): void } }).__phone.patch({ directIp: '203.0.113.77' }));
+    await page.waitForTimeout(5000);
+    let tile = '';
+    for (let i = 0; i < 10; i++) {
+      tile = await cardText();
+      if (/не работало/.test(tile)) break;
+      await page.waitForTimeout(1000);
+    }
+    if (!/не работало/.test(tile)) throw new Error('отзыв прямого маршрута пропал после смены IP: ' + tile.slice(0, 160));
+
+    // Цикл «VPN включили и выключили» не должен стирать отметку.
+    await setNetwork({ systemVpn: true, appUsesVpn: true });
+    await setNetwork({ systemVpn: false, appUsesVpn: false });
+    await page.waitForTimeout(1500);
+    const after = await cardText();
+    if (!/не работало/.test(after)) throw new Error('после цикла VPN отзыв прямого маршрута пропал: ' + after.slice(0, 160));
+    await phone.shot('direct-review-survives-ip-change');
+
+  // 11c. Выключение VPN не должно стирать выбранный узел. Раньше он сбрасывался
+  //      в null в тот же миг, и человек, выключивший VPN на минуту, потом видел
+  //      «не проверялся» и выбирал узел заново — будто отзывы пропали.
+  await phone.step('Выключение VPN не забывает выбранный узел', 'узел → Работает → VPN выкл → VPN вкл', async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3500);
+    await page.evaluate(async () => {
+      for (const name of ['Амстердам', 'Франкфурт']) {
+        await fetch('/api/vpn-profiles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, host: `198.51.100.${name === 'Амстердам' ? 11 : 12}`, port: 443, protocol: 'vless' }),
+        });
+      }
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3500);
+    await page.evaluate(() => (window as unknown as { __phone: { setNetwork(v: unknown): void } }).__phone.setNetwork({ systemVpn: true, appUsesVpn: true }));
+    await page.waitForTimeout(3000);
+    const openCard = async () => {
+      await page.evaluate(() => {
+        const span = Array.from(document.querySelectorAll('span')).find((el) => (el.textContent || '').trim() === 'Telegram');
+        (span?.closest('button, [role="button"], div[class*="rounded"]') as HTMLElement | null)?.click();
+      });
+      await page.waitForTimeout(2800);
+    };
+    await openCard();
+    const options = await page.evaluate(() => {
+      const select = Array.from(document.querySelectorAll('select'))
+        .find((el) => Array.from(el.options).some((o) => o.text.trim() === 'Амстердам'));
+      return select ? Array.from(select.options).map((o) => `${o.text.trim()}=${o.value}`) : [];
+    });
+    const amsterdam = options.find((item) => item.startsWith('Амстердам'));
+    if (!amsterdam) throw new Error('в карточке нет созданного узла: ' + JSON.stringify(options).slice(0, 120));
+    const select = page.locator('select').filter({ has: page.locator('option', { hasText: 'Амстердам' }) }).first();
+    await select.selectOption(amsterdam.split('=').pop()!);
+    await page.waitForTimeout(3000);
+    await page.getByRole('button', { name: /^Работает$/ }).last().click({ timeout: 10000 });
+    await page.waitForTimeout(2200);
+    await page.getByRole('button', { name: 'Понятно' }).last().click().catch(() => undefined);
+    await page.waitForTimeout(900);
+
+    const card = () => page.evaluate(() => (document.querySelector('[data-quick-id="telegram"]')?.textContent || '').replace(/\s+/g, ' ').trim());
+    const savedRoute = () => page.evaluate(async () => (await fetch('/api/app-confirmations/route').then((r) => r.json())).profileId);
+    if (!/приложение работает/.test(await card())) throw new Error('отметка на узле не попала в плитку: ' + (await card()).slice(0, 120));
+    const chosen = await savedRoute();
+    if (chosen == null) throw new Error('выбранный узел не сохранился в настройках');
+
+    // Выключаем VPN и включаем обратно — так делает человек, проверяя прямой маршрут.
+    await page.evaluate(() => (window as unknown as { __phone: { setNetwork(v: unknown): void } }).__phone.setNetwork({ systemVpn: false, appUsesVpn: false }));
+    await page.waitForTimeout(4500);
+    if (await savedRoute() !== chosen) throw new Error('выключение VPN стёрло выбранный узел');
+    const whileOff = await card();
+    if (/не проверялся/.test(whileOff)) throw new Error('отзыв узла пропал, пока VPN выключен: ' + whileOff.slice(0, 160));
+    if (/выход сменился/.test(whileOff)) throw new Error('на прямом маршруте пугает сменой выхода: ' + whileOff.slice(0, 160));
+
+    await page.evaluate(() => (window as unknown as { __phone: { setNetwork(v: unknown): void } }).__phone.setNetwork({ systemVpn: true, appUsesVpn: true }));
+    await page.waitForTimeout(5000);
+    const back = await card();
+    if (!/приложение работает/.test(back)) throw new Error('после возврата VPN отзыв узла не вернулся: ' + back.slice(0, 160));
+    await phone.shot('node-survives-vpn-off');
+  });
+  });
   });
 
   // 12. Настоящий замер сайтов: ветка «через VPN». Раньше в проходе её не было,

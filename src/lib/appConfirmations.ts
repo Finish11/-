@@ -5,6 +5,11 @@ export interface ConfirmationMatch {
   matchedBy: 'node_ip' | 'node' | 'ip';
   /** Отзыв оставлен на этом узле, но выходной IP с тех пор изменился. */
   ipChanged?: boolean;
+  /**
+   * Узел сохранён на будущее, а VPN сейчас выключен. Отзыв относится к узлу,
+   * но показывать «выход сменился» нельзя: трафик идёт напрямую осознанно.
+   */
+  routeParked?: boolean;
 }
 
 /** Блокировки меняются каждый день: отзыв не может держать узел зелёным вечно. */
@@ -93,7 +98,13 @@ export function findAppConfirmation(
   profile: Pick<VpnProfile, 'id'> | null,
   exitIp: string | null | undefined,
   /** VPN включён, но узел не выбран: искать отзыв «VPN без узла». */
-  vpnActive = false
+  vpnActive = false,
+  /**
+   * Платформа точно знает, что VPN сейчас выключен (нативное приложение).
+   * В браузере состояние VPN неизвестно, и это НЕ то же самое: там прежнее
+   * поведение с предупреждением о смене выхода остаётся.
+   */
+  vpnKnownOff = false
 ): ConfirmationMatch | null {
   const ip = cleanIp(exitIp);
   const nodeKey = confirmationNodeKey(profile, vpnActive);
@@ -106,7 +117,11 @@ export function findAppConfirmation(
   // должен исчезать из карточки только из-за смены адреса.
   if (profile) {
     const byNode = newest(service.filter((item) => item.node_key === nodeKey && item.profile_id === profile.id));
-    if (byNode) return { confirmation: byNode, matchedBy: 'node', ipChanged: Boolean(ip) && cleanIp(byNode.exit_ip) !== ip };
+    if (byNode) {
+      // VPN выключен — человек выбрал прямой маршрут, а узел оставлен на будущее.
+      if (vpnKnownOff && !vpnActive) return { confirmation: byNode, matchedBy: 'node', routeParked: true };
+      return { confirmation: byNode, matchedBy: 'node', ipChanged: Boolean(ip) && cleanIp(byNode.exit_ip) !== ip };
+    }
   }
 
   // Узел не указан: VPN включён, но конфиг клиента приложению недоступен.
@@ -120,6 +135,22 @@ export function findAppConfirmation(
       confirmation: byUnknownNode,
       matchedBy: 'node',
       ipChanged: cleanIp(byUnknownNode.exit_ip) !== ip,
+    };
+  }
+
+  // Прямой маршрут. Отзыв относится к маршруту, а не к одному адресу: оператор
+  // выдаёт новый IP при каждом переподключении LTE, и раньше отзыв бесследно
+  // исчезал — плитка снова писала «не проверялся», а человек видел, что его
+  // отметка «не работает» пропала. Теперь отзыв остаётся и просит перепроверку,
+  // если выход сменился. Отзывы с VPN сюда по-прежнему не попадают: фильтр
+  // строго по `node_key === 'direct'`.
+  if (!profile && !vpnActive) {
+    const byDirect = newest(service.filter((item) => item.node_key === 'direct'));
+    if (!byDirect) return null;
+    return {
+      confirmation: byDirect,
+      matchedBy: 'node',
+      ipChanged: Boolean(ip) && cleanIp(byDirect.exit_ip) !== ip,
     };
   }
 
@@ -147,8 +178,13 @@ export interface ConfirmationStatus {
  * Теперь смена выхода — это отдельное состояние «перепроверьте», а не прежний
  * зелёный статус.
  */
-export function confirmationStatus(match: ConfirmationMatch, now = Date.now()): ConfirmationStatus {
-  const { confirmation, matchedBy, ipChanged } = match;
+/** VPN сейчас включён. Нужен для текста: на прямом маршруте причина другая. */
+export function confirmationStatus(
+  match: ConfirmationMatch,
+  now = Date.now(),
+  vpnActive = true
+): ConfirmationStatus {
+  const { confirmation, matchedBy, ipChanged, routeParked } = match;
   const freshness = confirmationFreshness(confirmation.confirmed_at, now);
   if (matchedBy === 'ip') {
     return {
@@ -157,11 +193,22 @@ export function confirmationStatus(match: ConfirmationMatch, now = Date.now()): 
       reason: 'Отзыв оставлен на другом узле, совпал только внешний IP. Выберите свой узел и перепроверьте приложение.',
     };
   }
+  if (routeParked) {
+    return {
+      tone: 'warn', recheck: false,
+      label: confirmation.works ? 'не проверяли на прямом · работало на узле' : 'на узле не работало · сейчас напрямую',
+      reason: `VPN сейчас выключен, трафик идёт напрямую. Отзыв сохранён за узлом «${confirmation.profile_name || 'без имени'}» и снова начнёт действовать, когда VPN включат.`,
+    };
+  }
   if (ipChanged) {
     return {
       tone: 'warn', recheck: true,
       label: confirmation.works ? 'работало · выход сменился, перепроверьте' : 'не работало · выход сменился',
-      reason: `Отзыв оставлен на выходном IP ${confirmation.exit_ip || 'неизвестном'}, сейчас выход другой. В VPN-клиенте, вероятно, включён другой узел — отметьте результат заново.`,
+      reason: `Отзыв оставлен на выходном IP ${confirmation.exit_ip || 'неизвестном'}, сейчас выход другой. ${
+        vpnActive === false
+          ? 'VPN сейчас выключен: отметьте результат заново на прямом маршруте.'
+          : 'В VPN-клиенте, вероятно, включён другой узел — отметьте результат заново.'
+      }`,
     };
   }
   if (confirmation.works && freshness === 'stale') {
@@ -247,8 +294,19 @@ export function routeSelectionMismatch(
   if (selectedProfileId == null) return false;
   // В браузере VPN системы не видно: выбор пользователя не перепроверяем.
   if (!facts.nativeApp) return false;
-  // VPN-клиент включён — узел остаётся выбором человека, даже если IP сменился.
-  return !facts.systemVpn;
+  /**
+   * VPN выключен, а узел выбран. Раньше это считалось ошибкой выбора, и узел
+   * стирался. Человеку, который на минуту выключил VPN, приходилось выбирать
+   * узел заново, а его отзывы выглядели пропавшими. Теперь выбор сохраняется:
+   * отзывы читаются по прямому маршруту, пока VPN действительно выключен,
+   * и снова относятся к своему узлу, когда VPN включат.
+   *
+   * Ошибкой остаётся случай, когда VPN включён, но клиент другой: узел
+   * принадлежит прошлому клиенту.
+   */
+  if (!facts.systemVpn) return false;
+  if (!(facts.vpnPackage || '').trim()) return false;
+  return true;
 }
 
 /** Отпечаток маршрута: клиент + выходной IP. По нему запоминаем выбранный узел. */

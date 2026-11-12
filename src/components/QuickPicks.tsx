@@ -105,13 +105,18 @@ const BrandBadge: React.FC<{ id: string; size?: number }> = ({ id, size = 34 }) 
   );
 };
 
-function statusVisual(r?: ScanSiteResult, scanning?: boolean, confirmation?: ConfirmationMatch | null): Visual {
+function statusVisual(
+  r?: ScanSiteResult,
+  scanning?: boolean,
+  confirmation?: ConfirmationMatch | null,
+  vpnActive?: boolean
+): Visual {
   if (scanning) {
     return { bg: 'var(--surface-2)', fg: 'var(--text-dim)', label: 'проверяем', emojiBg: 'transparent' };
   }
   if (confirmation) {
     // Единый источник правды: та же функция решает, нужен ли повторный отзыв.
-    const status = confirmationStatus(confirmation);
+    const status = confirmationStatus(confirmation, Date.now(), vpnActive);
     const color = status.tone === 'ok' ? 'success' : status.tone === 'bad' ? 'danger' : 'warning';
     return {
       bg: `rgb(var(--${color}) / ${status.tone === 'ok' ? 0.12 : 0.1})`,
@@ -444,18 +449,22 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       setExitChange(null);
       setRoutePickerOpen(false);
       setTransition('vpn_off');
-      void onConfirmationRoute(null);
+      // Выбор узла здесь НЕ стираем. Раньше он сбрасывался в null, и человек,
+      // выключивший VPN на минуту, терял узел навсегда: после включения VPN
+      // плитка писала «не проверялся», хотя отзыв лежал в базе, а память
+      // «клиент + IP → узел» помнила выбор. Пока VPN выключен, отзывы и так
+      // читаются по прямому маршруту: findAppConfirmation смотрит на факт VPN.
       return;
     }
 
     if (!previous) return;
     const event = routeTransition(previous, next);
     if (event === 'vpn_off') {
-      // Трафик снова идёт напрямую: убираем узел, а не пугаем «выход сменился».
+      // Трафик снова идёт напрямую: не пугаем «выход сменился» и не стираем
+      // выбранный узел — он снова понадобится, когда VPN включат обратно.
       setExitChange(null);
       setRoutePickerOpen(false);
       setTransition('vpn_off');
-      if (confirmationProfileId != null) void onConfirmationRoute(null);
       return;
     }
     const change = detectExitChange(previous, next);
@@ -473,8 +482,11 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     }
   }, [activeIp, currentConnection?.vpn_package, systemVpn, profiles, confirmationProfileId, onConfirmationRoute]);
 
+  // Нативное приложение видит системный VPN и точно знает, что он выключен.
+  // Браузер этого не знает: там «неизвестно» нельзя выдавать за «напрямую».
+  const vpnKnownOff = isNativeApp() && !systemVpn && !vpnActive;
   const matchFor = (pick: QuickPick, profile = activeProfile) => findAppConfirmation(
-    confirmations, pick.id, profile, activeIp, Boolean(systemVpn || vpnActive)
+    confirmations, pick.id, profile, activeIp, Boolean(systemVpn || vpnActive), vpnKnownOff
   );
   /** Сколько отзывов больше не описывают текущий маршрут. */
   const needsRecheck = useMemo(() => added.filter(({ pick }) => {
@@ -535,6 +547,11 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
     ? null
     : profiles.find((profile) => profile.id === selectedProfileId) || null;
   const selectedMatch = selected ? matchFor(selected.pick, selectedProfile) : null;
+  // Статус считается тем же правилом, что и на плитке: иначе карточка и список
+  // говорят разное об одном отзыве.
+  const selectedStatus = selectedMatch
+    ? confirmationStatus(selectedMatch, Date.now(), Boolean(systemVpn || vpnActive))
+    : null;
   // Раньше при включённом VPN без выбранного узла кнопки были отключены:
   // человек жал «Работает», а ничего не происходило. Android не отдаёт чужой
   // конфиг, и список профилей может быть пустым — это не повод терять отзыв.
@@ -723,7 +740,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {added.map(({ pick, site }) => {
             const r = findQuickValue(resultByDomain, pick);
-            const v = statusVisual(r, scanning, matchFor(pick));
+            const v = statusVisual(r, scanning, matchFor(pick), Boolean(systemVpn || vpnActive));
             const game = gamePing[pick.id];
             return (
               <div
@@ -859,10 +876,10 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           <div className="space-y-3">
             <div
               className="rounded-2xl border p-3.5"
-              style={{ borderColor: 'var(--line)', background: statusVisual(selected.result, scanning, selectedMatch).bg }}
+              style={{ borderColor: 'var(--line)', background: statusVisual(selected.result, scanning, selectedMatch, Boolean(systemVpn || vpnActive)).bg }}
             >
-              <div className="text-[14px] font-extrabold" style={{ color: statusVisual(selected.result, scanning, selectedMatch).fg }}>
-                {statusVisual(selected.result, scanning, selectedMatch).label}
+              <div className="text-[14px] font-extrabold" style={{ color: statusVisual(selected.result, scanning, selectedMatch, Boolean(systemVpn || vpnActive)).fg }}>
+                {statusVisual(selected.result, scanning, selectedMatch, Boolean(systemVpn || vpnActive)).label}
               </div>
               <div className="text-[11px] font-mono text-muted mt-1">{selected.pick.domain}</div>
             </div>
@@ -925,10 +942,10 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
               {bypassReport && <Notice tone="info">{bypassReport}</Notice>}
               {!canConfirm && !routeBusy && !routeError && <Notice tone="warn">{!activeIp ? 'Внешний IP не определён. Откройте карточку заново после восстановления сети.' : 'Выберите используемый VPN-узел.'}</Notice>}
               {selectedMatch && (
-                <Notice tone={confirmationStatus(selectedMatch).tone === 'ok' ? 'ok' : confirmationStatus(selectedMatch).tone === 'bad' ? 'bad' : 'warn'}>
+                <Notice tone={selectedStatus?.tone === 'ok' ? 'ok' : selectedStatus?.tone === 'bad' ? 'bad' : 'warn'}>
                   {selectedMatch.confirmation.works ? 'Вы подтвердили: приложение работает.' : 'Вы отметили: приложение не работает.'}
-                  {' '}{confirmationStatus(selectedMatch).reason}
-                  {' '}{confirmationFreshness(selectedMatch.confirmation.confirmed_at) !== 'fresh' && !confirmationStatus(selectedMatch).recheck
+                  {' '}{selectedStatus?.reason}
+                  {' '}{confirmationFreshness(selectedMatch.confirmation.confirmed_at) !== 'fresh' && !selectedStatus?.recheck
                     ? 'Отзыв давний — ситуация могла измениться, перепроверьте. ' : ''}
                   {selectedMatch.confirmation.profile_name} · {new Date(selectedMatch.confirmation.confirmed_at).toLocaleString('ru-RU')}
                 </Notice>

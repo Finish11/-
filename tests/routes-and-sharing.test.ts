@@ -58,13 +58,39 @@ test('обычный VPN и прямое подключение определя
 
 test('отзыв на выбранный узел не исчезает при смене выходного IP', () => {
   const saved = confirmation();
-  const match = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77');
+  const match = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77', true);
   assert.ok(match, 'карточка обязана показать отзыв пользователя на этом узле');
   assert.equal(match!.matchedBy, 'node');
   assert.equal(match!.ipChanged, true);
-  const exact = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10');
+  const exact = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10', true);
   assert.equal(exact!.matchedBy, 'node_ip');
   assert.equal(exact!.ipChanged, undefined);
+});
+
+test('выключенный VPN не стирает выбранный узел', () => {
+  const saved = confirmation();
+  // Человек выключил VPN, узел в настройках остался: отзыв относится к узлу,
+  // но статус не должен пугать «выход сменился» — трафик идёт напрямую.
+  const parked = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.20', false, true)!;
+  assert.ok(parked, 'узел сохранён — отзыв обязан остаться на месте');
+  assert.equal(parked.routeParked, true);
+  assert.equal(parked.ipChanged, undefined);
+  const status = confirmationStatus(parked, Date.now(), false);
+  assert.equal(status.recheck, false, 'это не повод для перепроверки');
+  assert.equal(status.tone, 'warn');
+  assert.match(status.label, /на узле/);
+  assert.match(status.reason, /VPN сейчас выключен/);
+
+  // В браузере состояние VPN неизвестно — это не «напрямую»: прежнее
+  // предупреждение о смене выхода остаётся, иначе статус врал бы в другую сторону.
+  const browserUnknown = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.20', false, false)!;
+  assert.equal(browserUnknown.routeParked, undefined);
+  assert.equal(browserUnknown.ipChanged, true);
+
+  // Когда VPN включат обратно, тот же узел снова даёт обычный зелёный статус.
+  const back = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10', true)!;
+  assert.equal(back.routeParked, undefined);
+  assert.equal(confirmationStatus(back, Date.now(), true).tone, 'ok');
 });
 
 test('VPN без указанного узла: отзыв находится и не считается свежим при смене IP', () => {
@@ -85,12 +111,35 @@ test('VPN без указанного узла: отзыв находится и
   assert.equal(findAppConfirmation([saved], 'youtube', null, '203.0.113.10', false), null);
 });
 
+test('отзыв на прямом маршруте переживает смену выходного IP', () => {
+  const direct = confirmation({ service_id: 'telegram', domain: 'telegram.org', node_key: 'direct', profile_id: null, profile_name: 'Прямое подключение' });
+  const exact = findAppConfirmation([direct], 'telegram', null, '203.0.113.10');
+  assert.equal(exact!.matchedBy, 'node_ip');
+  assert.equal(exact!.ipChanged, undefined);
+
+  // Оператор выдал другой IP при переподключении LTE: отметка человека не
+  // должна исчезать, иначе плитка снова пишет «не проверялся».
+  const moved = findAppConfirmation([direct], 'telegram', null, '203.0.113.77');
+  assert.ok(moved, 'отзыв на прямом маршруте обязан сохраняться при смене IP');
+  assert.equal(moved!.matchedBy, 'node');
+  assert.equal(moved!.ipChanged, true);
+  assert.equal(confirmationStatus(moved!).recheck, true);
+
+  // Отзыв VPN-маршрута к прямому подключению не относится.
+  const viaVpn = confirmation({ service_id: 'telegram', domain: 'telegram.org', node_key: 'vpn:unknown', profile_id: null });
+  assert.equal(findAppConfirmation([viaVpn], 'telegram', null, '203.0.113.77'), null);
+});
+
 test('прямой маршрут не забирает отзыв, оставленный на VPN-узле', () => {
   assert.equal(findAppConfirmation([confirmation()], 'youtube', null, '203.0.113.10'), null);
   const direct = confirmation({ node_key: 'direct', profile_id: null, profile_name: 'Прямое подключение' });
   assert.equal(findAppConfirmation([direct], 'youtube', null, '203.0.113.10')!.matchedBy, 'node_ip');
-  // Для прямого подключения смена IP — это другая сеть, отзыв не переносим.
-  assert.equal(findAppConfirmation([direct], 'youtube', null, '198.51.100.1'), null);
+  // Смена IP на прямом маршруте — не повод терять отзыв: раньше человек видел,
+  // как его отметка исчезает после переподключения LTE. Теперь отзыв остаётся
+  // и просит перепроверку (см. тест «переживает смену выходного IP» выше).
+  const movedDirect = findAppConfirmation([direct], 'youtube', null, '198.51.100.1');
+  assert.equal(movedDirect!.matchedBy, 'node');
+  assert.equal(movedDirect!.ipChanged, true);
 });
 
 test('автоопределение узла: память «клиент + IP» и совпадение IP сервера', () => {
@@ -278,18 +327,18 @@ test('давний отзыв не поднимает узел выше свеж
 test('смена выходного IP меняет статус карточки, а не держит прежний зелёный', () => {
   const saved = confirmation();
   // Тот же узел и тот же выход — отзыв действителен.
-  const same = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10')!;
+  const same = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10', true)!;
   assert.equal(confirmationStatus(same).tone, 'ok');
   assert.equal(confirmationStatus(same).recheck, false);
   // Человек переключил узел в клиенте: выход другой, отзыв больше не про этот маршрут.
-  const changed = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77')!;
+  const changed = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77', true)!;
   const status = confirmationStatus(changed);
   assert.equal(status.tone, 'warn');
   assert.equal(status.recheck, true);
   assert.match(status.label, /перепроверьте/);
   assert.match(status.reason, /203\.0\.113\.10/);
   // Отзыв другого узла с тем же IP тоже требует перепроверки.
-  const byIp = findAppConfirmation([saved], 'youtube', { id: 9 }, '203.0.113.10')!;
+  const byIp = findAppConfirmation([saved], 'youtube', { id: 9 }, '203.0.113.10', true)!;
   assert.equal(confirmationStatus(byIp).recheck, true);
 });
 
@@ -320,8 +369,11 @@ test('смена узла видна по выходному IP при том ж
 });
 
 test('выключение VPN возвращает прямой маршрут, а не «выход сменился»', () => {
-  // Пользователь выключил VPN в клиенте: узел в настройках не должен остаться.
-  assert.equal(routeSelectionMismatch(7, { systemVpn: false, nativeApp: true }), true);
+  // Пользователь выключил VPN: узел сохраняется — иначе после включения VPN
+  // человек видел «не проверялся» и должен был выбирать узел заново.
+  assert.equal(routeSelectionMismatch(7, { systemVpn: false, nativeApp: true }), false);
+  // Ошибка остаётся там, где VPN включён, но клиент другой: узел чужой.
+  assert.equal(routeSelectionMismatch(7, { systemVpn: true, vpnPackage: 'com.other.vpn', nativeApp: true }), true);
   assert.equal(routeSelectionMismatch(7, { systemVpn: true, nativeApp: true }), false,
     'VPN включён — узел остаётся выбором человека, даже если IP сменился');
   assert.equal(routeSelectionMismatch(null, { systemVpn: false, nativeApp: true }), false);

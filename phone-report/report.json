@@ -5,70 +5,70 @@
       "action": "запуск",
       "target": "http://127.0.0.1:4173/demo.html",
       "ok": true,
-      "ms": 682
+      "ms": 806
     },
     {
       "index": 2,
       "action": "первый запуск: разрешения",
       "target": "Продолжить",
       "ok": true,
-      "ms": 1360
+      "ms": 1294
     },
     {
       "index": 3,
       "action": "вкладка scanner",
       "target": "Проверка сети",
       "ok": true,
-      "ms": 743
+      "ms": 750
     },
     {
       "index": 4,
       "action": "вкладка sites",
       "target": "Каталог сайтов",
       "ok": true,
-      "ms": 849
+      "ms": 945
     },
     {
       "index": 5,
       "action": "вкладка vpn",
       "target": "VPN-узлы",
       "ok": true,
-      "ms": 790
+      "ms": 819
     },
     {
       "index": 6,
       "action": "вкладка speed",
       "target": "Скорость",
       "ok": true,
-      "ms": 771
+      "ms": 788
     },
     {
       "index": 7,
       "action": "вкладка incidents",
       "target": "Сбои и белые списки",
       "ok": true,
-      "ms": 748
+      "ms": 775
     },
     {
       "index": 8,
       "action": "вкладка history",
       "target": "История",
       "ok": true,
-      "ms": 754
+      "ms": 755
     },
     {
       "index": 9,
       "action": "скорость: открыть экран",
       "target": "Скорость",
       "ok": true,
-      "ms": 861
+      "ms": 871
     },
     {
       "index": 10,
       "action": "скорость: замер",
       "target": "Замерить",
       "ok": true,
-      "ms": 879
+      "ms": 935
     },
     {
       "index": 11,
@@ -82,140 +82,154 @@
       "action": "youtube: замер",
       "target": "Замерить YouTube",
       "ok": true,
-      "ms": 438
+      "ms": 482
     },
     {
       "index": 13,
       "action": "youtube: результат",
       "target": "вердикт качества",
       "ok": true,
-      "ms": 601
+      "ms": 604
     },
     {
       "index": 14,
       "action": "VPN выключен",
       "target": "vpn off",
       "ok": true,
-      "ms": 1507
+      "ms": 1536
     },
     {
       "index": 15,
       "action": "сеть пропала",
       "target": "offline",
       "ok": true,
-      "ms": 2701
+      "ms": 2724
     },
     {
       "index": 16,
       "action": "точка замера отказывает",
       "target": "HTTP 403",
       "ok": true,
-      "ms": 2397
+      "ms": 2424
     },
     {
       "index": 17,
       "action": "светлая тема",
       "target": "шестерёнка → Светлая",
       "ok": true,
-      "ms": 1414
+      "ms": 1489
     },
     {
       "index": 18,
       "action": "тёмная тема",
       "target": "шестерёнка → Тёмная",
       "ok": true,
-      "ms": 697
+      "ms": 723
     },
     {
       "index": 19,
       "action": "закрыть настройки",
       "target": "Готово",
       "ok": true,
-      "ms": 757
+      "ms": 774
     },
     {
       "index": 20,
       "action": "каталог: поиск и провал сайта",
       "target": "Сайты",
       "ok": true,
-      "ms": 2074
+      "ms": 2376
     },
     {
       "index": 21,
       "action": "проверка: скопировать отчёт",
       "target": "Проверка → Скопировать отчёт",
       "ok": true,
-      "ms": 3249
+      "ms": 3850
     },
     {
       "index": 22,
       "action": "форма сбоя: отправить отчёт",
       "target": "Сбои → Сообщить о сбое",
       "ok": true,
-      "ms": 5409
+      "ms": 5586
     },
     {
       "index": 23,
       "action": "история замеров: запись сохранена",
       "target": "Скорость → История замеров",
       "ok": true,
-      "ms": 1395
+      "ms": 1398
     },
     {
       "index": 24,
       "action": "настройки: подписи в селектах влезают",
       "target": "Сервер и конфиг",
       "ok": true,
-      "ms": 859
+      "ms": 864
     },
     {
       "index": 25,
       "action": "YouTube: замер даёт цифру",
       "target": "Скорость → Замерить YouTube",
       "ok": true,
-      "ms": 3682
+      "ms": 3705
     },
     {
       "index": 26,
       "action": "YouTube: статус подтверждён замером",
       "target": "Скорость → замер → Проверка → YouTube",
       "ok": true,
-      "ms": 6045
+      "ms": 6173
+    },
+    {
+      "index": 27,
+      "action": "Выключение VPN не забывает выбранный узел",
+      "target": "узел → Работает → VPN выкл → VPN вкл",
+      "ok": true,
+      "ms": 31328
+    },
+    {
+      "index": 27,
+      "action": "Прямой маршрут: отзыв переживает смену IP",
+      "target": "VPN выкл → Не работает → смена IP → VPN вкл/выкл",
+      "ok": true,
+      "ms": 54740
     },
     {
       "index": 27,
       "action": "Смена выхода: подтверждение под вопросом",
       "target": "Проверка → YouTube → Работает → Понятно → сменить выход",
       "ok": true,
-      "ms": 1478
-    },
-    {
-      "index": 28,
-      "action": "проверка сети: замер даёт вердикт",
-      "target": "Проверить сеть → с VPN",
-      "ok": true,
-      "ms": 4546
-    },
-    {
-      "index": 29,
-      "action": "узел вручную: тост не перекрывает кнопки",
-      "target": "VPN-узлы → Узел вручную → Сохранить",
-      "ok": true,
-      "ms": 3129
+      "ms": 56501
     },
     {
       "index": 30,
-      "action": "подписка: строка без http отклоняется",
-      "target": "Добавить подписку → Загрузить",
+      "action": "проверка сети: замер даёт вердикт",
+      "target": "Проверить сеть → с VPN",
       "ok": true,
-      "ms": 4186
+      "ms": 4539
     },
     {
       "index": 31,
+      "action": "узел вручную: тост не перекрывает кнопки",
+      "target": "VPN-узлы → Узел вручную → Сохранить",
+      "ok": true,
+      "ms": 3194
+    },
+    {
+      "index": 32,
+      "action": "подписка: строка без http отклоняется",
+      "target": "Добавить подписку → Загрузить",
+      "ok": true,
+      "ms": 4299
+    },
+    {
+      "index": 33,
       "action": "обновление: прогресс и установщик",
       "target": "Скачать и установить → установка",
       "ok": true,
-      "ms": 7111
+      "ms": 7096
     }
   ],
   "findings": [],
@@ -227,10 +241,18 @@
     {
       "type": "error",
       "text": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
     }
   ],
   "pageErrors": [],
   "screenshotsDir": "/home/user/-/phone-report",
-  "startedAt": "2026-11-12T22:16:32.444Z",
-  "finishedAt": "2026-11-12T22:16:32.608Z"
+  "startedAt": "2026-11-12T23:17:25.960Z",
+  "finishedAt": "2026-11-12T23:17:26.244Z"
 }

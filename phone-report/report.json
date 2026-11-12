@@ -5,203 +5,210 @@
       "action": "запуск",
       "target": "http://127.0.0.1:4173/demo.html",
       "ok": true,
-      "ms": 642
+      "ms": 685
     },
     {
       "index": 2,
       "action": "первый запуск: разрешения",
       "target": "Продолжить",
       "ok": true,
-      "ms": 1272
+      "ms": 1234
     },
     {
       "index": 3,
       "action": "вкладка scanner",
       "target": "Проверка сети",
       "ok": true,
-      "ms": 749
+      "ms": 742
     },
     {
       "index": 4,
       "action": "вкладка sites",
       "target": "Каталог сайтов",
       "ok": true,
-      "ms": 838
+      "ms": 834
     },
     {
       "index": 5,
       "action": "вкладка vpn",
       "target": "VPN-узлы",
       "ok": true,
-      "ms": 792
+      "ms": 799
     },
     {
       "index": 6,
       "action": "вкладка speed",
       "target": "Скорость",
       "ok": true,
-      "ms": 778
+      "ms": 774
     },
     {
       "index": 7,
       "action": "вкладка incidents",
       "target": "Сбои и белые списки",
       "ok": true,
-      "ms": 760
+      "ms": 754
     },
     {
       "index": 8,
       "action": "вкладка history",
       "target": "История",
       "ok": true,
-      "ms": 744
+      "ms": 746
     },
     {
       "index": 9,
       "action": "скорость: открыть экран",
       "target": "Скорость",
       "ok": true,
-      "ms": 863
+      "ms": 865
     },
     {
       "index": 10,
       "action": "скорость: замер",
       "target": "Замерить",
       "ok": true,
-      "ms": 878
+      "ms": 900
     },
     {
       "index": 11,
       "action": "скорость: результат",
       "target": "числа замера",
       "ok": true,
-      "ms": 803
+      "ms": 802
     },
     {
       "index": 12,
       "action": "youtube: замер",
       "target": "Замерить YouTube",
       "ok": true,
-      "ms": 494
+      "ms": 476
     },
     {
       "index": 13,
       "action": "youtube: результат",
       "target": "вердикт качества",
       "ok": true,
-      "ms": 602
+      "ms": 601
     },
     {
       "index": 14,
       "action": "VPN выключен",
       "target": "vpn off",
       "ok": true,
-      "ms": 1508
+      "ms": 1506
     },
     {
       "index": 15,
       "action": "сеть пропала",
       "target": "offline",
       "ok": true,
-      "ms": 2723
+      "ms": 2748
     },
     {
       "index": 16,
       "action": "точка замера отказывает",
       "target": "HTTP 403",
       "ok": true,
-      "ms": 2401
+      "ms": 2407
     },
     {
       "index": 17,
       "action": "светлая тема",
       "target": "шестерёнка → Светлая",
       "ok": true,
-      "ms": 1474
+      "ms": 1402
     },
     {
       "index": 18,
       "action": "тёмная тема",
       "target": "шестерёнка → Тёмная",
       "ok": true,
-      "ms": 675
+      "ms": 681
     },
     {
       "index": 19,
       "action": "закрыть настройки",
       "target": "Готово",
       "ok": true,
-      "ms": 752
+      "ms": 760
     },
     {
       "index": 20,
       "action": "каталог: поиск и провал сайта",
       "target": "Сайты",
       "ok": true,
-      "ms": 2118
+      "ms": 2074
     },
     {
       "index": 21,
       "action": "проверка: скопировать отчёт",
       "target": "Проверка → Скопировать отчёт",
       "ok": true,
-      "ms": 3247
+      "ms": 4267
     },
     {
       "index": 22,
       "action": "форма сбоя: отправить отчёт",
       "target": "Сбои → Сообщить о сбое",
       "ok": true,
-      "ms": 5465
+      "ms": 5439
     },
     {
       "index": 23,
       "action": "история замеров: запись сохранена",
       "target": "Скорость → История замеров",
       "ok": true,
-      "ms": 1379
+      "ms": 1384
     },
     {
       "index": 24,
       "action": "настройки: подписи в селектах влезают",
       "target": "Сервер и конфиг",
       "ok": true,
-      "ms": 863
+      "ms": 852
     },
     {
       "index": 25,
       "action": "YouTube: замер даёт цифру",
       "target": "Скорость → Замерить YouTube",
       "ok": true,
-      "ms": 3694
+      "ms": 3696
     },
     {
       "index": 26,
       "action": "YouTube: статус подтверждён замером",
       "target": "Скорость → замер → Проверка → YouTube",
       "ok": true,
-      "ms": 5963
+      "ms": 5924
     },
     {
       "index": 27,
-      "action": "узел вручную: тост не перекрывает кнопки",
-      "target": "VPN-узлы → Узел вручную → Сохранить",
+      "action": "проверка сети: замер даёт вердикт",
+      "target": "Проверить сеть → с VPN",
       "ok": true,
-      "ms": 3133
+      "ms": 4542
     },
     {
       "index": 28,
-      "action": "подписка: строка без http отклоняется",
-      "target": "Добавить подписку → Загрузить",
+      "action": "узел вручную: тост не перекрывает кнопки",
+      "target": "VPN-узлы → Узел вручную → Сохранить",
       "ok": true,
-      "ms": 4237
+      "ms": 3121
     },
     {
       "index": 29,
+      "action": "подписка: строка без http отклоняется",
+      "target": "Добавить подписку → Загрузить",
+      "ok": true,
+      "ms": 4199
+    },
+    {
+      "index": 30,
       "action": "обновление: прогресс и установщик",
       "target": "Скачать и установить → установка",
       "ok": true,
-      "ms": 7161
+      "ms": 7162
     }
   ],
   "findings": [],
@@ -217,6 +224,6 @@
   ],
   "pageErrors": [],
   "screenshotsDir": "/home/user/-/phone-report",
-  "startedAt": "2026-11-12T18:53:57.789Z",
-  "finishedAt": "2026-11-12T18:53:57.964Z"
+  "startedAt": "2026-11-12T19:20:01.033Z",
+  "finishedAt": "2026-11-12T19:20:01.219Z"
 }

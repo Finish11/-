@@ -61,6 +61,16 @@ const APP_ONLY_DOMAINS = new Set([
   'whatsapp.com',
   'web.telegram.org',
   'telegram.org',
+  // Такие же сервисы-приложения: веб-страница ничего не говорит о работе
+  // приложения, и «не открыт» для них — тот же перебор, что и для мессенджеров.
+  // Раньше youtube.com получал жёсткий статус «не открыт», а Telegram рядом —
+  // «не подтверждено» при ровно той же причине («ответ не распознан»).
+  'youtube.com',
+  'm.youtube.com',
+  'youtube-nocookie.com',
+  'youtu.be',
+  'chatgpt.com',
+  'chat.openai.com',
 ]);
 
 const normalized = (domain: string) => domain.toLowerCase().replace(/^www\./, '');

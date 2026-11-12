@@ -832,7 +832,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           ) : showResult && activeScan ? (
             <div className="mt-3 w-full max-w-sm space-y-1">
               <h2 className="text-[15px] font-extrabold leading-snug">{activeScan.verdict_title}</h2>
-              <p className="text-[12px] text-dim leading-snug line-clamp-2">{activeScan.verdict_summary}</p>
+              {/* Сводку нельзя резать по двум строкам: на телефоне фраза
+                  обрывалась на «Часть подсетей (Cloudflare, CDN) лежит —…»,
+                  и главный вывод оставался недосказанным. Пусть переносится. */}
+              <p className="text-[12px] text-dim leading-relaxed">{activeScan.verdict_summary}</p>
               <p className="text-[10.5px] text-muted pt-0.5">
                 {relativeScanTime(activeScan.created_at)}
                 {staleScan && (

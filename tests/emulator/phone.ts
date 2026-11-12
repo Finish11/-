@@ -258,13 +258,28 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
         return { ok: true, latency_ms: phone.latencyMs, min_ms: phone.latencyMs,
           max_ms: phone.latencyMs + 1, samples, status: 204, route: routeName() };
       },
+      /**
+       * HTTP-проба сайта. Мок отвечает по типу запрошенного файла, как живой
+       * сервер: раньше на КАЖДЫЙ адрес приходил HTML, и проверка каталога
+       * объявляла все 75 сайтов заблокированными («вместо значка сайта пришла
+       * HTML-страница»). Это был дефект мока, а не приложения: настоящий
+       * ya.ru на /favicon.ico отдаёт картинку.
+       */
       httpProbe: (options) => {
         if (!phone.connected) return noNetwork();
-        const denied = wantStatus(options.url, 403);
-        if (denied) return { ok: true, status: denied, url: String(options.url), route: routeName(),
+        const url = String(options.url || '');
+        const denied = wantStatus(url, 403);
+        if (denied) return { ok: true, status: denied, url, route: routeName(),
           content_type: 'text/plain', data_base64: '', truncated: false, latency_ms: phone.latencyMs };
-        return { ok: true, status: 200, url: String(options.url), route: routeName(),
-          content_type: 'text/html; charset=utf-8', truncated: false, latency_ms: phone.latencyMs,
+        const base = { ok: true, status: 200, url, route: routeName(), truncated: false, latency_ms: phone.latencyMs };
+        // Служебные 204 для контрольной пробы сети.
+        if (/generate_204/.test(url)) return { ...base, status: 204, content_type: 'text/plain', data_base64: '' };
+        // Значок сайта — картинка, а не страница.
+        if (/favicon\.(ico|png|svg)|logo\.(png|svg)/i.test(url)) {
+          const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+          return { ...base, content_type: 'image/png', data_base64: png };
+        }
+        return { ...base, content_type: 'text/html; charset=utf-8',
           data_base64: btoa('<html><head><title>Phone</title></head><body>ok</body></html>') };
       },
       // Настоящая Java-фаза присылает события каждые 100 мс и отдаёт итог в

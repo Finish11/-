@@ -432,7 +432,66 @@ async function main() {
   });
   await phone.shot('youtube-auto-confirmed');
 
-  // 12. Тост не должен перехватывать клики и растягиваться на пол-экрана.
+  // 12. Настоящий замер сайтов: ветка «через VPN». Раньше в проходе её не было,
+  //     и дефект мока (HTML на favicon) делал её «зелёной»: все 75 сайтов
+  //     помечались заблокированными, а вёрстка вердикта обрезала вывод.
+  await phone.step('проверка сети: замер даёт вердикт', 'Проверить сеть → с VPN', async () => {
+    // Предыдущий шаг мог оставить открытой шторку сервиса: она перекрывает
+    // главный экран, и тап по «Проверить сеть» не доходит.
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(400);
+    if (await page.getByRole('button', { name: 'Понятно' }).first().isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: 'Понятно' }).first().click();
+      await page.waitForTimeout(500);
+    }
+    await phone.tap('Проверка сети', { exact: true });
+    await page.waitForTimeout(1500);
+    // После прошлого замера главная кнопка называется «Повторить замер сети»,
+    // а до него — «Проверить сеть»: принимаем оба названия, как и человек.
+    const mainBtn = page.getByRole('button', { name: /^(Проверить сеть|Повторить замер сети)$/ }).first();
+    if (!(await mainBtn.isVisible().catch(() => false))) {
+      const now = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 160);
+      throw new Error('кнопки запуска проверки нет на экране. Видно: ' + (now || '(пусто)'));
+    }
+    await mainBtn.click();
+    await page.waitForTimeout(1500);
+    const vpnSheet = page.getByRole('button', { name: /Проверить с включённым VPN/ });
+    if (await vpnSheet.isVisible().catch(() => false)) {
+      await vpnSheet.click();
+    } else if (await phone.visible('Отмена', { exact: true })) {
+      // VPN уже выключен проходом выше — проверяем прямой маршрут.
+      await phone.tap('Отмена', { exact: true });
+      await page.getByRole('button', { name: /^(Проверить сеть|Повторить замер сети)$/ }).first().click();
+    }
+    let verdict = '';
+    for (let i = 0; i < 40; i++) {
+      await page.waitForTimeout(1000);
+      const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+      const hit = text.match(/Интернет открыт|Жёсткие ограничения|Белые списки|Шатдаун|Частные ограничения|Часть сайтов недоступна|Сеть не отвечает/);
+      if (hit && !/прошло \d+ с/.test(text)) { verdict = hit[0]; break; }
+    }
+    if (!verdict) throw new Error('замер не дал вердикта за 40 с');
+    const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+    // При живом моке «0 из 75» — это провал проверки, а не плохая сеть.
+    const answered = text.match(/(\d+)\s*\/\s*(\d+)\s*отвечают/);
+    if (answered && Number(answered[1]) === 0) {
+      throw new Error('ни один из сайтов не ответил при живом моке — проверка сломана, а не сеть');
+    }
+    // Вывод вердикта не должен обрываться многоточием на середине фразы.
+    const summary = await page.evaluate(() => {
+      const node = Array.from(document.querySelectorAll('p'))
+        .find((el) => (el.textContent || '').length > 60 && /Работает|отвечают|Открываются/.test(el.textContent || ''));
+      if (!node) return null;
+      const clamped = getComputedStyle(node).webkitLineClamp;
+      return { clamp: clamped, truncated: node.scrollHeight > node.clientHeight + 2 };
+    });
+    if (summary && (summary.clamp === '2' || summary.truncated)) {
+      throw new Error('сводка вердикта обрезана: пользователь не дочитывает главный вывод');
+    }
+  });
+  await phone.shot('scan-verdict');
+
+  // 13. Тост не должен перехватывать клики и растягиваться на пол-экрана.
   //     На экране «VPN-узлы» плашка «Узел добавлен» висела ровно над кнопкой
   //     «Проверить»: тап уходил в пустую плашку, проверка узлов не запускалась.
   await phone.step('узел вручную: тост не перекрывает кнопки', 'VPN-узлы → Узел вручную → Сохранить', async () => {
@@ -470,7 +529,7 @@ async function main() {
   });
   await phone.shot('vpn-manual-node');
 
-  // 13. Ссылка подписки без http:// не должна превращаться в демо-набор узлов.
+  // 14. Ссылка подписки без http:// не должна превращаться в демо-набор узлов.
   //     В APK это выглядело как «подписка загружена: 8 узлов», хотя ссылки нет.
   await phone.step('подписка: строка без http отклоняется', 'Добавить подписку → Загрузить', async () => {
     const before = await page.evaluate(() => document.querySelectorAll('[role="dialog"]').length);
@@ -489,7 +548,7 @@ async function main() {
   });
   await phone.shot('subscription-invalid');
 
-  // 14. Обновление приложения: релиз новее установленного → видимый прогресс →
+  // 15. Обновление приложения: релиз новее установленного → видимый прогресс →
   //     установщик. Раньше мок плагина не совпадал с Java, и путь не
   //     проверялся вовсе: пользователь видел «всегда ошибка».
   await phone.step('обновление: прогресс и установщик', 'Скачать и установить → установка', async () => {

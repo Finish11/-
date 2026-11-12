@@ -234,6 +234,7 @@ npm run dev                 # http://localhost:3000
 | `npm run version:guard` | отказывается собирать APK под уже опубликованной версией, если исходники изменились |
 | `npm run release:notes` | заметки релиза из `CHANGELOG.md` |
 | `npm run test:routes` | маршрут VPN, подтверждения приложений, обмен отчётами |
+| `npm run test:phone` | «телефон»: проход по приложению как человек (Pixel 7 + мост Capacitor), снимки в `phone-report/` |
 | `npm run db:seed` | создаёт рабочую базу из `data/seed.db` (`-- --force` перезаписать) |
 | `npm run build:demo` | автономный `demo-standalone.html` (один файл, без сети) |
 | `npm run preview:demo` | локальная раздача демо-файла на :4173 |

@@ -170,10 +170,18 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
 
   const cacheIncidents = useCallback(async (next: Incident[]) => {
     if (!IS_DEMO_BUILD) return;
-    await apiFetch('/api/incidents/cache', {
-      method: 'PUT',
-      body: JSON.stringify({ incidents: next }),
-    });
+    try {
+      await apiFetch('/api/incidents/cache', {
+        method: 'PUT',
+        body: JSON.stringify({ incidents: next }),
+      });
+    } catch {
+      // Кэш отчётов есть только у standalone-демо. В сборке VITE_DEMO=1 с
+      // живым сервером такого маршрута нет, и 404 от него раньше срывал
+      // сохранение: пользователь видел «Ошибка запроса (404)» при каждом
+      // отчёте. Сам отчёт уже в состоянии и в локальном хранилище — терять
+      // его из-за необязательного кэша нельзя.
+    }
   }, []);
 
   const syncNow = useCallback(async (silent = false): Promise<void> => {
@@ -317,6 +325,40 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         incidentsRef.current = next; setIncidents(next); await cacheIncidents(next);
         if (communityUrl) void syncNow();
         showToast('info', communityUrl ? 'Изменение сохранено на устройстве и ждёт доставки' : 'Изменение сохранено только на устройстве');
+      } else if (IS_DEMO_BUILD && !communityUrl) {
+        // Демо-сборка без общего сервера: /api/incidents не существует, и
+        // каждый новый отчёт заканчивался тостом «Ошибка запроса (404)».
+        // Эмулятор телефона поймал это на первом заполнении формы. Теперь
+        // отчёт сохраняется локально — ровно как обещает подпись вокруг.
+        const now = new Date().toISOString();
+        const local: Incident = {
+          id: -Date.now(),
+          user_id: user.id ?? null,
+          author_name: user.name || 'Вы',
+          region, carrier,
+          incident_type: incidentType,
+          severity,
+          status,
+          title: title.trim(),
+          description: description.trim(),
+          upvotes: 0,
+          ru_sites_ok: ruSitesOk,
+          foreign_sites_ok: foreignSitesOk,
+          user_upvoted: false,
+          is_owner: true,
+          created_at: now,
+          updated_at: now,
+          client_id: newClientId(),
+          sync_state: 'local',
+          sync_dirty: true,
+          sync_endpoint: communityUrl,
+          desired_upvote: true,
+        };
+        const next = [local, ...incidentsRef.current];
+        incidentsRef.current = next;
+        setIncidents(next);
+        await cacheIncidents(next);
+        showToast('success', 'Отчёт сохранён только на устройстве');
       } else {
         const res = await apiFetch<{ incident: Incident }>('/api/incidents', {
           method: 'POST',

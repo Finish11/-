@@ -1,7 +1,7 @@
 {
   "name": "pulsenet",
   "private": true,
-  "version": "1.11.2",
+  "version": "1.11.3",
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
@@ -26,6 +26,7 @@
     "test:routes": "tsx --test tests/routes-and-sharing.test.ts",
     "test:scan": "tsx --test tests/scan-budget.test.ts tests/ui-batch.test.ts tests/app-settings.test.ts",
     "test:e2e": "playwright test",
+    "test:phone": "tsx tests/emulator/run-phone.ts",
     "deploy:community": "node scripts/deploy-community.mjs",
     "test:version": "tsx --test tests/version.test.ts tests/version-bump.test.ts tests/app-update.test.ts",
     "version:android": "node scripts/app-version.mjs",

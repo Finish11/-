@@ -461,6 +461,11 @@ export interface NativeSpeedPhase {
 export interface SpeedPhaseOptions {
   runId: string; direction: 'download' | 'upload'; urls: string[];
   connections?: number; durationMs?: number; chunkBytes?: number; maxBytes?: number; timeoutMs?: number;
+  /**
+   * Куда отдать итоговые байты фазы, если живых событий не было.
+   * Второй аргумент — «это итог, а не срез по ходу».
+   */
+  onSample?: (slice: SpeedSlice, live?: boolean) => void;
 }
 
 export async function nativeSpeedPhase(options: SpeedPhaseOptions): Promise<NativeSpeedPhase> {
@@ -471,6 +476,14 @@ export async function nativeSpeedPhase(options: SpeedPhaseOptions): Promise<Nati
     const res = await (NetworkProbePlugin as unknown as {
       speedPhase(o: SpeedPhaseOptions): Promise<Partial<NativeSpeedPhase>>;
     }).speedPhase(options);
+    // Байты из результата тоже отдаём как срез: если Java не прислала события
+    // (старая сборка или обрыв доставки), график всё равно получит числа.
+    const totalBytes = typeof res.bytes === 'number' ? res.bytes : 0;
+    const totalConfirmed = typeof res.confirmed === 'number' ? res.confirmed : 0;
+    const elapsed = typeof res.elapsedMs === 'number' ? res.elapsedMs : 0;
+    if (totalBytes > 0 && elapsed > 0) {
+      options.onSample?.({ t: elapsed, bytes: totalBytes, confirmed: totalConfirmed }, false);
+    }
     return { ...fallback, ...res, slices: Array.isArray(res.slices) ? res.slices : [], errors: Array.isArray(res.errors) ? res.errors : [] };
   } catch (error) { return { ...fallback, errors: [error instanceof Error ? error.message : String(error)] }; }
 }

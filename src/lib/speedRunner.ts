@@ -62,22 +62,47 @@ export function nativeTransport(): SpeedTransport {
       return { samples: Array.isArray(result.samples) && result.samples.length ? result.samples : [result.latency_ms ?? 0] };
     },
     async phase(request) {
+      const startedAt = performance.now();
+      let bytesSeen = 0;
+      let confirmedSeen = 0;
+      // Живые сэмплы старый APK не шлёт вовсе; если события идут, свои не нужны.
+      let eventsSeen = 0;
+      let pendingBytes = 0;
+      let pendingConfirmed = 0;
+      let fallbackTimer: ReturnType<typeof setInterval> | null = null;
       const unsubscribe = request.onSample
         ? onNativeSpeedSample((event) => {
           if (event.runId !== request.runId) return;
+          eventsSeen += 1;
+          bytesSeen = Math.max(bytesSeen, event.bytes);
+          confirmedSeen = Math.max(confirmedSeen, event.confirmed);
           request.onSample!({ t: event.elapsedMs, bytes: event.bytes, confirmed: event.confirmed });
         })
         : () => {};
       const onAbort = () => { void abortNativeSpeed(request.runId); };
       request.signal?.addEventListener('abort', onAbort);
       try {
+        // Старый APK не присылает события speedSample: живой график и «пик»
+        // оставались нулевыми при итоговой цифре 62 Мбит/с — это увидел
+        // эмулятор телефона. Считаем прирост сами и отдаём срез только когда
+        // прирост есть, чтобы не рисовать ровные нули на старте и на паузах.
+        fallbackTimer = setInterval(() => {
+          if (eventsSeen > 0) return;
+          if (pendingBytes > bytesSeen) {
+            bytesSeen = pendingBytes;
+            confirmedSeen = pendingConfirmed;
+            request.onSample?.({ t: performance.now() - startedAt, bytes: bytesSeen, confirmed: confirmedSeen });
+          }
+        }, 100);
         const result = await nativeSpeedPhase({
           runId: request.runId, direction: request.direction, urls: request.urls,
           connections: request.connections, durationMs: request.durationMs,
           chunkBytes: request.chunkBytes, maxBytes: request.maxBytes, timeoutMs: request.timeoutMs,
+          onSample: (slice) => request.onSample?.(slice),
         });
         return { slices: result.slices, bytes: result.bytes, confirmed: result.confirmed, errors: result.errors, route: result.route };
       } finally {
+        if (fallbackTimer) clearInterval(fallbackTimer);
         unsubscribe();
         request.signal?.removeEventListener('abort', onAbort);
       }
@@ -378,7 +403,12 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
       result.loadedPingMs = loadedPingMs;
     };
     const native = isNativeApp();
-    if (native) startLoadedProbe(Math.min(1200, Math.round(downloadMs * 0.2)));
+    // Быстрый канал выбирает бюджет байт за доли секунды: задержка фазы — не
+    // downloadMs, а сколько реально качали. С задержкой «20% бюджета» проба
+    // под нагрузкой не успевала начаться, и карточка честно писала «нагрузка
+    // не измерена» даже на 62 Мбит/с — это увидел эмулятор телефона.
+    // Поэтому стартуем почти сразу: первый запрос пробы всё равно разогрев.
+    if (native) startLoadedProbe(Math.min(300, Math.round(downloadMs * 0.1)));
 
     report('download', 0, `Загрузка · ${connections} соединений`, server, 0);
     const download = await transport.phase({
@@ -386,6 +416,8 @@ export async function runSpeedTest(options: SpeedTestOptions = {}): Promise<Spee
       urls: Array.from({ length: connections }, () => server!.download(chunkBytes)),
       connections, durationMs: downloadMs, chunkBytes,
       maxBytes: budget.download, signal: options.signal,
+      // Скорость именно этой фазы: у слайса накопительный t, поэтому
+      // bytesToMbps даёт среднюю скорость с начала фазы.
       onSample: (slice) => report('download', bytesToMbps(slice.confirmed, slice.t), 'Загрузка…', server, Math.min(1, slice.t / downloadMs)),
     });
     result.download = aggregateSpeed(download.slices);

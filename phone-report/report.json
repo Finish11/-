@@ -1,0 +1,169 @@
+{
+  "steps": [
+    {
+      "index": 1,
+      "action": "запуск",
+      "target": "http://127.0.0.1:4173/demo.html",
+      "ok": true,
+      "ms": 617
+    },
+    {
+      "index": 2,
+      "action": "первый запуск: разрешения",
+      "target": "Продолжить",
+      "ok": true,
+      "ms": 316
+    },
+    {
+      "index": 3,
+      "action": "вкладка scanner",
+      "target": "/Проверка сети|Проверка/",
+      "ok": true,
+      "ms": 646
+    },
+    {
+      "index": 4,
+      "action": "вкладка sites",
+      "target": "/Сайты|Каталог сайтов/",
+      "ok": true,
+      "ms": 746
+    },
+    {
+      "index": 5,
+      "action": "вкладка vpn",
+      "target": "/VPN/",
+      "ok": true,
+      "ms": 702
+    },
+    {
+      "index": 6,
+      "action": "вкладка speed",
+      "target": "/Скорость/",
+      "ok": true,
+      "ms": 696
+    },
+    {
+      "index": 7,
+      "action": "вкладка incidents",
+      "target": "/Сбои/",
+      "ok": true,
+      "ms": 659
+    },
+    {
+      "index": 8,
+      "action": "вкладка history",
+      "target": "/История/",
+      "ok": true,
+      "ms": 636
+    },
+    {
+      "index": 9,
+      "action": "скорость: открыть экран",
+      "target": "Скорость",
+      "ok": true,
+      "ms": 854
+    },
+    {
+      "index": 10,
+      "action": "скорость: замер",
+      "target": "Замерить",
+      "ok": true,
+      "ms": 883
+    },
+    {
+      "index": 11,
+      "action": "скорость: результат",
+      "target": "числа замера",
+      "ok": true,
+      "ms": 803
+    },
+    {
+      "index": 12,
+      "action": "youtube: замер",
+      "target": "Замерить YouTube",
+      "ok": true,
+      "ms": 442
+    },
+    {
+      "index": 13,
+      "action": "youtube: результат",
+      "target": "вердикт качества",
+      "ok": true,
+      "ms": 602
+    },
+    {
+      "index": 14,
+      "action": "VPN выключен",
+      "target": "vpn off",
+      "ok": true,
+      "ms": 1507
+    },
+    {
+      "index": 15,
+      "action": "сеть пропала",
+      "target": "offline",
+      "ok": true,
+      "ms": 2696
+    },
+    {
+      "index": 16,
+      "action": "точка замера отказывает",
+      "target": "HTTP 403",
+      "ok": true,
+      "ms": 2377
+    },
+    {
+      "index": 17,
+      "action": "светлая тема",
+      "target": "шестерёнка → Светлая",
+      "ok": true,
+      "ms": 1406
+    },
+    {
+      "index": 18,
+      "action": "тёмная тема",
+      "target": "шестерёнка → Тёмная",
+      "ok": true,
+      "ms": 687
+    },
+    {
+      "index": 19,
+      "action": "закрыть настройки",
+      "target": "Готово",
+      "ok": true,
+      "ms": 756
+    },
+    {
+      "index": 20,
+      "action": "каталог: поиск и провал сайта",
+      "target": "Сайты",
+      "ok": true,
+      "ms": 2015
+    },
+    {
+      "index": 21,
+      "action": "проверка: скопировать отчёт",
+      "target": "Проверка → Скопировать отчёт",
+      "ok": true,
+      "ms": 3165
+    },
+    {
+      "index": 22,
+      "action": "форма сбоя: отправить отчёт",
+      "target": "Сбои → Сообщить о сбое",
+      "ok": true,
+      "ms": 5387
+    }
+  ],
+  "findings": [],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+    }
+  ],
+  "pageErrors": [],
+  "screenshotsDir": "/home/user/-/phone-report",
+  "startedAt": "2026-11-12T16:42:41.953Z",
+  "finishedAt": "2026-11-12T16:42:42.095Z"
+}

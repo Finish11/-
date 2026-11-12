@@ -345,7 +345,9 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
       setProgress((prev) => ({ ...prev, phase: measurement.ok ? 'done' : 'error', mbps: measurement.download.mbps, progress: 1,
         message: measurement.error || 'Замер завершён' }));
       if (!measurement.ok) {
-        showToast('error', measurement.error || 'Замер не состоялся');
+        // Отказ уже объяснён на месте: под шкалой и в баннере под результатом.
+        // Тост тем же текстом дублировал его поверх контента — эмулятор
+        // телефона показывал две одинаковые плашки одновременно.
         return;
       }
       const parsed = normalizeSpeedRunPayload({

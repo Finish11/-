@@ -301,6 +301,55 @@ async function main() {
   });
   await phone.shot('incident-created');
 
+  // 8. Замер скорости обязан осесть в «Истории замеров» на экране скорости.
+  //    Вкладка «История» — про проверки сайтов, и путать их нельзя: раньше шаг
+  //    искал замер не там и «находил» пустоту при сохранённом результате.
+  await phone.step('история замеров: запись сохранена', 'Скорость → История замеров', async () => {
+    await phone.tap('Скорость', { exact: true });
+    await page.waitForTimeout(900);
+    const saved = await page.getByText('История замеров', { exact: true }).first().isVisible().catch(() => false);
+    if (!saved) throw new Error('нет блока «История замеров» на экране скорости');
+    const block = page.getByText('История замеров', { exact: true }).first();
+    await block.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(400);
+    // Смотрим текст рядом с блоком истории, а не всю страницу: «62» встречается
+    // и в сводке конфигов, и в предыдущих проверках.
+    const around = await page.evaluate(() => {
+      const title = Array.from(document.querySelectorAll('div'))
+        .find((node) => node.textContent?.trim() === 'История замеров');
+      const card = title?.parentElement?.parentElement;
+      return (card?.textContent || '').replace(/\s+/g, ' ').trim();
+    });
+    if (/Замеров пока нет/.test(around)) throw new Error('история замеров пуста после сохранения');
+    if (!/62/.test(around)) throw new Error('в истории замеров нет результата 62 Мбит/с: ' + around.slice(0, 120));
+  });
+  await phone.shot('speed-history-saved');
+
+  // 9. Все выбранные подписи в селектах должны влезать в поле. WebView режет
+  //    длинный текст без многоточия: «Автоматически (свой сервер → Cloudfla…»
+  //    и «Не указан — замер сохранится без име…» видел пользователь.
+  await phone.step('настройки: подписи в селектах влезают', 'Сервер и конфиг', async () => {
+    await phone.tap('Настройки', { exact: true });
+    await page.waitForTimeout(800);
+    const overflow = await page.evaluate(() => Array.from(document.querySelectorAll('select'))
+      .filter((select) => select.offsetParent)
+      .map((select) => {
+        const box = select.getBoundingClientRect();
+        const canvas = document.createElement('canvas').getContext('2d');
+        const style = getComputedStyle(select);
+        if (canvas) canvas.font = style.fontSize + ' ' + style.fontFamily;
+        const text = (select.selectedOptions[0]?.textContent || '').trim();
+        const width = canvas ? canvas.measureText(text).width : 0;
+        // 24 px отступов + место под стрелку.
+        return { text, width: Math.round(width), available: Math.round(box.width - 30) };
+      })
+      .filter((item) => item.width > item.available));
+    if (overflow.length) {
+      throw new Error('подпись обрезается: ' + overflow.map((item) => `«${item.text}» ${item.width} > ${item.available} px`).join('; '));
+    }
+  });
+  await phone.shot('speed-settings');
+
   const result = await close();
   await writeFile(path.join(outDir, 'README.md'), renderReport(result), 'utf8');
   printSummary(result.findings, result.steps, outDir);

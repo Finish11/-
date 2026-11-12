@@ -689,7 +689,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
             className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
             style={{ borderColor: 'var(--line)', background: 'var(--surface-2)', color: 'var(--text)' }}
           >
-            <option value="">{route === 'vpn' ? 'Не указан — замер сохранится без имени конфига' : 'Без VPN (прямое подключение)'}</option>
+            <option value="">{route === 'vpn' ? 'Не указан (без имени конфига)' : 'Без VPN (напрямую)'}</option>
             {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
           </select>
         </label>
@@ -703,7 +703,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
             className="mt-1.5 w-full rounded-xl border px-3 py-2 text-[12px] outline-none"
             style={{ borderColor: 'var(--line)', background: 'var(--surface-2)', color: 'var(--text)' }}
           >
-            <option value="auto">Автоматически (свой сервер → Cloudflare)</option>
+            <option value="auto">Авто: свой сервер / Cloudflare</option>
             {servers.map((server) => <option key={server.id} value={server.id}>{server.label}</option>)}
           </select>
         </label>

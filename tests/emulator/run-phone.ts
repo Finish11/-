@@ -58,21 +58,31 @@ async function main() {
   await phone.shot('00-start');
 
   // ---- Проход по всем вкладкам нижней навигации -------------------------
-  const tabs: Array<[string, RegExp]> = [
-    ['scanner', /Проверка сети|Проверка/],
-    ['sites', /Сайты|Каталог сайтов/],
-    ['vpn', /VPN/],
-    ['speed', /Скорость/],
-    ['incidents', /Сбои/],
-    ['history', /История/],
+  // Явные aria-label вкладок. Раньше здесь стояли regex вида /VPN/ и /Сайты/:
+  // /VPN/ первым находил заголовок «VPN» внутри каталога, и проход оставался
+  // на чужой вкладке, ничего не замечая.
+  const tabs: Array<[string, string, RegExp]> = [
+    ['scanner', 'Проверка сети', /Что с вашим интернетом/],
+    ['sites', 'Каталог сайтов', /Каталог сайтов/],
+    ['vpn', 'VPN-узлы', /VPN|Подписк/i],
+    ['speed', 'Скорость', /скорость интернета/i],
+    ['incidents', 'Сбои и белые списки', /Карта сбоев/],
+    ['history', 'История', /История/],
   ];
-  for (const [id, name] of tabs) {
-    await phone.step(`вкладка ${id}`, String(name), async () => {
-      await phone.tap(name);
-      await page.waitForTimeout(600);
+  for (const [id, label, heading] of tabs) {
+    await phone.step(`вкладка ${id}`, label, async () => {
+      await phone.tap(label, { exact: true });
+      await page.waitForTimeout(700);
       await assertNoOnboarding(phone, `вкладка ${id}`);
       const text = (await page.locator('body').innerText()).trim();
       if (text.length < 40) throw new Error('вкладка открылась пустой');
+      // Проверяем, что открылась ИМЕННО эта вкладка, а не остались на прошлой.
+      const active = await page.evaluate(() => {
+        const current = document.querySelector('nav [aria-current="page"]');
+        return current ? current.getAttribute('aria-label') : null;
+      });
+      if (active !== label) throw new Error('активная вкладка «' + active + '», ожидалась «' + label + '»');
+      if (!heading.test(text)) throw new Error('на вкладке нет ожидаемого заголовка ' + heading);
     });
     await phone.layoutCheck(`вкладка ${id}`);
     await phone.shot(`tab-${id}`);

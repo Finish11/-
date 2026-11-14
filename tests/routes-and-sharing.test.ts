@@ -61,7 +61,9 @@ test('отзыв на выбранный узел не исчезает при �
   const match = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77', true);
   assert.ok(match, 'карточка обязана показать отзыв пользователя на этом узле');
   assert.equal(match!.matchedBy, 'node');
-  assert.equal(match!.ipChanged, true);
+  // Для явного узла IP не инвалидирует отзыв: провайдер ротирует адреса,
+  // а автоподбор по server_ip покажет, если узел действительно сменился.
+  assert.equal(match!.ipChanged, undefined);
   const exact = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10', true);
   assert.equal(exact!.matchedBy, 'node_ip');
   assert.equal(exact!.ipChanged, undefined);
@@ -81,11 +83,12 @@ test('выключенный VPN не стирает выбранный узел
   assert.match(status.label, /на узле/);
   assert.match(status.reason, /VPN сейчас выключен/);
 
-  // В браузере состояние VPN неизвестно — это не «напрямую»: прежнее
-  // предупреждение о смене выхода остаётся, иначе статус врал бы в другую сторону.
+  // В браузере состояние VPN неизвестно — это не «напрямую»: для явного
+  // узла IP всё равно не инвалидирует отзыв, иначе ротация провайдера пугала
+  // бы пользователя в браузере так же, как в приложении.
   const browserUnknown = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.20', false, false)!;
   assert.equal(browserUnknown.routeParked, undefined);
-  assert.equal(browserUnknown.ipChanged, true);
+  assert.equal(browserUnknown.ipChanged, undefined);
 
   // Когда VPN включат обратно, тот же узел снова даёт обычный зелёный статус.
   const back = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10', true)!;
@@ -118,12 +121,13 @@ test('отзыв на прямом маршруте переживает сме�
   assert.equal(exact!.ipChanged, undefined);
 
   // Оператор выдал другой IP при переподключении LTE: отметка человека не
-  // должна исчезать, иначе плитка снова пишет «не проверялся».
+  // должна исчезать. Для прямого маршрута смена IP — не повод для
+  // «перепроверьте»: это свойство оператора, а не смена узла.
   const moved = findAppConfirmation([direct], 'telegram', null, '203.0.113.77');
   assert.ok(moved, 'отзыв на прямом маршруте обязан сохраняться при смене IP');
   assert.equal(moved!.matchedBy, 'node');
-  assert.equal(moved!.ipChanged, true);
-  assert.equal(confirmationStatus(moved!).recheck, true);
+  assert.equal(moved!.ipChanged, undefined);
+  assert.equal(confirmationStatus(moved!).recheck, false);
 
   // Отзыв VPN-маршрута к прямому подключению не относится.
   const viaVpn = confirmation({ service_id: 'telegram', domain: 'telegram.org', node_key: 'vpn:unknown', profile_id: null });
@@ -134,12 +138,11 @@ test('прямой маршрут не забирает отзыв, оставл
   assert.equal(findAppConfirmation([confirmation()], 'youtube', null, '203.0.113.10'), null);
   const direct = confirmation({ node_key: 'direct', profile_id: null, profile_name: 'Прямое подключение' });
   assert.equal(findAppConfirmation([direct], 'youtube', null, '203.0.113.10')!.matchedBy, 'node_ip');
-  // Смена IP на прямом маршруте — не повод терять отзыв: раньше человек видел,
-  // как его отметка исчезает после переподключения LTE. Теперь отзыв остаётся
-  // и просит перепроверку (см. тест «переживает смену выходного IP» выше).
+  // Смена IP на прямом маршруте — не повод терять отзыв и не повод для
+  // «перепроверьте»: оператор меняет адрес, а маршрут остаётся тем же.
   const movedDirect = findAppConfirmation([direct], 'youtube', null, '198.51.100.1');
   assert.equal(movedDirect!.matchedBy, 'node');
-  assert.equal(movedDirect!.ipChanged, true);
+  assert.equal(movedDirect!.ipChanged, undefined);
 });
 
 test('автоопределение узла: память «клиент + IP» и совпадение IP сервера', () => {
@@ -324,19 +327,18 @@ test('давний отзыв не поднимает узел выше свеж
 });
 
 
-test('смена выходного IP меняет статус карточки, а не держит прежний зелёный', () => {
+test('смена выходного IP не сбрасывает отзыв на явном узле', () => {
   const saved = confirmation();
   // Тот же узел и тот же выход — отзыв действителен.
   const same = findAppConfirmation([saved], 'youtube', { id: 7 }, '203.0.113.10', true)!;
   assert.equal(confirmationStatus(same).tone, 'ok');
   assert.equal(confirmationStatus(same).recheck, false);
-  // Человек переключил узел в клиенте: выход другой, отзыв больше не про этот маршрут.
+  // Для явного узла ротация IP провайдером не должна пугать «выход сменился»:
+  // автоподбор по server_ip покажет, если узел действительно сменился.
   const changed = findAppConfirmation([saved], 'youtube', { id: 7 }, '198.51.100.77', true)!;
   const status = confirmationStatus(changed);
-  assert.equal(status.tone, 'warn');
-  assert.equal(status.recheck, true);
-  assert.match(status.label, /перепроверьте/);
-  assert.match(status.reason, /203\.0\.113\.10/);
+  assert.equal(status.tone, 'ok');
+  assert.equal(status.recheck, false);
   // Отзыв другого узла с тем же IP тоже требует перепроверки.
   const byIp = findAppConfirmation([saved], 'youtube', { id: 9 }, '203.0.113.10', true)!;
   assert.equal(confirmationStatus(byIp).recheck, true);

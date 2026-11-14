@@ -42,7 +42,11 @@ export const SCAN_BUDGETS: Record<ScanSpeed, ScanBudget> = {
   // Один запрос на сайт, но не «все сразу»: 64 одновременные пробы на мобильном
   // канале захлёбывали его, и живые сайты получали «нет ответа», хотя одиночный
   // пинг тут же отвечал. 32 пробы — три волны, всё ещё секунды, но честнее.
-  fast: { perSiteMs: 3000, totalMs: 22000, concurrency: 32, retry: false, tcpFallback: false, controlMs: 2500,
+  // Быстрый режим раньше пропускал повтор и TCP-fallback: одиночный «пинг» сайта
+  // использовал их и показывал «отвечает», а полный список — «молчит» без повтора.
+  // Отсюда жалоба «в каталоге не отвечают, а на пинг отвечает». Выравниваем
+  // бюджеты: быстрый теперь тоже пробует главную страницу и TCP, как подробный.
+  fast: { perSiteMs: 3000, totalMs: 22000, concurrency: 32, retry: true, tcpFallback: true, controlMs: 2500,
     secondPass: true, secondPassPerSiteMs: 6000 },
   balanced: { perSiteMs: 5000, totalMs: 35000, concurrency: 24, retry: true, tcpFallback: true, controlMs: 3500,
     secondPass: true, secondPassPerSiteMs: 8000 },

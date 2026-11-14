@@ -421,11 +421,17 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
   const systemVpn = Boolean(currentConnection?.system_vpn || vpnActive);
   const splitTunnel = Boolean(currentConnection?.split_tunnel);
   const activeIp = currentConnection?.ip && currentConnection.ip !== '—' ? currentConnection.ip : '';
+  // Подсказка для Happ/Hiddify: если тот же выходной IP встречается среди
+  // профилей (server_ip после пинга), показываем, какой узел, вероятно, включён.
+  const happSuggestion = activeIp ? suggestActiveNode(profiles, { vpnPackage: currentConnection?.vpn_package, exitIp: activeIp, remembered: loadRememberedRoutes() }) : null;
   const routeLabel = !routeKnown ? 'Маршрут не определён'
     : activeProfile ? `Выбран вами: ${activeProfile.name}${vpnActive ? ' · через VPN' : splitTunnel ? ' · приложение вне туннеля' : ''}`
     : vpnActive ? 'VPN включён · узел не указан (необязательно)'
     : splitTunnel ? 'VPN включён в системе, но приложение идёт напрямую'
     : isNativeApp() ? 'Прямое подключение · системный VPN выключен' : 'Маршрут выбран вручную · браузер';
+  const happNote = happSuggestion && happSuggestion.profile.id !== (activeProfile?.id ?? null)
+    ? `Похоже, сейчас включён «${happSuggestion.profile.name}» (${happSuggestion.reason}). Нажмите «Использовать» в карточке, чтобы привязать отзывы к правильному узлу.`
+    : '';
   /**
    * Android не показывает чужой конфиг, поэтому единственный честный признак
    * смены узла — новый выходной IP при том же VPN-клиенте. Раньше это молча
@@ -672,7 +678,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
                 ? exitChange.sameClient
                   ? 'Выходной IP сменился — похоже, в клиенте другой узел'
                   : transition === 'network_switched' ? 'Сменилась сеть: другой оператор или Wi-Fi' : 'Сменился маршрут: другой VPN-клиент'
-                : `Отзывов, которые пора перепроверить: ${needsRecheck}`}
+                : happNote ? happNote : `Отзывов, которые пора перепроверить: ${needsRecheck}`}
           </div>
           <div className="text-[11px] leading-relaxed break-anywhere" style={{ color: 'var(--text-dim)' }}>
             {transition === 'vpn_off' || (isNativeApp() && !systemVpn && confirmationProfileId != null)

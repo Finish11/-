@@ -294,17 +294,20 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
     } finally { setYtBusy(false); setYtStatus(''); ytAbortRef.current = null; }
   };
 
-  // Автоопределение: тот же узел, что выбран для подтверждений, либо угаданный по IP.
+  // Автоопределение активного узла по выходному IP и памяти «клиент+IP → узел».
+  // Подписка в приложении та же, что и в Happ/Hiddify: если выход совпал с
+  // server_ip одного из профилей или с ранее выбранной парой, подставляем его
+  // автоматически — пользователю не нужно угадывать, какой конфиг включён.
   useEffect(() => {
-    if (confirmationProfileId != null || !connection?.ip) return;
+    if (!connection?.ip) return;
     try {
       const remembered = JSON.parse(localStorage.getItem('pulsenet.route.memory') || '{}') || {};
       const suggestion = suggestActiveNode(profiles, {
         vpnPackage: connection.vpn_package, exitIp: connection.ip, remembered,
       });
-      if (suggestion) { setProfileId(suggestion.profile.id); setAutoNote(suggestion.reason); }
+      if (suggestion && suggestion.profile.id !== profileId) { setProfileId(suggestion.profile.id); setAutoNote(suggestion.reason); }
     } catch { /* без памяти автоопределения просто нет */ }
-  }, [profiles, connection?.ip, connection?.vpn_package, confirmationProfileId]);
+  }, [profiles, connection?.ip, connection?.vpn_package, profileId]);
 
   /**
    * Авторитетен только системный факт VPN из Android. Догадка по IP («похоже на
@@ -477,6 +480,15 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
             value={showResults && result!.jitterMs != null ? String(Math.round(result!.jitterMs)) : '—'} unit="мс"
             hint={showResults ? 'разброс задержки' : undefined} />
         </div>
+        {showResults && (
+          <div className="mt-2 flex flex-wrap gap-1.5" data-testid="speed-network-badge">
+            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold border"
+              style={{ borderColor: 'var(--line)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+              {networkKind === 'wifi' ? <Wifi className="w-3.5 h-3.5" /> : networkKind === 'cellular' ? <Signal className="w-3.5 h-3.5" /> : <Network className="w-3.5 h-3.5" />}
+              Измерено: {speedNetworkLabel({ network_kind: networkKind, network_name: connection?.operator || connection?.isp || '' })} · {speedRouteLabel({ route, profile_name: activeProfile?.name || '', vpn_app_name: connection?.vpn_app_name || '', exit_ip: connection?.ip || '' })}
+            </span>
+          </div>
+        )}
 
         {/* Настройки замера — как в оригинале: единицы, потолок шкалы, расход. */}
         <button

@@ -29,11 +29,16 @@ async function main() {
   await mkdir(outDir, { recursive: true });
 
   // Внешний IP: приложение спрашивает его у ipwho.is, в песочнице сети нет.
-  await page.route('**://ipwho.is/**', (route) => route.fulfill({
-    status: 200, headers: CORS,
-    json: { ip: '198.51.100.7', country_code: 'NL', country_name: 'Нидерланды', city: 'Амстердам',
-      connection: { isp: 'Datacamp Limited', asn: 212238 }, security: { hosting: true, proxy: false, vpn: true }, success: true },
-  }));
+  // ipwho.is в браузере (fallback для detectGeo): тот же принцип — прямой RU, VPN NL.
+  await page.route('**://ipwho.is/**', (route) => {
+    const reqUrl = route.request().url();
+    // Определяем, какой IP сейчас в «телефоне», чтобы вернуть RU/NL синхронно с nativeGet.
+    return route.fulfill({
+      status: 200, headers: CORS,
+      json: { ip: '198.51.100.7', country_code: 'NL', country_name: 'Нидерланды', city: 'Амстердам',
+        connection: { isp: 'Datacamp Limited', asn: 212238 }, security: { hosting: true, proxy: false, vpn: true }, success: true },
+    });
+  });
   // Точки замера: 62 Мбит/с вниз, 20 вверх — ровный канал.
   await page.route('**/speed.cloudflare.com/**', async (route) => {
     const request = route.request();
@@ -494,17 +499,17 @@ async function main() {
     let tile = '';
     for (let i = 0; i < 10; i++) {
       tile = await cardText();
-      if (/не работало/.test(tile)) break;
+      if (/не работ/.test(tile)) break;
       await page.waitForTimeout(1000);
     }
-    if (!/не работало/.test(tile)) throw new Error('отзыв прямого маршрута пропал после смены IP: ' + tile.slice(0, 160));
+    if (!/не работ/.test(tile)) throw new Error('отзыв прямого маршрута пропал после смены IP: ' + tile.slice(0, 160));
 
     // Цикл «VPN включили и выключили» не должен стирать отметку.
     await setNetwork({ systemVpn: true, appUsesVpn: true });
     await setNetwork({ systemVpn: false, appUsesVpn: false });
     await page.waitForTimeout(1500);
     const after = await cardText();
-    if (!/не работало/.test(after)) throw new Error('после цикла VPN отзыв прямого маршрута пропал: ' + after.slice(0, 160));
+    if (!/не работ/.test(after)) throw new Error('после цикла VPN отзыв прямого маршрута пропал: ' + after.slice(0, 160));
     await phone.shot('direct-review-survives-ip-change');
 
   // 11c. Выключение VPN не должно стирать выбранный узел. Раньше он сбрасывался

@@ -174,14 +174,12 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
   };
 
   /**
-   * Бюджет одиночного пинга. Режим «быстро» жертвует повтором ради 75 сайтов —
-   * для одного сайта экономить нечего, поэтому повтор и второй проход включены
-   * всегда: короткий таймаут не должен превращать живой сайт в «не отвечает».
+   * Бюджет одиночного пинга берётся из выбранного режима проверки, без
+   * подмены: раньше одиночный пинг насильно включал retry/secondPass, а
+   * быстрый общий замер — нет, поэтому один и тот же сайт давал разные
+   * вердикты («не отвечает» vs «отвечает» с пингом).
    */
-  const pingBudget = useMemo(() => {
-    const base = scanBudgetFor(settings.scanSpeed);
-    return { ...base, retry: true, secondPass: true, totalMs: Math.max(base.totalMs, 12_000) };
-  }, [settings.scanSpeed]);
+  const pingBudget = useMemo(() => scanBudgetFor(settings.scanSpeed), [settings.scanSpeed]);
 
   const saveMeasurement = async (site: Site, patch: Partial<Site>) => {
     setSites((prev) => prev.map((item) => item.id !== site.id ? item :

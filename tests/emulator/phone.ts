@@ -323,15 +323,24 @@ export function phoneInitScript(options: PhoneOptions = {}): string {
         const json = (value) => ({ status: 200, url, headers: { 'content-type': 'application/json' }, data: JSON.stringify(value) });
         const text = (value) => ({ status: 200, url, headers: { 'content-type': 'text/html; charset=utf-8' }, data: value });
         const ip = phone.appUsesVpn ? phone.exitIp : phone.directIp;
+        // Для прямого IP (203.0.113.0/24 — TEST-NET-3) показываем RU: именно так
+        // пользователь в России видит «ограничено сервисом в RU» для ChatGPT.
+        // Для VPN-выхода (198.51.100.0/24) оставляем NL — как зарубежный хостинг.
+        const directRu = ip === phone.directIp || ip.startsWith('203.0.113.');
         if (url.includes('ipwho.is')) {
+          if (directRu) return json({ success: true, ip, country_code: 'RU', country_name: 'Россия', city: 'Москва',
+            region: 'Москва', connection: { isp: 'МТС', org: 'МТС', asn: 25532 },
+            security: { hosting: false, proxy: false, vpn: false, mobile: false } });
           return json({ success: true, ip, country_code: 'NL', country_name: 'Нидерланды', city: 'Амстердам',
             region: 'Noord-Holland', connection: { isp: 'Datacamp Limited', org: 'Datacamp', asn: 212238 },
             security: { hosting: true, proxy: false, vpn: true, mobile: false } });
         }
         if (url.includes('ipapi.co')) {
+          if (directRu) return json({ ip, country_code: 'RU', country_name: 'Россия', city: 'Москва', org: 'МТС' });
           return json({ ip, country_code: 'NL', country_name: 'Нидерланды', city: 'Амстердам', org: 'Datacamp Limited' });
         }
         if (url.includes('freeipapi.com')) {
+          if (directRu) return json({ ipAddress: ip, countryCode: 'RU', countryName: 'Россия', cityName: 'Москва' });
           return json({ ipAddress: ip, countryCode: 'NL', countryName: 'Нидерланды', cityName: 'Амстердам' });
         }
         const denied = wantStatus(url, 403);

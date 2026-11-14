@@ -151,9 +151,12 @@ export const YOUTUBE_PROBE_URLS = [
  * видно и задержку, и реальную пропускную способность до площадки.
  */
 export const YOUTUBE_BULK_URLS = [
+  // Крупный статический JS плеера — ~0.8–1.2 МБ, есть на всех локалях.
+  // Раньше сюда попадали iframe_api и robots.txt (1–5 КБ): на быстром канале
+  // они приходили одним пакетом и давали 0.08 Мбит/с, хотя канал держал 12 МБ/с.
   'https://www.youtube.com/s/player/2f2b8b6b/player_ias.vflset/ru_RU/base.js',
-  'https://www.youtube.com/iframe_api',
-  'https://www.youtube.com/robots.txt',
+  'https://www.youtube.com/s/player/2f2b8b6b/player_ias.vflset/en_US/base.js',
+  'https://www.youtube.com/s/player/2f2b8b6b/player_ias.vflset/en_GB/base.js',
 ];
 
 export type YoutubeSource = 'googlevideo' | 'ytimg' | 'youtube';
@@ -483,8 +486,8 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
   result.note = best.source === 'googlevideo'
     ? 'Измерено на прямом видеопотоке googlevideo — том самом хосте, который замедляют.'
     : best.source === 'youtube'
-      ? 'Прямую ссылку на поток получить не удалось, измерено на крупных файлах youtube.com (player JS). Видеоголовку могут замедлять отдельно — оценка ориентировочная.'
-      : 'Прямую ссылку на поток получить не удалось, измерено на CDN картинок ytimg. Файлы мелкие, поэтому цифра ориентировочная.';
+      ? 'Прямую ссылку на поток получить не удалось, измерено на крупных файлах youtube.com (player JS, ~1 МБ каждый, качаем параллельно). Видеоголовку могут замедлять отдельно — оценка ориентировочная.'
+      : 'Прямую ссылку на поток получить не удалось, измерено на CDN картинок ytimg (картинки 150 КБ, поэтому цифра занижена, оценка ориентировочная). Для точной оценки нужен крупный файл — если VPN включён, проверьте, что приложение идёт через туннель, иначе YouTube всё ещё замедляют.';
   if (result.verdict === 'slow') {
     result.note += ' Скорость ниже 0,35 Мбит/с: этого не хватает даже на 144p — похоже на сильное замедление.';
   }

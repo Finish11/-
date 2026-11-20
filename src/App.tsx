@@ -40,6 +40,8 @@ import { SpeedTestView } from './components/SpeedTestView';
 import { confirmationNodeKey } from './lib/appConfirmations';
 import type { YoutubeProbeResult } from './lib/youtubeSpeed';
 import { HistoryView } from './components/HistoryView';
+import { DiagnosticsView } from './components/DiagnosticsView';
+import { installGlobalLogger } from './lib/appLogger';
 import { PermissionOnboarding } from './components/PermissionOnboarding';
 
 export function App() {
@@ -208,6 +210,9 @@ export function App() {
       setDataLoading(false);
     }
   }, [showToast]);
+
+  // Сквозной журнал: ставится один раз, до любых ошибок.
+  useEffect(() => { installGlobalLogger(); }, []);
 
   // Initial auth bootstrap (uses existing session token or auto-signs into demo on first visit)
   useEffect(() => {
@@ -483,6 +488,10 @@ export function App() {
                 darkMode={darkMode}
                 showToast={showToast}
               />
+            )}
+
+            {activeTab === 'diag' && (
+              <DiagnosticsView showToast={showToast} />
             )}
           </>
         )}

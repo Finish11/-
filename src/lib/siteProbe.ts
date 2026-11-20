@@ -1,6 +1,7 @@
 import { httpProbe, isNativeApp, tcpPing, type NativeHttpProbe } from './nativeBridge';
 import { assessSiteContent } from './siteContent';
 import { remainingMs } from './scanBudget';
+import { appLog } from './appLogger';
 import type { SiteProof } from '../types';
 
 export type ProbeVerdict = 'ok' | 'slow' | 'blocked' | 'intercepted' | 'offline';
@@ -78,7 +79,11 @@ export async function probeSite(url: string, options: ProbeOptions = {}): Promis
   // Страховка на стороне JS: если нативный поток завис (бывает на DNS), проверка
   // всё равно закончится вовремя. Поздний ответ просто отбрасывается.
   const res = await raceTimeout((options.nativeHttp || httpProbe)(url, timeoutMs), timeoutMs + 400);
-  if (!res.ok || res.status == null) return { ...classifyError(res.error || 'нет ответа'), latencyMs: null, networkStatus: 'blocked', probeUrl: url };
+  if (!res.ok || res.status == null) {
+    const err = { ...classifyError(res.error || 'нет ответа'), latencyMs: null as number | null, networkStatus: 'blocked' as const, probeUrl: url };
+    appLog.warn('site', `probe fail ${url} → ${err.reason}`, res.error || '');
+    return err;
+  }
   try {
     const bytes = Uint8Array.from(atob(res.data_base64 || ''), (char) => char.charCodeAt(0));
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
@@ -86,9 +91,14 @@ export async function probeSite(url: string, options: ProbeOptions = {}): Promis
     const content = verifyContent ? assessSiteContent(finalUrl, text, res.status, res.content_type || '') : null;
     const base = { latencyMs: ms, httpStatus: res.status, probeUrl: finalUrl,
       detail: `${finalUrl !== url ? `редирект на ${finalUrl.slice(0, 100)} · ` : ''}${res.truncated ? 'прочитаны первые 256 KiB' : 'ответ прочитан'}` };
-    if (content && !content.own) return { ...base, verdict: content.intercepted ? 'intercepted' : 'blocked',
-      networkStatus: content.intercepted ? 'blocked' : webSpeed(ms), proof: 'opaque',
-      challenge: content.challenge === true, reason: content.reason || 'сайт не открыл своё содержимое' };
+    if (content && !content.own) {
+      const out = { ...base, verdict: content.intercepted ? 'intercepted' as const : 'blocked' as const,
+        networkStatus: content.intercepted ? 'blocked' as const : webSpeed(ms), proof: 'opaque' as const,
+        challenge: content.challenge === true, reason: content.reason || 'сайт не открыл своё содержимое' };
+      if (content.challenge && res.status === 403) appLog.info('site', `probe 403 challenge ${finalUrl} ${ms}мс`, content.reason);
+      else if (res.status === 403) appLog.warn('site', `probe 403 ${finalUrl}`, content.reason);
+      return out;
+    }
     const own = res.status === 204 || Boolean(content?.own);
     return { ...base, verdict: own ? webSpeed(ms) : 'blocked', networkStatus: webSpeed(ms),
       proof: res.status === 204 ? 'endpoint' : content?.proof || 'opaque',

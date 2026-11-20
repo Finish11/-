@@ -14,7 +14,7 @@ import {
   ChevronRight,
   Signal,
   Wifi,
-  Info, Gauge } from 'lucide-react';
+  Info, Gauge, Bug } from 'lucide-react';
 import {
   RUSSIAN_CARRIERS,
   RUSSIAN_REGIONS,
@@ -29,7 +29,7 @@ import { SettingsSheet } from './SettingsSheet';
 import { Sheet } from './ui/Sheet';
 import { Button, Notice } from './ui/kit';
 
-export type NavTab = 'scanner' | 'sites' | 'vpn' | 'speed' | 'incidents' | 'history';
+export type NavTab = 'scanner' | 'sites' | 'vpn' | 'speed' | 'incidents' | 'history' | 'diag';
 
 interface LayoutProps {
   user: User;
@@ -104,6 +104,7 @@ export const Layout: React.FC<LayoutProps> = ({
       dot: counts.activeIncidents > 0,
     },
     { id: 'history', label: 'История', mobileLabel: 'История', icon: History },
+    { id: 'diag', label: 'Диагностика', mobileLabel: 'Логи', icon: Bug },
   ];
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -409,7 +410,7 @@ export const Layout: React.FC<LayoutProps> = ({
       >
         {/* Шесть вкладок — шесть колонок: раньше сетка была на 5, и последняя
             вкладка одна уезжала во второй ряд. */}
-        <div className="grid grid-cols-6 px-1 pt-1.5">
+        <div className="grid grid-cols-7 px-1 pt-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

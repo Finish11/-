@@ -172,6 +172,14 @@ export function assessSiteContent(
       : { own: false, intercepted: false, reason: 'вместо значка сайта пришла HTML-страница или отказ' };
   }
 
+  // 403 — частый ответ WAF/Cloudflare на небраузерный User-Agent. Маршрут есть,
+  // но контент не выдали: считаем это живой проверкой с ограниченной достоверностью,
+  // а не «заблокировано». Иначе рабочий сайт в каталоге выглядел «молчит» из-за ботовой защиты.
+  if (httpStatus === 403) {
+    const base = `${strictService(url, lower)?.name || expectedBrand(url) || 'Сайт'} ответил HTTP 403 — доступ ограничен (защита от ботов или регион). Маршрут до сервера есть, но страница не отдана.`;
+    return { own: false, intercepted: false, challenge: true, reason: base };
+  }
+
   const strict = strictService(url, lower);
   if (strict) {
     if (httpStatus >= 400) {

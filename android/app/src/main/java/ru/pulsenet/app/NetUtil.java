@@ -176,8 +176,12 @@ final class NetUtil {
         connection.setRequestMethod(method);
         connection.setInstanceFollowRedirects(false);
         connection.setUseCaches(false);
-        connection.setRequestProperty("User-Agent", "PulseNet/1.6 (Android; network diagnostics)");
-        connection.setRequestProperty("Accept", "*/*");
+        // Многие WAF (Cloudflare, anti-bot) режут короткие «ботовые» UA кодом 403.
+        // При ошибке «403» сайт живой, но каталог показывает «молчит» — поэтому
+        // прикидываемся обычным Mobile Chrome, чтобы получить реальный HTML, а не бан.
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36");
+        connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+        connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9,en;q=0.8");
         connection.setRequestProperty("Accept-Encoding", "gzip");
         connection.setRequestProperty("Cache-Control", "no-cache");
         return connection;

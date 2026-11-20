@@ -1,6 +1,7 @@
 import { aggregateSpeed, bytesToMbps, latencyStats, type SpeedAggregate } from './speedTest';
 import { defaultTransport, type SpeedPhaseResult, type SpeedTransport } from './speedRunner';
 import { isNativeApp } from './nativeBridge';
+import { appLog } from './appLogger';
 
 /**
  * Замер доступа к YouTube и оценка «на какое качество хватит».
@@ -149,6 +150,12 @@ export const YOUTUBE_PROBE_URLS = [
  *
  * player JS и каталог станций — мегабайты с того же youtube.com, по которому
  * видно и задержку, и реальную пропускную способность до площадки.
+ *
+ * Статический хэш `2f2b8b6b` протухает за недели: YouTube пересобирает плеер и
+ * старые адреса начинают отвечать 404, а замер снова пишет «не отдал ни байта»
+ * при живом сайте. Поэтому адреса теперь вытягиваются прямо из HTML ролика
+ * (поле `jsUrl`/`base.js`), а этот список — лишь запасной, если страницу не
+ * достали.
  */
 export const YOUTUBE_BULK_URLS = [
   // Крупный статический JS плеера — ~0.8–1.2 МБ, есть на всех локалях.
@@ -158,6 +165,33 @@ export const YOUTUBE_BULK_URLS = [
   'https://www.youtube.com/s/player/2f2b8b6b/player_ias.vflset/en_US/base.js',
   'https://www.youtube.com/s/player/2f2b8b6b/player_ias.vflset/en_GB/base.js',
 ];
+
+/**
+ * Вытаскивает актуальные адреса плеера из HTML страницы ролика.
+ * YouTube кладёт их в `jsUrl` или как `/s/player/<hash>/.../base.js` — хэш
+ * меняется при каждом деплое, поэтому хардкод без парсинга быстро протухает.
+ */
+export function extractYoutubeBulkUrls(html: string): string[] {
+  if (!html) return [];
+  const found: string[] = [];
+  const push = (raw: string) => {
+    try {
+      let url = raw.replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+      // Относительный путь вида \/s\/player\/... → https://www.youtube.com/...
+      if (url.startsWith('/')) url = `https://www.youtube.com${url}`;
+      if (!/^https:\/\/www\.youtube\.com\/s\//.test(url)) return;
+      if (!/base\.js/i.test(url)) return;
+      if (!found.includes(url)) found.push(url);
+    } catch { /* пропускаем кривой кусок */ }
+  };
+  // 1) поле jsUrl: "jsUrl":"/s/player/aaaa/.../base.js"
+  for (const m of html.matchAll(/"jsUrl"\s*:\s*"([^"]+base\.js[^"]*)"/gi)) push(m[1]);
+  // 2) любые абсолютные или относительные base.js в /s/player/
+  for (const m of html.matchAll(/(?:https:\/\/www\.youtube\.com)?\/s\/player\/[a-f0-9]+\/[^\s"'<>]+base\.js/gi)) push(m[0]);
+  // 3) generic: https://www.youtube.com/s/...base.js
+  for (const m of html.matchAll(/https:\/\/www\.youtube\.com\/s\/[^\s"'<>]*base\.js/gi)) push(m[0]);
+  return found.slice(0, 6);
+}
 
 export type YoutubeSource = 'googlevideo' | 'ytimg' | 'youtube';
 export type YoutubeVerdictKind = 'ok' | 'slow' | 'blocked' | 'offline' | 'unsupported' | 'aborted';
@@ -324,6 +358,10 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
     result.verdict = verdict;
     result.note = note;
     result.elapsedMs = Date.now() - startedAt;
+    // Логируем итог: 403/404/таймаут видны в копируемых логах сразу.
+    const summary = `YouTube ${verdict} ${result.mbps.toFixed(2)}Мбит/с ${result.bytes}б ${result.elapsedMs}мс errors=${result.errors.length}`;
+    if (verdict === 'blocked' || verdict === 'offline' || verdict === 'unsupported') appLog.warn('youtube', summary, result.errors.slice(0, 4).join('; ') + (result.errors.length > 4 ? ` +${result.errors.length - 4}` : '') + ` | note: ${note}`);
+    else appLog.info('youtube', summary, note);
     return result;
   };
   const stop = (): YoutubeProbeResult => {
@@ -335,6 +373,7 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
 
   // Предохранитель: даже если транспорт завис на сокете и не вернул управление,
   // замер обязан закончиться сам. Без него «нет сети» — вечная крутилка.
+  appLog.info('youtube', `Старт замера YouTube lite=${Boolean(options.lite)} budget=${budget}мс`);
   const guard = new AbortController();
   let timedOut = false;
   const onOuterAbort = () => guard.abort();
@@ -399,14 +438,19 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
   say(reachable ? 'Ищем прямой адрес видеопотока…' : 'YouTube не отвечает — проверяем CDN…');
   const watchUrl = options.watchUrl || YOUTUBE_SAMPLE_WATCH;
   let streamUrls: string[] = [];
+  let bulkCandidates: string[] = [];
   let pageLoaded = false;
+  let cachedHtml = '';
   if (!reachable) result.errors.push('Служебные адреса YouTube не ответили, страницу ролика не запрашивали');
   try {
     if (!reachable) throw new Error('YouTube не отвечает');
 
     const html = await untilAborted((options.fetchHtml ?? defaultFetchHtml)(watchUrl), guard.signal, () => '');
+    cachedHtml = html;
     pageLoaded = /ytInitialPlayerResponse|"videoDetails"|<title>YouTube<\/title>/i.test(html);
     streamUrls = extractGoogleVideoUrls(html);
+    bulkCandidates = extractYoutubeBulkUrls(html);
+    if (bulkCandidates.length) result.errors.push(`Найдены актуальные адреса плеера: ${bulkCandidates.length} (хеш свежий, а не хардкод)`);
     if (!streamUrls.length && pageLoaded) {
       result.errors.push('Готовая ссылка на поток в странице не пришла (подпись не расшифровывается)');
     }
@@ -442,8 +486,19 @@ export async function runYoutubeProbe(options: YoutubeProbeOptions = {}): Promis
   // Она нужна ровно тогда, когда ни видеоголовка, ни CDN ничего не отдали:
   // иначе вердикт «YouTube не отдал ни байта» при живом YouTube.
   if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {
-    const phase = await download(YOUTUBE_BULK_URLS, 'youtube', 3, durationMs);
+    // Свежие адреса из HTML пробуем первыми: хардкод мог протухнуть (404).
+    const bulkUrls = bulkCandidates.length ? bulkCandidates : YOUTUBE_BULK_URLS;
+    if (bulkCandidates.length) say('Качаем свежий плеер YouTube…');
+    const phase = await download(bulkUrls, 'youtube', 3, durationMs);
     if (phase.confirmed > 0) attempts.push({ source: 'youtube', phase });
+    else if (bulkCandidates.length && bulkCandidates !== YOUTUBE_BULK_URLS) {
+      // Свежий список не дал байт (например, 403 на плеер): пробуем запасной хардкод,
+      // но только если ещё есть время — иначе «не отдал ни байта» при живом сайте.
+      if (leftMs() > 2500) {
+        const fallback = await download(YOUTUBE_BULK_URLS, 'youtube', 2, Math.min(durationMs, 4000));
+        if (fallback.confirmed > 0) attempts.push({ source: 'youtube', phase: fallback });
+      }
+    }
   }
   // 4. Служебные адреса: последняя проверка, что канал до сайта живой.
   if (!attempts.length && !timedOut && !options.signal?.aborted && leftMs() > 3000) {

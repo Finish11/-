@@ -735,6 +735,47 @@ async function main() {
   });
   await phone.shot('update-progress');
 
+  // 16. Самопроверка в приложении: запускаем все шаги, проверяем, что они
+  //     отрисовываются с статусами, и что отчёт со логами копируется в буфер.
+  //     Панель существовала, но в проходе её не запускали — поэтому дефект
+  //     «самопроверка + копируемые логи» не проверялся на телефоне вовсе.
+  await phone.step('диагностика: самопроверка и копируемый отчёт', 'Диагностика → Запустить проверку', async () => {
+    await phone.tap('Диагностика', { exact: true });
+    await page.waitForTimeout(900);
+    if (!(await phone.visible('Запустить проверку', { exact: true }))) {
+      throw new Error('кнопка «Запустить проверку» не найдена на вкладке Диагностика');
+    }
+    await phone.tap('Запустить проверку', { exact: true });
+
+    // Самопроверка идёт несколько секунд: ждём появления списка шагов и
+    // кнопки «Копировать отчёт», которая появляется только после завершения.
+    let stepsText = '';
+    let reported = false;
+    for (let i = 0; i < 60; i += 1) {
+      await page.waitForTimeout(700);
+      const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+      if (/шагов/.test(text)) { stepsText = text; reported = true; }
+      if (reported && (await phone.visible('Копировать отчёт', { exact: true }))) break;
+    }
+    if (!reported) throw new Error('самопроверка не выдала список шагов за 42 с');
+    // Подсистема обновления — один из четырёх reported defect: она должна
+    // входить в самопроверку, а не быть вне её.
+    if (!/Обновление приложения/.test(stepsText)) {
+      phone.note({ severity: 'minor', area: 'диагностика', title: 'Шаг обновления не вошёл в самопроверку',
+        detail: 'в списке шагов нет «Обновление приложения» — подсистема не охвачена самопроверкой' });
+    }
+    if (!(await phone.visible('Копировать отчёт', { exact: true }))) {
+      throw new Error('после завершения самопроверки нет кнопки «Копировать отчёт»');
+    }
+    await phone.tap('Копировать отчёт', { exact: true });
+    await page.waitForTimeout(900);
+    const text = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+    if (!/самопроверка/i.test(text)) {
+      throw new Error('в буфере нет отчёта самопроверки: ' + JSON.stringify(text.slice(0, 80)));
+    }
+    await phone.shot('diagnostics-report');
+  });
+
   const result = await close();
   await writeFile(path.join(outDir, 'README.md'), renderReport(result), 'utf8');
   printSummary(result.findings, result.steps, outDir);

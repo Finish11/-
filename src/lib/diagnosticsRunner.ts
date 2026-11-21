@@ -6,6 +6,7 @@
  */
 
 import { logInfo, logWarn, logError } from './appLogger';
+import { ApkUpdater, checkForUpdateResult } from './appUpdate';
 import { getNativeNetworkState, getVpnDiagnostics, httpProbe, isNativeApp, ipEcho, realDelayProbe } from './nativeBridge';
 import { probeControl } from './siteProbe';
 import { detectNetworkContext } from './networkInfo';
@@ -222,7 +223,57 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     }
   }
 
-  // 8. RealDelay сквозь туннель
+  // 8. Обновление приложения и права установки
+  //    Самый частый баг обновления: APK скачался, но установщик не открылся
+  //    (file:// или отсутствие разрешения). Поэтому проверяем не просто «есть
+  //    обновление», а и то, можно ли его вообще запустить в этом устройстве.
+  {
+    const id = 'update';
+    push(step(id, 'Обновление приложения', 'Проверка релиза и права на установку APK'));
+    const t0 = Date.now();
+    try {
+      if (!isNativeApp()) {
+        update(id, { status: 'skip', message: 'Пропущено: обновление доступно только в APK', ms: Date.now() - t0 });
+      } else {
+        if (signal?.aborted) throw new Error('Отменено');
+        // Право на установку из этого источника — сразу и без сети.
+        let canInstall: boolean | null = null;
+        try {
+          const perm = await withTimeout(ApkUpdater.getPermissionState(), 3000, 'getPermissionState timeout 3s');
+          canInstall = Boolean(perm.canInstall);
+        } catch (e) {
+          update(id, { status: 'warn', message: `Права установки не получены: ${e instanceof Error ? e.message : e}`, ms: Date.now() - t0 });
+        }
+        // Проверка релиза: либо есть обновление, либо понятная причина.
+        const result = await withTimeout(checkForUpdateResult(), 15000, 'update check timeout 15s');
+        if (result.update) {
+          const detail = `текущая ${result.update.currentVersion} → ${result.update.version} · ${result.update.sizeMb} МБ · canInstall=${canInstall ?? '—'}`;
+          const status: DiagStatus = canInstall === false ? 'warn' : 'ok';
+          const message = canInstall === false
+            ? `Доступна ${result.update.version}, но для установки нужно разрешение «Установка неизвестных приложений»`
+            : `Доступна ${result.update.version} (${result.update.sizeMb} МБ) · установка возможна`;
+          update(id, { status, message, detail, ms: Date.now() - t0 });
+          logInfo('diag', `Update ${status}: ${result.update.version}`, detail);
+          if (canInstall === false) logWarn('diag', 'Нужно разрешение на установку приложений', detail);
+        } else {
+          const detail = `reason=${result.reason || '—'} canInstall=${canInstall ?? '—'}`;
+          const status: DiagStatus = result.reason === 'network' || result.reason === 'rate-limit' ? 'warn' : 'ok';
+          update(id, {
+            status,
+            message: result.reason === 'up-to-date' ? `Установлена последняя версия (${canInstall === false ? 'разрешение на установку не выдано' : 'установка возможна'})` : `Нет обновления: ${result.message || result.reason}`,
+            detail, ms: Date.now() - t0,
+          });
+          logInfo('diag', `Update ${status}: ${result.reason || 'up-to-date'}`, detail);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      update(id, { status: 'fail', message: `Обновление: ${msg}`, detail: msg, ms: Date.now() - t0 });
+      logError('diag', 'Update fail', msg);
+    }
+  }
+
+  // 9. RealDelay сквозь туннель
   {
     const id = 'real-delay';
     push(step(id, 'Задержка через туннель', 'HTTP 204 сквозь активное подключение (real delay)'));
@@ -244,7 +295,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     }
   }
 
-  // 9. YouTube пинг (лёгкий, без качки байт)
+  // 10. YouTube пинг (лёгкий, без качки байт)
   {
     const id = 'youtube-ping';
     push(step(id, 'YouTube: доступность', 'Пинг youtube.com и googlevideo'));
@@ -269,7 +320,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     }
   }
 
-  // 10. LocalStorage / память
+  // 11. LocalStorage / память
   {
     const id = 'storage';
     push(step(id, 'Хранилище', 'Проверяем localStorage и память отзывов'));

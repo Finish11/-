@@ -42,7 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...rest
 }) => {
   const base =
-    'inline-flex items-center justify-center font-semibold tap select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap focus-accent';
+    'inline-flex items-center justify-center font-semibold press-spring select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap focus-accent';
   const variants: Record<ButtonVariant, string> = {
     primary: 'accent-solid accent-glow hover:brightness-[1.04]',
     soft: 'accent-soft hover:brightness-110',
@@ -69,22 +69,30 @@ export const Button: React.FC<ButtonProps> = ({
   );
 };
 
-/** Карточка-контейнер: единая поверхность для блоков данных. */
+/** Карточка-контейнер: единая поверхность для блоков данных.
+    По умолчанию получает подъём (elevation) и внутреннюю верхнюю подсветку
+    (фрост), чтобы поверхности не смотрелись плоскими. Кликабельная карточка
+    поднимается на наведение (десктоп) и отдаётся пружинным нажатием. */
 export const Card: React.FC<{
   children: React.ReactNode;
   className?: string;
   /** Внутренняя подсветка-акцент (для главных блоков, как главный экран). */
   accent?: boolean;
   onClick?: () => void;
-}> = ({ children, className = '', accent = false, onClick }) => (
+  /** Сила подъёма: 1 — минимально, 2 — по умолчанию, 3 — сильный (главный блок). */
+  elev?: 1 | 2 | 3;
+}> = ({ children, className = '', accent = false, onClick, elev = 2 }) => (
   <div
     onClick={onClick}
-    className={`relative rounded-[1.5rem] border p-4 sm:p-5 ${className} ${onClick ? 'tap' : ''}`}
+    className={`relative rounded-[1.5rem] border p-4 sm:p-5 ${className} ${
+      onClick ? 'hover-lift press-spring' : ''
+    }`}
     style={{
       borderColor: 'var(--line)',
       background: accent
         ? 'radial-gradient(120% 90% at 50% -20%, rgb(var(--accent) / 0.16), transparent 60%), var(--surface)'
         : 'var(--surface)',
+      boxShadow: `var(--shadow-${elev}), inset 0 1px 0 var(--inset-hi)`,
     }}
   >
     {children}
@@ -104,7 +112,7 @@ export const Chip: React.FC<{
     title={title}
     onClick={onClick}
     aria-pressed={active}
-    className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold border tap ${
+    className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold border press-spring ${
       active
         ? 'accent-soft'
         : 'text-[color:var(--text-dim)] hover:text-[color:var(--text)]'
@@ -140,10 +148,11 @@ export function Segmented<T extends string>({
       {/* Скользящий индикатор: позиционируется по активному варианту. */}
       <span
         aria-hidden="true"
-        className="absolute top-1 bottom-1 left-1 rounded-lg accent-solid shadow-sm transition-all duration-200 ease-spring"
+        className="absolute top-1 bottom-1 left-1 rounded-lg accent-solid transition-all duration-200 ease-spring"
         style={{
           width: `calc((100% - 0.5rem) / ${options.length})`,
           transform: `translateX(calc(${activeIndex} * 100%))`,
+          boxShadow: 'var(--shadow-2), inset 0 1px 0 var(--inset-hi-strong)',
         }}
       />
       {options.map((o) => {
@@ -488,11 +497,12 @@ export const TileIcon: React.FC<{ children: React.ReactNode; color?: string }> =
   color = 'rgb(var(--accent))',
 }) => (
   <span
-    className="w-8 h-8 rounded-xl grid place-items-center shrink-0"
+    className="w-8 h-8 rounded-xl grid place-items-center shrink-0 press-spring"
     style={{
       background: `color-mix(in srgb, ${color} 14%, transparent)`,
       border: `1px solid color-mix(in srgb, ${color} 26%, transparent)`,
       color,
+      boxShadow: 'inset 0 1px 0 var(--inset-hi)',
     }}
   >
     {children}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Info, XCircle, X } from 'lucide-react';
 
 export interface ToastItem {
@@ -12,6 +12,9 @@ interface ToastContainerProps {
   onDismiss: (id: string) => void;
 }
 
+const AUTO_MS = 4000;
+const EXIT_MS = 240;
+
 /**
  * Сообщения снизу — так они не перекрывают шапку и не «прыгают» перед глазами.
  * Показываем не больше трёх, остальные ждут в очереди.
@@ -20,14 +23,55 @@ interface ToastContainerProps {
  * кнопку «Проверить» и первую карточку узла, а длинное название сервиса
  * растягивало плашку на три строки. Поэтому текст ограничен тремя строками с
  * многоточием: полный текст всегда есть в том месте, откуда тост пришёл.
+ *
+ * Анимация: вход — мягкое поднятие снизу (anim-slide); выход — плавное
+ * затухание и просадка, без резкого исчезновения. Авто-закрытие и закрытие
+ * крестиком играют один и тот же exit.
  */
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
   const visible = toasts.slice(-3);
+  const [closing, setClosing] = useState<Set<string>>(new Set());
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // На каждый новый тост ставим авто-закрытие; при закрытии играет exit,
+  // после него — вызов onDismiss.
+  useEffect(() => {
+    for (const t of visible) {
+      if (closing.has(t.id)) continue;
+      if (timers.current.has(t.id)) continue;
+      const timer = setTimeout(() => startClosing(t.id), AUTO_MS);
+      timers.current.set(t.id, timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toasts, closing]);
+
+  const startClosing = (id: string) => {
+    if (closing.has(id)) return;
+    setClosing((prev) => new Set(prev).add(id));
+    window.setTimeout(() => {
+      onDismiss(id);
+      setClosing((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, EXIT_MS);
+  };
+
+  useEffect(
+    () => () => {
+      for (const timer of timers.current.values()) clearTimeout(timer);
+      timers.current.clear();
+    },
+    []
+  );
+
   if (visible.length === 0) return null;
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-[95] pointer-events-none flex flex-col-reverse items-center gap-2 px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:pb-5">
       {visible.map((t) => {
+        const isClosing = closing.has(t.id);
         const meta =
           t.type === 'success'
             ? { color: 'rgb(var(--success))', Icon: CheckCircle2 }
@@ -46,7 +90,9 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
              * кнопки («Проверить» после «Узел добавлен» — тап уходил в пустую
              * плашку). Нажимается только крестик.
              */
-            className="w-full max-w-sm flex items-start gap-2.5 rounded-2xl px-3.5 py-2.5 anim-fade-up"
+            className={`w-full max-w-sm flex items-start gap-2.5 rounded-2xl px-3.5 py-2.5 ${
+              isClosing ? 'anim-toast-out' : 'anim-slide'
+            }`}
             style={{
               background: 'color-mix(in srgb, var(--bg-elevated) 92%, transparent)',
               border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
@@ -55,10 +101,12 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
             }}
           >
             <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color }} />
-            <div className="flex-1 min-w-0 text-[12.5px] leading-snug line-clamp-3 break-words" title={t.message}>{t.message}</div>
+            <div className="flex-1 min-w-0 text-[12.5px] leading-snug line-clamp-3 break-words" title={t.message}>
+              {t.message}
+            </div>
             <button
               type="button"
-              onClick={() => onDismiss(t.id)}
+              onClick={() => startClosing(t.id)}
               className="tap-icon tap shrink-0 -mr-1 -mt-0.5 text-dim hover:text-[color:var(--text)] pointer-events-auto"
               aria-label="Скрыть"
             >

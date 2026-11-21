@@ -7,8 +7,8 @@ android {
         applicationId "ru.pulsenet.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 111018000
-        versionName "1.11.18"
+        versionCode 111019000
+        versionName "1.11.19"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

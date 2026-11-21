@@ -70,6 +70,17 @@
   --danger: 244 132 122;
   --violet: 167 139 250;
 
+  /* Теневой подъём (elevation): один источник глубины для обеих тем.
+     В тёмной — мягкие, расплывчатые тени; светлая тема требует более
+     выраженной, но деликатной тени. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 26px -12px rgba(0, 0, 0, 0.62);
+  --shadow-3: 0 26px 64px -30px rgba(0, 0, 0, 0.88);
+  /* Внутренняя верхняя подсветка — «фрост»-эффект: намёк на свет сверху,
+      при котором поверхности читаются как физическиеPanels. */
+  --inset-hi: rgba(255, 255, 255, 0.05);
+  --inset-hi-strong: rgba(255, 255, 255, 0.08);
+
   /* Типографика сайта: заголовки плотные, текст спокойный. */
   --font-sans: 'Golos Text Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Manrope Variable', 'Golos Text Variable', ui-sans-serif, system-ui, sans-serif;
@@ -146,6 +157,12 @@ html.light {
   --success: 17 109 81;
   --warning: 166 116 20;
   --danger: 178 62 54;
+  /* Светлая тема: мягкие, но видимые тени; внутрь сверху — тёплый белый свет. */
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-2: 0 10px 26px -14px rgba(15, 23, 42, 0.2), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-3: 0 28px 60px -32px rgba(15, 23, 42, 0.34);
+  --inset-hi: rgba(255, 255, 255, 0.85);
+  --inset-hi-strong: rgba(255, 255, 255, 0.95);
   color-scheme: light;
 }
 
@@ -276,6 +293,48 @@ html.light .app-bg {
 
 html.light .glass {
   box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.5);
+}
+
+/* ============================================================================
+   ВЫСОТА (ELEVATION) И «ФРОСТ»
+   Единый источник теней для глубины; inner-highlight добавляет намёк на
+   физическую панель (свет сверху), чтобы поверхности не смотрелись плоскими.
+   ========================================================================== */
+.elev-1 { box-shadow: var(--shadow-1); }
+.elev-2 { box-shadow: var(--shadow-2); }
+.elev-3 { box-shadow: var(--shadow-3); }
+
+/* Поверхность с внутренней верхней подсветкой: премиальный «фрост». */
+.frosted {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2), inset 0 1px 0 var(--inset-hi);
+  border-radius: 1.25rem;
+}
+.frosted-strong {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-3), inset 0 1px 0 var(--inset-hi-strong);
+  border-radius: 1.5rem;
+}
+/* Нажатие с пружинным отскоком: иконки, чипы, кнопки. */
+.press-spring {
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.25s ease, background-color 0.2s ease, border-color 0.2s ease,
+    color 0.18s ease;
+}
+.press-spring:active {
+  transform: scale(0.94);
+}
+/* Наведение только там, где есть точка (десктоп): лёгкий подъём. */
+@media (hover: hover) {
+  .hover-lift {
+    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-3), inset 0 1px 0 var(--inset-hi-strong);
+  }
 }
 
 /* ============================================================================
@@ -511,6 +570,20 @@ html.light .glass {
 .anim-overlay-out {
   animation: overlayOut 0.22s ease-out both;
 }
+/* Выход тоста: плавное затухание + просадка вниз, без резкого исчезновения. */
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.96);
+  }
+}
+.anim-toast-out {
+  animation: toastOut 0.24s ease-in both;
+}
 .anim-float {
   animation: floaty 5.5s ease-in-out infinite;
 }
@@ -524,6 +597,50 @@ html.light .glass {
 /* Кольца радара во время замера */
 .radar-ring {
   animation: radarRing 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* Пульсация свечения главной кнопки-радара при активном замере: мягкий,
+   не навязчивый «дыхание», которое не мешает цифрам прогресса. */
+@keyframes glowPulse {
+  0%,
+  100% {
+    box-shadow: 0 22px 60px -22px rgb(var(--accent) / 0.7);
+  }
+  50% {
+    box-shadow: 0 24px 74px -12px rgb(var(--accent) / 0.98);
+  }
+}
+.anim-glow {
+  animation: glowPulse 2.8s ease-in-out infinite;
+}
+
+/* Пульсация статус-точки: expanding ring, который «объявляет» активность. */
+@keyframes ringPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.ring-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: ringPulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* Медобычайный медленный вращательный индикатор. */
+@keyframes spinSlow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spinSlow 1.4s linear infinite;
 }
 
 /* Каскад: каждая карточка появляется чуть позже предыдущей */
@@ -671,11 +788,15 @@ html.calm-motion .stagger > *,
 html.calm-motion .animate-scan-sweep,
 html.calm-motion .radar-ring,
 html.calm-motion .sheen-text,
-html.calm-motion .shimmer::after {
+html.calm-motion .shimmer::after,
+html.calm-motion .anim-glow,
+html.calm-motion .ring-pulse::after,
+html.calm-motion .spin-slow {
   animation: none !important;
 }
 html.calm-motion .anim-sheet,
-html.calm-motion .anim-overlay {
+html.calm-motion .anim-overlay,
+html.calm-motion .anim-toast-out {
   animation-duration: 0.12s !important;
 }
 
@@ -712,13 +833,17 @@ html.calm-motion .gauge-needle {
   .anim-slide,
   .anim-overlay,
   .anim-sheet,
+  .anim-toast-out,
   .anim-float,
   .anim-pulse-soft,
   .stagger > *,
   .shimmer::after,
   .animate-scan-sweep,
   .radar-ring,
-  .sheen-text {
+  .sheen-text,
+  .anim-glow,
+  .ring-pulse::after,
+  .spin-slow {
     animation: none !important;
   }
   html {

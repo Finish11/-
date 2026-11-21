@@ -79,9 +79,7 @@ export function App() {
     (type: ToastItem['type'], message: string) => {
       const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       setToasts((prev) => [...prev, { id, type, message }]);
-      window.setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 4000);
+      // Авто-закрытие с анимацией выхода управляется ToastContainer.
     },
     []
   );

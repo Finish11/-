@@ -182,7 +182,7 @@ export const Layout: React.FC<LayoutProps> = ({
           <button
             onClick={onRefreshConnection}
             disabled={connLoading}
-            className="w-full text-left rounded-2xl border p-3 tap hover:brightness-105"
+            className="w-full text-left rounded-2xl border p-3 tap hover:brightness-105 elev-2"
             style={{
               background: vpnOn ? 'rgb(var(--warning) / 0.09)' : 'var(--surface-2)',
               borderColor: vpnOn ? 'rgb(var(--warning) / 0.3)' : 'var(--line)',
@@ -422,6 +422,7 @@ export const Layout: React.FC<LayoutProps> = ({
               transform: `translateX(calc(${navItems.findIndex((i) => i.id === activeTab)} * 100%))`,
               background: 'var(--accent-soft)',
               border: '1px solid rgb(var(--accent) / 0.3)',
+              boxShadow: 'inset 0 1px 0 var(--inset-hi-strong)',
             }}
           />
           {navItems.map((item) => {

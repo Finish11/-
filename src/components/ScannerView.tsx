@@ -666,6 +666,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           borderColor: 'var(--line)',
           background:
             'radial-gradient(120% 90% at 50% -20%, rgb(var(--accent) / 0.16), transparent 60%), var(--surface)',
+          boxShadow: 'var(--shadow-3), inset 0 1px 0 var(--inset-hi-strong)',
         }}
       >
         {/* Мягкое свечение за кнопкой */}
@@ -736,7 +737,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             <button
               type="button"
               onClick={scanning ? handleScanTap : handleStartCheck}
-              className="relative w-[8.75rem] h-[8.75rem] sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center select-none tap-chunky"
+              className={`relative w-[8.75rem] h-[8.75rem] sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center select-none tap-chunky ${
+                scanning ? 'anim-glow' : ''
+              }`}
               style={{
                 background: scanning
                   ? 'linear-gradient(160deg, rgb(var(--accent)), rgb(var(--accent-2)))'

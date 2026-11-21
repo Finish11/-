@@ -161,17 +161,34 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
   }
 
   // 5. Проба одного сайта
+  //    Проверяем корень сайта, а не /favicon.ico: у многих ресурсов favicon
+  //    отдаёт 404, и тогда здоровый сайт ложно попадал в «провал». Сам факт
+  //    HTTP-ответа (даже 4xx) доказывает, что нативный HTTP дошёл до сайта.
   {
     const id = 'site-probe';
     push(step(id, 'Проба сайта', 'Запрашиваем rbc.ru через нативный HTTP'));
     const t0 = Date.now();
     try {
       if (signal?.aborted) throw new Error('Отменено');
-      const url = 'https://www.rbc.ru/favicon.ico';
+      const url = 'https://www.rbc.ru/';
       const res = await withTimeout(httpProbe(url, 8000), 9000, 'httpProbe timeout 9s');
       const detail = `ok=${res.ok} status=${res.status} err=${res.error || '—'} truncated=${res.truncated} ct=${res.content_type}`;
-      const status: DiagStatus = res.ok && res.status && res.status >= 200 && res.status < 400 ? 'ok' : res.status === 403 ? 'warn' : 'fail';
-      update(id, { status, message: res.ok ? `Ответ ${res.status} · ${res.content_type || 'без типа'}` : `Ошибка: ${res.error}`, detail, ms: Date.now() - t0 });
+      // 2xx/3xx — сайт отдал содержимое. 403 — дошёл, но WAF/проверка браузера.
+      // Другой 4xx — дошёл, но ресурс не отдан (404/410). Всё это «сайт жив»,
+      // а не провал сети; провал — только если ответа нет совсем (сетевая ошибка).
+      const httpStatus = res.status ?? 0;
+      const status: DiagStatus = !res.ok
+        ? 'fail'
+        : httpStatus >= 200 && httpStatus < 400 ? 'ok'
+        : 'warn';
+      const message = !res.ok
+        ? `Ошибка: ${res.error}`
+        : status === 'ok'
+        ? `Ответ ${httpStatus} · ${res.content_type || 'без типа'}`
+        : httpStatus === 403
+        ? `Дошёл, но сервер ответил проверкой (HTTP 403)`
+        : `Сайт отвечает, ресурс не отдан (HTTP ${httpStatus})`;
+      update(id, { status, message, detail, ms: Date.now() - t0 });
       logInfo('diag', `Site probe ${status}`, detail);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

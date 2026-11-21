@@ -4,7 +4,7 @@ import type { ScanRecord } from '../types';
 import { apiFetch } from '../lib/api';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
-import { Button, EmptyState, StatusIcon } from './ui/kit';
+import { Button, Card, EmptyState, StatusIcon } from './ui/kit';
 
 interface HistoryViewProps {
   scans: ScanRecord[];
@@ -23,7 +23,7 @@ const verdictColor = (v: ScanRecord['verdict']): string => {
     case 'SEVERE_RESTRICTIONS':
       return 'rgb(var(--warning))';
     case 'DPI_THROTTLING':
-      return '#f59e0b';
+      return 'rgb(var(--warning))';
     default:
       return 'rgb(var(--success))';
   }
@@ -155,7 +155,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       </header>
 
       {realScans.length === 0 ? (
-        <div className="rounded-[1.5rem] border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+        <Card>
           <EmptyState
             icon={<History className="w-5 h-5" />}
             title="Пока пусто"
@@ -166,14 +166,11 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
               </Button>
             }
           />
-        </div>
+        </Card>
       ) : (
         <>
           {chartPoints.length >= 2 && (
-            <section
-              className="rounded-[1.5rem] border p-3.5"
-              style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
-            >
+            <Card accent>
               <div className="flex items-center justify-between gap-2 mb-3">
                 <span className="text-[12.5px] font-bold">Динамика доступности</span>
                 <div className="flex items-center gap-2.5 text-[10px] text-dim">
@@ -226,7 +223,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
               <p className="text-[10.5px] text-muted mt-2">
                 Средняя доступность нейтральных сайтов за всё время — {avgGlobal}%.
               </p>
-            </section>
+            </Card>
           )}
 
           <div className="relative">
@@ -241,7 +238,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 stagger">
             {visible.map((scan) => {
               const color = verdictColor(scan.verdict);
               return (

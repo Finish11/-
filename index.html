@@ -7,6 +7,28 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ПульсСети" />
+    <!-- Применяем тему и акцент до первого рендера: иначе при перезагрузке
+         при сбросе настроек (light) всплывает тёмная вспышка. */
+    <script>
+      try {
+        var raw = localStorage.getItem('pulsenet_settings_v1');
+        var s = raw ? JSON.parse(raw) : {};
+        var accent = ['sky', 'violet', 'emerald', 'amber', 'rose'].indexOf(s.accent) >= 0 ? s.accent : 'sky';
+        var theme = ['dark', 'light', 'system'].indexOf(s.theme) >= 0 ? s.theme : 'dark';
+        var resolved = theme === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : theme;
+        document.documentElement.dataset.accent = accent;
+        document.documentElement.classList.toggle('light', resolved === 'light');
+        document.documentElement.classList.toggle('dark', resolved === 'dark');
+        document.documentElement.style.colorScheme = resolved;
+        var tc = document.querySelector('meta[name="theme-color"]');
+        if (tc) tc.setAttribute('content', resolved === 'light' ? '#f5f7fb' : '#05070f');
+      } catch (e) {
+        document.documentElement.dataset.accent = 'sky';
+        document.documentElement.classList.add('dark');
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" href="/icon.svg" />
     <link rel="manifest" href="/manifest.json" />

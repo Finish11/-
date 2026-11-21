@@ -4,7 +4,7 @@ import { Radar, Loader2 } from 'lucide-react';
 import { Network } from '@capacitor/network';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { isNativeApp, onNativeNetworkChanged } from './lib/nativeBridge';
-import { useSettings } from './lib/appSettings';
+import { applyTheme, resolveTheme, useSettings } from './lib/appSettings';
 import {
   apiFetch,
   hasExplicitLogout,
@@ -30,6 +30,7 @@ import type {
   VpnSubscription,
 } from './types';
 import { ToastContainer, type ToastItem } from './components/Toast';
+import { Skeleton } from './components/ui/kit';
 import { AuthView, type AuthBootstrapPayload } from './components/AuthView';
 import { Layout, type NavTab } from './components/Layout';
 import { ScannerView } from './components/ScannerView';
@@ -50,7 +51,12 @@ export function App() {
   const [dataLoading, setDataLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<NavTab>('scanner');
-  const [darkMode, setDarkMode] = useState(true);
+  // Настройки читаются до темского режима: тема — единственный источник.
+  const [appSettings, updateAppSettings] = useSettings();
+  // Тема — единственный источник в настройках (dark/light/system). Здесь только
+  // вычисляем конечный темский режим: иначе локальный state расходился с
+  // переключателем из SettingsSheet, и inputs/иконки показывали бы старую тему.
+  const darkMode = resolveTheme(appSettings.theme) === 'dark';
 
   const [sites, setSites] = useState<Site[]>([]);
   const [scans, setScans] = useState<ScanRecord[]>([]);
@@ -62,7 +68,6 @@ export function App() {
 
   const [connection, setConnection] = useState<ClientConnectionInfo | null>(null);
   const [connLoading, setConnLoading] = useState(false);
-  const [appSettings] = useSettings();
   const connectionRequest = useRef(0);
   const nativeSequence = useRef(0);
   const transportKey = useRef('');
@@ -246,9 +251,12 @@ export function App() {
     };
   }, [applyBootstrap]);
 
+  // applyTheme() в writeSettings уже вешает класс light/dark на <html> и
+  // обновляет тег theme-color. Здесь только ловим системную тему, чтобы
+  // darkMode всегда соответствовал реальному применённому цвету.
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
+    applyTheme(appSettings.theme);
+  }, [appSettings.theme]);
 
   const handleAuthenticated = (payload: AuthBootstrapPayload) => {
     applyBootstrap(payload);
@@ -352,12 +360,18 @@ export function App() {
 
   if (booting) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center">
-          <Radar className="w-7 h-7 text-sky-400 animate-pulse" />
+      <div className="app-bg min-h-screen flex flex-col items-center justify-center gap-4">
+        <div
+          className="w-14 h-14 rounded-2xl grid place-items-center anim-pulse-soft"
+          style={{
+            background: 'rgb(var(--accent) / 0.14)',
+            border: '1px solid rgb(var(--accent) / 0.32)',
+          }}
+        >
+          <Radar className="w-7 h-7" style={{ color: 'rgb(var(--accent))' }} />
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-400 font-medium">
-          <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+        <div className="flex items-center gap-2 text-sm font-medium text-dim">
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'rgb(var(--accent))' }} />
           Загрузка ПульсСети...
         </div>
       </div>
@@ -394,17 +408,19 @@ export function App() {
           scans: scans.length,
         }}
         darkMode={darkMode}
-        onToggleTheme={() => setDarkMode((d) => !d)}
+        onToggleTheme={() =>
+          updateAppSettings({ theme: darkMode ? 'light' : 'dark' })
+        }
         showToast={showToast}
       >
         {dataLoading && sites.length === 0 ? (
-          <div className="space-y-4 animate-pulse">
-            <div className="h-14 rounded-2xl bg-slate-800/60" />
-            <div className="h-72 rounded-3xl bg-slate-800/60" />
+          <div className="space-y-4">
+            <Skeleton className="h-14 w-3/4" />
+            <Skeleton className="h-72 w-full" />
             <div className="grid sm:grid-cols-3 gap-3">
-              <div className="h-24 rounded-2xl bg-slate-800/60" />
-              <div className="h-24 rounded-2xl bg-slate-800/60" />
-              <div className="h-24 rounded-2xl bg-slate-800/60" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
             </div>
           </div>
         ) : (

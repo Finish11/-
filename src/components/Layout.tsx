@@ -409,8 +409,21 @@ export const Layout: React.FC<LayoutProps> = ({
         }}
       >
         {/* Шесть вкладок — шесть колонок: раньше сетка была на 5, и последняя
-            вкладка одна уезжала во второй ряд. */}
-        <div className="grid grid-cols-7 px-1 pt-1.5">
+            вкладка одна уезжала во второй ряд. Акцентная плита проезжает к
+            активной вкладке — смена читается мгновенно. */}
+        <div className="relative grid grid-cols-7">
+          {/* Скользящий индикатор: лежит под иконками, проезжает к активной.
+              Колонки без gap и без inner-padding — width/100% совпадает. */}
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 bottom-1.5 left-0 rounded-xl transition-all duration-300 ease-spring"
+            style={{
+              width: `${100 / navItems.length}%`,
+              transform: `translateX(calc(${navItems.findIndex((i) => i.id === activeTab)} * 100%))`,
+              background: 'var(--accent-soft)',
+              border: '1px solid rgb(var(--accent) / 0.3)',
+            }}
+          />
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -418,16 +431,12 @@ export const Layout: React.FC<LayoutProps> = ({
               <button
                 key={item.id}
                 onClick={() => onSelectTab(item.id)}
-                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 py-1 rounded-xl tap ${
-                  isActive ? 'accent-text' : 'text-muted'
-                }`}
+                className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl tap"
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
+                style={{ color: isActive ? 'rgb(var(--accent))' : 'var(--text-muted)' }}
               >
-                <span
-                  className="relative grid place-items-center w-full max-w-[46px] h-7 rounded-full transition-colors"
-                  style={{ background: isActive ? 'var(--accent-soft)' : 'transparent' }}
-                >
+                <span className="relative grid place-items-center w-full max-w-[46px] h-7">
                   <Icon className="w-[19px] h-[19px]" />
                   {item.dot && (
                     <span

@@ -42,11 +42,15 @@
    ТОКЕНЫ ТЕМЫ
    ========================================================================== */
 :root {
-  /* Акцент по умолчанию — зелёный сайта-компаньона, а не неоновый голубой. */
-  --accent: 82 199 152;
-  --accent-2: 45 156 116; /* второй цвет градиента */
-  --accent-soft: rgba(82, 199, 152, 0.14);
-  --accent-contrast: #04170f;
+  /* Акцент по умолчанию — мята (sky): спокойная зелёно-голубая палитра
+     сайта-компаньона, а не неоновый голубой. Уникальны для каждого акцента
+     accent / accent-2 / accent-soft / accent-contrast — see [data-accent] ниже. */
+  --accent: 96 196 148;
+  --accent-2: 58 166 120; /* второй цвет градиента */
+  --accent-soft: rgba(96, 196, 148, 0.14);
+  --accent-contrast: #04170d;
+  /* Фокус-ринг и акцентный штрих ведут себя одинаково в любой теме/акценте. */
+  --focus-ring: rgb(var(--accent) / 0.4);
 
   /* Поверхности (тёмная тема): тёплый графит с зелёным подтоном, как «бумага»
      сайта в тёмном варианте — синий «космос» спорил с зелёными статусами. */
@@ -85,6 +89,43 @@ h1, h2, h3, h4, .font-display {
 /* Цифры не должны «плясать» при живом замере: табличные цифры везде, где числа. */
 .tabular-nums, .font-mono { font-variant-numeric: tabular-nums; }
 
+/* Фокус: видимая рамка в любом акценте/темске, но не «мутная» тени. */
+.focus-accent:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--focus-ring);
+}
+
+/* ---------- Анимации: универсальные прямые/пружинные кривые ---------- */
+/* Ease-out и «мягкая пружина» (overshoot) для переключений и появления. */
+.ease-spring {
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ease-out {
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Появляется снизу: список, карточки, разделы. */
+@keyframes riseIn {
+  from { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Переключатель вкладок: активная позиция проезжает по фону. */
+@keyframes slidePill {
+  from { opacity: 0; transform: translate3d(var(--from, 0), 0, 0) scale(0.92); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+/* Сканирование: широкая полоса пробега. */
+@keyframes sweepX {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
 
 /* Светлая тема — палитра сайта: тёплая «бумага», глубокий зелёный текст. */
 html.light {
@@ -98,9 +139,9 @@ html.light {
   --text: #25352d;
   --text-dim: #4b5f54;
   --text-muted: #5a7064;
-  --accent: 17 109 81;
-  --accent-2: 45 148 108;
-  --accent-soft: rgba(17, 109, 81, 0.1);
+  --accent: 17 124 86;
+  --accent-2: 24 140 92;
+  --accent-soft: rgba(17, 124, 86, 0.1);
   --accent-contrast: #ffffff;
   --success: 17 109 81;
   --warning: 166 116 20;
@@ -108,25 +149,37 @@ html.light {
   color-scheme: light;
 }
 
+/* Акценты: каждый цвет имеет свою пару градиента и контрастный текст, чтобы
+   акцент задавал и категорию (tone) и быть читаемым на любом фоне. */
+[data-accent='sky'] {
+  --accent: 96 196 148;
+  --accent-2: 58 166 120;
+  --accent-soft: rgba(96, 196, 148, 0.16);
+  --accent-contrast: #04170d;
+}
 [data-accent='violet'] {
   --accent: 158 137 232;
   --accent-2: 120 160 230;
   --accent-soft: rgba(158, 137, 232, 0.16);
+  --accent-contrast: #120622;
 }
 [data-accent='emerald'] {
-  --accent: 82 199 152;
-  --accent-2: 45 156 116;
-  --accent-soft: rgba(82, 199, 152, 0.16);
+  --accent: 52 199 132;
+  --accent-2: 32 168 110;
+  --accent-soft: rgba(52, 199, 132, 0.16);
+  --accent-contrast: #03140d;
 }
 [data-accent='amber'] {
   --accent: 226 176 74;
   --accent-2: 214 142 66;
-  --accent-soft: rgba(226, 176, 74, 0.16);
+  --accent-soft: rgba(226, 176, 74, 0.18);
+  --accent-contrast: #2a1a02;
 }
 [data-accent='rose'] {
   --accent: 226 132 140;
   --accent-2: 206 110 150;
   --accent-soft: rgba(226, 132, 140, 0.16);
+  --accent-contrast: #2a0a10;
 }
 
 /* ============================================================================
@@ -429,7 +482,13 @@ html.light .glass {
   animation: fadeUp 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .anim-pop {
-  animation: popIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: popIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.anim-rise {
+  animation: riseIn 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-slide {
+  animation: slidePill 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .anim-overlay {
   animation: overlayIn 0.2s ease-out both;
@@ -590,6 +649,8 @@ html.light .overlay-scrim {
 /* Ручной режим «спокойные анимации» (настройки → оформление) */
 html.calm-motion .anim-fade-up,
 html.calm-motion .anim-pop,
+html.calm-motion .anim-rise,
+html.calm-motion .anim-slide,
 html.calm-motion .anim-float,
 html.calm-motion .stagger > *,
 html.calm-motion .animate-scan-sweep,
@@ -632,6 +693,8 @@ html.calm-motion .gauge-needle {
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up,
   .anim-pop,
+  .anim-rise,
+  .anim-slide,
   .anim-overlay,
   .anim-sheet,
   .anim-float,

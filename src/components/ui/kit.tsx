@@ -42,7 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...rest
 }) => {
   const base =
-    'inline-flex items-center justify-center font-semibold tap select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap';
+    'inline-flex items-center justify-center font-semibold tap select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap focus-accent';
   const variants: Record<ButtonVariant, string> = {
     primary: 'accent-solid accent-glow hover:brightness-[1.04]',
     soft: 'accent-soft hover:brightness-110',
@@ -69,6 +69,28 @@ export const Button: React.FC<ButtonProps> = ({
   );
 };
 
+/** Карточка-контейнер: единая поверхность для блоков данных. */
+export const Card: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+  /** Внутренняя подсветка-акцент (для главных блоков, как главный экран). */
+  accent?: boolean;
+  onClick?: () => void;
+}> = ({ children, className = '', accent = false, onClick }) => (
+  <div
+    onClick={onClick}
+    className={`relative rounded-[1.5rem] border p-4 sm:p-5 ${className} ${onClick ? 'tap' : ''}`}
+    style={{
+      borderColor: 'var(--line)',
+      background: accent
+        ? 'radial-gradient(120% 90% at 50% -20%, rgb(var(--accent) / 0.16), transparent 60%), var(--surface)'
+        : 'var(--surface)',
+    }}
+  >
+    {children}
+  </div>
+);
+
 /** Небольшой чип-переключатель (фильтры, теги). */
 export const Chip: React.FC<{
   active?: boolean;
@@ -93,7 +115,10 @@ export const Chip: React.FC<{
   </button>
 );
 
-/** Сегментированный переключатель на N вариантов. */
+/** Сегментированный переключатель на N вариантов со скользящим индикатором.
+    Индикатор — плывущая акцентная плита (spring), которая проезжает к активному
+    варианту при смене: переключение читается мгновенно, без перерисовывания
+    контекста. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -105,15 +130,22 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   size?: 'sm' | 'md';
 }) {
+  const activeIndex = Math.max(0, options.findIndex((o) => o.value === value));
+  const pad = size === 'sm' ? 'py-1.5' : 'py-2';
   return (
     <div
-      className="grid gap-1 p-1 rounded-xl border"
-      style={{
-        borderColor: 'var(--line)',
-        background: 'var(--surface-2)',
-        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
-      }}
+      className="relative grid rounded-xl border p-1"
+      style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
     >
+      {/* Скользящий индикатор: позиционируется по активному варианту. */}
+      <span
+        aria-hidden="true"
+        className="absolute top-1 bottom-1 left-1 rounded-lg accent-solid shadow-sm transition-all duration-200 ease-spring"
+        style={{
+          width: `calc((100% - 0.5rem) / ${options.length})`,
+          transform: `translateX(calc(${activeIndex} * 100%))`,
+        }}
+      />
       {options.map((o) => {
         const active = value === o.value;
         return (
@@ -122,13 +154,12 @@ export function Segmented<T extends string>({
             type="button"
             onClick={() => onChange(o.value)}
             aria-pressed={active}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold tap ${
-              size === 'sm' ? 'py-1.5 text-[11.5px]' : 'py-2 text-[12.5px]'
-            } ${
-              active
-                ? 'accent-solid shadow-sm'
-                : 'text-[color:var(--text-dim)] hover:text-[color:var(--text)]'
+            className={`relative inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold tap ${pad} ${
+              size === 'sm' ? 'text-[11.5px]' : 'text-[12.5px]'
             }`}
+            style={{
+              color: active ? 'var(--accent-contrast)' : 'var(--text-dim)',
+            }}
           >
             {o.icon}
             {o.label}
@@ -222,6 +253,66 @@ export const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) =
     style={{ background: 'var(--surface-2)' }}
     aria-hidden="true"
   />
+);
+
+/** Строка-скелетон (для списков и форм). */
+export const SkeletonLine: React.FC<{ className?: string; w?: string }> = ({
+  className = '',
+  w = 'w-full',
+}) => (
+  <div
+    className={`h-3.5 rounded shimmer ${w} ${className}`}
+    style={{ background: 'var(--surface-2)' }}
+    aria-hidden="true"
+  />
+);
+
+/** Полоса загрузки для активного процесса (замер, синхронизация). */
+export const LoadingBar: React.FC<{ pct?: number; label?: React.ReactNode }> = ({
+  pct,
+  label,
+}) => (
+  <div className="space-y-1.5">
+    {label && <div className="text-[11.5px] font-semibold text-dim">{label}</div>}
+    <div
+      className="w-full rounded-full overflow-hidden"
+      style={{ height: 6, background: 'var(--surface-2)' }}
+    >
+      <div
+        className="h-full rounded-full transition-[width] duration-300 ease-out"
+        style={{
+          width: `${pct != null ? Math.max(0, Math.min(100, pct)) : 100}%`,
+          background: 'rgb(var(--accent))',
+        }}
+      />
+    </div>
+  </div>
+);
+
+/** Состояние ошибки с проигрывателем действия: повторить или отменить. */
+export const ErrorState: React.FC<{
+  icon?: React.ReactNode;
+  title: React.ReactNode;
+  text?: React.ReactNode;
+  action?: React.ReactNode;
+}> = ({ icon, title, text, action }) => (
+  <div className="flex flex-col items-center text-center px-6 py-10">
+    {icon && (
+      <div
+        className="w-12 h-12 rounded-2xl grid place-items-center mb-3"
+        style={{
+          background: 'rgb(var(--danger) / 0.12)',
+          border: '1px solid rgb(var(--danger) / 0.3)',
+          color: 'rgb(var(--danger))',
+        }}
+      >
+        {icon}
+      </div>
+    )}
+    <div className="text-sm font-bold">{title}</div>
+    {text && <p className="text-[12.5px] text-dim mt-1 max-w-sm leading-relaxed">{text}</p>}
+    {action && <div className="mt-4">{action}</div>}
+  </div>
 );
 
 /** Цветной статус-индикатор (точка + подпись). */

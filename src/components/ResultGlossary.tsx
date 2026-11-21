@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { BookOpen, ChevronRight, Info } from 'lucide-react';
 import { Sheet } from './ui/Sheet';
-import { Button, Notice } from './ui/kit';
+import { Button, Card, Notice } from './ui/kit';
 
 interface GlossaryEntry {
   id: string;
@@ -82,10 +82,7 @@ export const ResultGlossary: React.FC = () => {
   const [selected, setSelected] = useState<GlossaryEntry | null>(null);
   return (
     <>
-      <div
-        className="rounded-[1.5rem] border p-4"
-        style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
-      >
+      <Card>
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl grid place-items-center accent-soft">
             <BookOpen className="w-4.5 h-4.5" style={{ color: 'rgb(var(--accent))' }} />
@@ -109,7 +106,7 @@ export const ResultGlossary: React.FC = () => {
             </button>
           ))}
         </div>
-      </div>
+      </Card>
 
       <Sheet
         open={Boolean(selected)}

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Activity, Bug, CheckCircle2, ClipboardCopy, Copy, Download, Play, RefreshCw, Square, Trash2, AlertTriangle, XCircle, Info } from 'lucide-react';
-import { Button, Notice, SectionTitle } from './ui/kit';
+import { Button, Card, LoadingBar, Notice, SectionTitle } from './ui/kit';
 import { getLogs, formatLogs, copyLogsToClipboard, downloadLogs, clearLogs, getPersistedErrors, clearPersistedErrors, subscribeLogs, type LogEntry, appLog } from '../lib/appLogger';
 import { runDiagnostics, formatDiagReport, type DiagReport } from '../lib/diagnosticsRunner';
 
@@ -71,7 +71,7 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
     <div className="space-y-4">
       <SectionTitle hint="Копируемые логи и проверка всех функций в один клик">Диагностика</SectionTitle>
 
-      <div className="rounded-3xl border p-4 space-y-3" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+      <Card accent>
         <div className="flex items-center gap-2 text-[12.5px] font-bold">
           <Activity className="w-4 h-4" /> Самопроверка
         </div>
@@ -92,6 +92,12 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
           )}
           <Button variant="ghost" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => void start()} disabled={running}>Перезапустить</Button>
         </div>
+
+        {running && (
+          <div className="space-y-1.5 anim-fade-up">
+            <LoadingBar label="Самопроверка идёт — шаги появятся по мере прохождения" />
+          </div>
+        )}
 
         {report ? (
           <div className="space-y-2">
@@ -124,9 +130,9 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
         ) : (
           <Notice tone="info">Нажмите «Запустить проверку» — шаги появятся здесь с цветными статусами и временем каждого.</Notice>
         )}
-      </div>
+      </Card>
 
-      <div className="rounded-3xl border p-4 space-y-3" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+      <Card>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[12.5px] font-bold"><Bug className="w-4 h-4" /> Журнал ошибок приложения</div>
           <span className="text-[10.5px] px-2 py-0.5 rounded-full border font-mono" style={{ borderColor: 'var(--line)', color: 'var(--text-muted)' }}>{logs.length} записей</span>
@@ -146,7 +152,7 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
             Записей по фильтру нет. Попробуйте «Все».
           </div>
         ) : (
-          <div className="space-y-1 max-h-[360px] overflow-auto pr-1">
+          <div className="space-y-1 max-h-[360px] overflow-auto pr-1 stagger">
             {filteredLogs.slice(-120).reverse().map((entry, idx) => {
               const bg = entry.level === 'error' ? 'rgb(var(--danger) / 0.08)' : entry.level === 'warn' ? 'rgb(var(--warning) / 0.08)' : 'var(--surface-2)';
               const border = entry.level === 'error' ? 'rgb(var(--danger) / 0.35)' : entry.level === 'warn' ? 'rgb(var(--warning) / 0.35)' : 'var(--line)';
@@ -169,7 +175,7 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
           <summary className="cursor-pointer font-semibold" style={{ color: 'var(--text-muted)' }}>Показать как текст (копируемый)</summary>
           <textarea readOnly value={formatLogs(filteredLogs)} rows={8} className="mt-2 w-full p-2.5 rounded-xl border font-mono text-[10px] leading-relaxed" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)', color: 'var(--text)' }} />
         </details>
-      </div>
+      </Card>
 
       <Notice tone="info">
         Совет: когда YouTube пишет «не отдал ни байта» или сайт даёт 403 — запустите проверку, скопируйте логи и приложите к сообщению. В логах видны коды ответов, время и маршрут (VPN/прямо).

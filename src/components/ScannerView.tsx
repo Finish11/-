@@ -55,7 +55,7 @@ import {
 import { notifyScanResult } from '../lib/notify';
 import { shareText } from '../lib/shareText';
 import { Sheet } from './ui/Sheet';
-import { Button, Chip, Notice, SectionTitle, StatusDot } from './ui/kit';
+import { Button, Card, Chip, Notice, SectionTitle, StatusDot } from './ui/kit';
 
 interface ScannerViewProps {
   user: User;
@@ -938,7 +938,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <ResultGlossary />
 
           {/* Три группы ресурсов */}
-          <div className="rounded-[1.5rem] border p-4 sm:p-5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+          <Card>
             <SectionTitle
               hint="Диагноз ставится по ответам первых двух групп: реакция третьей зависит от оператора"
               right={
@@ -999,7 +999,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               )}
               <span>средний отклик {activeScan.avg_latency_ms} мс</span>
             </div>
-          </div>
+          </Card>
 
           {/* Совет: узел под найденную проблему */}
           {hasNodes && activeScan.verdict !== 'OPEN_INTERNET' && (

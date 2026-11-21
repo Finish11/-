@@ -47,6 +47,7 @@ import { ConfirmSheet } from './ui/ConfirmSheet';
 import { ExpandableText } from './ui/ExpandableText';
 import {
   Button,
+  Card,
   Chip,
   CountryBadge,
   EmptyState,
@@ -1205,10 +1206,7 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
 
       {/* ---------- Список узлов ---------- */}
       {profiles.length === 0 ? (
-        <div
-          className="rounded-[1.5rem] border"
-          style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
-        >
+        <Card>
           <EmptyState
             icon={<Shield className="w-5 h-5" />}
             title="Узлов пока нет"
@@ -1219,9 +1217,9 @@ export const VpnMonitorView: React.FC<VpnMonitorViewProps> = ({
               </Button>
             }
           />
-        </div>
+        </Card>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-2.5 stagger">
           {/* Одна кнопка на весь список: проверить пинг всех узлов сразу, без VPN */}
           <div
             className="rounded-2xl border px-3 py-2.5 flex items-center gap-2.5"

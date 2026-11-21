@@ -47,7 +47,7 @@ import {
 } from '../lib/community';
 import { Sheet } from './ui/Sheet';
 import { ConfirmSheet } from './ui/ConfirmSheet';
-import { Button, Chip, EmptyState, Notice } from './ui/kit';
+import { Button, Card, Chip, EmptyState, Notice } from './ui/kit';
 import {
   loadFavorites,
   placeKey,
@@ -548,7 +548,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       </header>
 
       {IS_DEMO_BUILD && (
-        <section className="rounded-2xl border p-3 flex items-start gap-2.5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+        <Card className="flex items-start gap-2.5">
           {communityUrl ? <Cloud className="w-4.5 h-4.5 shrink-0" style={{ color: 'rgb(var(--success))' }} /> : <CloudOff className="w-4.5 h-4.5 shrink-0 text-muted" />}
           <div className="min-w-0 flex-1 text-[11px] leading-relaxed text-dim">
             {communityUrl ? (
@@ -561,14 +561,11 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               <>Без сервера владелец не получит отчёты автоматически. Можно сохранить их на устройстве и отправить вручную через «Поделиться».</>
             )}
           </div>
-        </section>
+        </Card>
       )}
 
       {/* ---------- Избранные места ---------- */}
-      <section
-        className="rounded-[1.5rem] border p-3.5"
-        style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
-      >
+      <Card>
         <div className="flex items-center gap-2">
           <Star className="w-4 h-4 shrink-0" style={{ color: 'rgb(var(--accent))' }} />
           <h2 className="text-[13px] font-bold flex-1">Избранные места</h2>
@@ -631,7 +628,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             })}
           </div>
         )}
-      </section>
+      </Card>
 
       <div className="grid grid-cols-3 gap-1.5">
         {[
@@ -708,7 +705,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       )}
 
       {filtered.length === 0 ? (
-        <div className="rounded-[1.5rem] border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+        <Card>
           <EmptyState
             icon={<AlertOctagon className="w-5 h-5" />}
             title={regionFilter === 'all' ? 'Сообщений нет' : `По региону «${regionFilter}» отчётов нет`}
@@ -727,9 +724,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               </Button>
             }
           />
-        </div>
+        </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 stagger">
           {filtered.map((inc) => {
             const color = TYPE_COLOR[inc.incident_type] || 'rgb(var(--danger))';
             const resolved = inc.status === 'resolved';

@@ -8,7 +8,7 @@ import { QUICK_PICKS, type QuickPick } from '../lib/quickPicks';
 import { confirmationNodeKey, confirmationRouteLabel, confirmationStatus, detectExitChange, findAppConfirmation, routeSelectionMismatch, routeTransition, type ConfirmationMatch, type RouteChange, type RouteTransition } from '../lib/appConfirmations';
 import type { AppConfirmation, ClientConnectionInfo, ScanSiteResult, Site, VpnProfile } from '../types';
 import { Sheet } from './ui/Sheet';
-import { Button, Chip, EmptyState, Notice } from './ui/kit';
+import { Button, Card, Chip, EmptyState, Notice } from './ui/kit';
 
 const ROUTE_MEMORY_KEY = 'pulsenet.route.memory';
 function loadRememberedRoutes(): Record<string, number> {
@@ -724,10 +724,7 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
       )}
 
       {added.length === 0 ? (
-        <div
-          className="rounded-2xl border px-4 py-5 text-center"
-          style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
-        >
+        <Card className="text-center">
           <p className="text-[12.5px] text-dim leading-relaxed">
             Пока пусто. Добавьте сервисы, за которыми хотите следить — ChatGPT, YouTube, Telegram,
             игры и другие.
@@ -741,9 +738,9 @@ export const QuickPicks: React.FC<QuickPicksProps> = ({
           >
             Выбрать сервисы
           </Button>
-        </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 stagger">
           {added.map(({ pick, site }) => {
             const r = findQuickValue(resultByDomain, pick);
             const v = statusVisual(r, scanning, matchFor(pick), Boolean(systemVpn || vpnActive));

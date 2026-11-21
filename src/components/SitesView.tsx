@@ -30,7 +30,7 @@ import { useSettings } from '../lib/appSettings';
 import { detectNetworkContext } from '../lib/networkInfo';
 import { IS_DEMO_BUILD } from '../lib/scanner';
 import { isNativeApp, mapLimit } from '../lib/nativeBridge';
-import { Button, Chip, EmptyState, StatusIcon, Notice } from './ui/kit';
+import { Button, Card, Chip, EmptyState, StatusIcon, Notice } from './ui/kit';
 
 interface SitesViewProps {
   sites: Site[];
@@ -435,7 +435,7 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
 
       {/* Список */}
       {filteredSites.length === 0 ? (
-        <div className="rounded-[1.5rem] border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+        <Card>
           <EmptyState
             icon={<Globe className="w-5 h-5" />}
             title="Ничего не найдено"
@@ -459,9 +459,9 @@ export const SitesView: React.FC<SitesViewProps> = ({ sites, setSites, darkMode,
               </Button>
             }
           />
-        </div>
+        </Card>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 stagger">
           {filteredSites.map((site) => {
             const isEnabled = Boolean(site.enabled);
             const role = roleOf(site);

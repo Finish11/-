@@ -13,7 +13,7 @@ const JAVA_DIR = 'android/app/src/main/java/ru/pulsenet/app';
 
 /** Единственный список методов, которые приложение реально вызывает. */
 const REQUIRED: Record<string, string[]> = {
-  ApkUpdater: ['download', 'status', 'getPermissionState', 'openInstallSettings', 'install',
+  ApkUpdater: ['download', 'status', 'getPermissionState', 'requestInstallPermission', 'openInstallSettings', 'install',
     'openInstalledApp', 'networkKind', 'stateRead', 'stateWrite'],
   NetworkProbe: ['httpProbe', 'vpnDiagnostics', 'ipEcho', 'tcpProbe', 'realDelay', 'speedPhase', 'speedAbort'],
 };

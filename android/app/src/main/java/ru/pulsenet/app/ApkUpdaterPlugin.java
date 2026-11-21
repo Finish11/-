@@ -273,12 +273,60 @@ public class ApkUpdaterPlugin extends Plugin {
     /** Права и системные настройки установки скачанного APK. */
     @PluginMethod
     public void getPermissionState(PluginCall call) {
-        boolean canInstall = Build.VERSION.SDK_INT < 26
-                || getContext().getPackageManager().canRequestPackageInstalls();
+        boolean canInstall = canRequestPackageInstalls();
         JSObject ret = new JSObject();
         ret.put("canInstall", canInstall);
         ret.put("androidSdk", Build.VERSION.SDK_INT);
         call.resolve(ret);
+    }
+
+    /**
+     * Запрос всех разрешений, нужных обновлению: уведомлений (на Android 13+
+     * — чтобы показывать прогресс загрузки APK) и установки пакетов. На
+     * Android 8+ установка запрашивается через разрешающую систему
+     * (ACTION_REQUEST_INSTALL_PACKAGES) — после возврата в приложение
+     * установка может запуститься сразу, без ручного похода в настройки.
+     */
+    @PluginMethod
+    public void requestInstallPermission(PluginCall call) {
+        try {
+            // 1) Уведомления: иначе DownloadManager не покажет прогресс загрузки.
+            requestNotificationPermission();
+            // 2) Установка пакетов: разрешающая система.
+            if (!canRequestPackageInstalls() && Build.VERSION.SDK_INT >= 26) {
+                Intent intent = new Intent(Settings.ACTION_REQUEST_INSTALL_PACKAGES,
+                        Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }
+            JSObject ret = new JSObject();
+            ret.put("canInstall", canRequestPackageInstalls());
+            call.resolve(ret);
+        } catch (Exception error) {
+            call.reject("Не удалось запросить разрешение на установку", error);
+        }
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        try {
+            if (getContext().checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                if (getActivity() != null) {
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                            getActivity(),
+                            new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
+                            1001);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+
+    private boolean canRequestPackageInstalls() {
+        return Build.VERSION.SDK_INT < 26
+                || getContext().getPackageManager().canRequestPackageInstalls();
     }
 
     @PluginMethod

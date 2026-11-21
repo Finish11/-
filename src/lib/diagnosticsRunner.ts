@@ -75,7 +75,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     try {
       if (signal?.aborted) throw new Error('Отменено');
       const nativeState = isNativeApp() ? await withTimeout(getNativeNetworkState(), 5000, 'native network timeout 5s') : null;
-      const ctx = await withTimeout(detectNetworkContext({ skipGeo: false }), 12000, 'detectNetworkContext timeout 12s');
+      const ctx = await withTimeout(detectNetworkContext({ skipGeo: false }), 8000, 'detectNetworkContext timeout 8s');
       const detail = [
         `kind=${ctx.networkKind} vpn=${ctx.appUsesVpn ?? ctx.vpnLikely} ip=${ctx.geo?.ip || '—'} isp=${ctx.geo?.isp || '—'}`,
         nativeState ? `carrier=${nativeState.carrier || '—'} systemVpn=${nativeState.systemVpn} appUsesVpn=${nativeState.appUsesVpn}` : 'nativeState: n/a (браузер)',
@@ -129,9 +129,12 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
         const detail = `bypass=${direct.ok ? direct.ip : direct.error} active=${active.ok ? active.ip : active.error}`;
         const bothOk = direct.ok && active.ok;
         const same = bothOk && direct.ip === active.ip;
+        // Второй запрос VPN-диагностики тоже в таймауте: раньше он шёл без
+        // withTimeout внутри форматирования сообщения — мог зависнуть навсегда.
+        const vpnInfo = await withTimeout(getVpnDiagnostics(), 4000, 'vpnDiagnostics timeout 4s');
         update(id, {
           status: !bothOk ? 'warn' : same && !direct.ip ? 'warn' : 'ok',
-          message: bothOk ? (same ? `IP совпадает: ${active.ip} — туннель ${direct.ip === active.ip && (await getVpnDiagnostics()).appUsesVpn ? 'не обходится' : 'возможно обходится'}` : `Разные IP: напрямую ${direct.ip}, активно ${active.ip}`) : `Частично: ${detail}`,
+          message: bothOk ? (same ? `IP совпадает: ${active.ip} — туннель ${direct.ip === active.ip && vpnInfo.appUsesVpn ? 'не обходится' : 'возможно обходится'}` : `Разные IP: напрямую ${direct.ip}, активно ${active.ip}`) : `Частично: ${detail}`,
           detail, ms: Date.now() - t0 });
         logInfo('diag', `IP echo ${bothOk ? 'ok' : 'warn'}`, detail);
       }
@@ -149,7 +152,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     const t0 = Date.now();
     try {
       if (signal?.aborted) throw new Error('Отменено');
-      const ok = await withTimeout(probeControl(6000), 8000, 'probeControl timeout 8s');
+      const ok = await withTimeout(probeControl(5000), 6000, 'probeControl timeout 6s');
       update(id, { status: ok ? 'ok' : 'fail', message: ok ? 'Контрольные адреса отвечают' : 'Контрольные адреса не отвечают — проверьте интернет', ms: Date.now() - t0 });
       logInfo('diag', `Control probe ${ok ? 'ok' : 'fail'}`);
       if (!ok) logWarn('diag', 'Контрольная проба не прошла — сайты и скорость могут врать');
@@ -171,7 +174,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     try {
       if (signal?.aborted) throw new Error('Отменено');
       const url = 'https://www.rbc.ru/';
-      const res = await withTimeout(httpProbe(url, 8000), 9000, 'httpProbe timeout 9s');
+      const res = await withTimeout(httpProbe(url, 6000), 7000, 'httpProbe timeout 7s');
       const detail = `ok=${res.ok} status=${res.status} err=${res.error || '—'} truncated=${res.truncated} ct=${res.content_type}`;
       // 2xx/3xx — сайт отдал содержимое. 403 — дошёл, но WAF/проверка браузера.
       // Другой 4xx — дошёл, но ресурс не отдан (404/410). Всё это «сайт жив»,
@@ -228,8 +231,8 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
     const t0 = Date.now();
     try {
       if (signal?.aborted) throw new Error('Отменено');
-      const me = await withTimeout(apiFetch<{ user: { name: string } }>('/api/auth/me'), 6000, 'auth/me timeout');
-      const sites = await withTimeout(apiFetch<{ sites: unknown[] }>('/api/sites'), 6000, '/api/sites timeout');
+      const me = await withTimeout(apiFetch<{ user: { name: string } }>('/api/auth/me'), 4500, 'auth/me timeout');
+      const sites = await withTimeout(apiFetch<{ sites: unknown[] }>('/api/sites'), 4500, '/api/sites timeout');
       const detail = `user=${(me as any).user?.name || '—'} sites=${(sites as any).sites?.length ?? 0}`;
       update(id, { status: 'ok', message: `API отвечает · сайтов ${Array.isArray((sites as any).sites) ? (sites as any).sites.length : '—'}`, detail, ms: Date.now() - t0 });
       logInfo('diag', 'API ok', detail);
@@ -262,7 +265,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
           update(id, { status: 'warn', message: `Права установки не получены: ${e instanceof Error ? e.message : e}`, ms: Date.now() - t0 });
         }
         // Проверка релиза: либо есть обновление, либо понятная причина.
-        const result = await withTimeout(checkForUpdateResult(), 15000, 'update check timeout 15s');
+        const result = await withTimeout(checkForUpdateResult(), 10000, 'update check timeout 10s');
         if (result.update) {
           const detail = `текущая ${result.update.currentVersion} → ${result.update.version} · ${result.update.sizeMb} МБ · canInstall=${canInstall ?? '—'}`;
           const status: DiagStatus = canInstall === false ? 'warn' : 'ok';
@@ -300,7 +303,7 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
         update(id, { status: 'skip', message: 'Пропущено: только в APK', ms: Date.now() - t0 });
       } else {
         if (signal?.aborted) throw new Error('Отменено');
-        const res = await withTimeout(realDelayProbe(undefined, 6000, 3), 8000, 'realDelay timeout 8s');
+        const res = await withTimeout(realDelayProbe(undefined, 5000, 3), 6000, 'realDelay timeout 6s');
         const detail = `ok=${res.ok} latency=${res.latency_ms} err=${res.error || '—'} route=${res.route || '—'}`;
         update(id, { status: res.ok ? 'ok' : 'warn', message: res.ok ? `${Math.round(res.latency_ms ?? 0)} мс · ${res.route || 'маршрут'}` : `Не измерена: ${res.error || 'нет ответа'}`, detail, ms: Date.now() - t0 });
         logInfo('diag', `RealDelay ${res.ok ? 'ok' : 'warn'}`, detail);
@@ -322,8 +325,8 @@ export async function runDiagnostics(onProgress?: DiagProgress, signal?: AbortSi
       const { defaultTransport } = await import('./speedRunner');
       const transport = defaultTransport();
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 7000);
-      const y1 = await transport.latency('https://www.youtube.com/generate_204', 2, ctrl.signal as any, 4000).catch(() => ({ samples: [] as number[], error: 'no reply' }));
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const y1 = await transport.latency('https://www.youtube.com/generate_204', 2, ctrl.signal as any, 3500).catch(() => ({ samples: [] as number[], error: 'no reply' }));
       const y2 = await transport.latency('https://redirector.googlevideo.com/generate_204', 1, ctrl.signal as any, 4000).catch(() => ({ samples: [] as number[], error: 'no reply' }));
       clearTimeout(timer);
       const detail = `youtube=${y1.samples.length ? y1.samples.map((n) => Math.round(n)).join(',') + 'ms' : y1.error} | googlevideo=${y2.samples.length ? y2.samples.map((n) => Math.round(n)).join(',') + 'ms' : y2.error}`;

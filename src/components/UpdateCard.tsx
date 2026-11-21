@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { ArrowDownToLine, CheckCircle2, Download, Loader2, Sparkles, TriangleAlert, X } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, ShieldCheck, Sparkles, TriangleAlert, X } from 'lucide-react';
 import { Button } from './ui/kit';
 import {
   ApkUpdater,
@@ -16,7 +16,7 @@ interface UpdateCardProps {
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
 
-type Phase = 'idle' | 'ready' | 'downloading' | 'downloaded' | 'installing' | 'permission' | 'error';
+type Phase = 'idle' | 'ready' | 'downloading' | 'downloaded' | 'granting' | 'permission' | 'installing' | 'error';
 
 /** Короткий список изменений из описания релиза (без служебных строк). */
 function extractHighlights(notes: string): string[] {
@@ -34,7 +34,14 @@ function extractHighlights(notes: string): string[] {
 
 /**
  * Карточка обновления: показывает новую версию APK, скачивает её внутри приложения
- * и открывает системный установщик. Работает только в нативной сборке.
+ * и запускает системный установщик **сам собой**.
+ *
+ * Почему так, а не «скачал и жди ручного запуска»: ранее после скачивания
+ * приложение просто ставило кнопку «Установить» и молчало, и пользователю
+ * приходилось самому открывать установщик. Теперь после готовности APK
+ * запускается цепочка: запрос всех нужных разрешений (уведомления + установка)
+ * → системный установщик → после возврата в приложение, если разрешение
+ * выдано, установка запускается автоматически.
  */
 export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
@@ -46,6 +53,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
   const downloadReady = useRef(false);
   const downloadStarting = useRef(false);
   const installLaunching = useRef(false);
+  const installGeneration = useRef(0);
   const downloadGeneration = useRef(0);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -59,9 +67,6 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           if (!alive || !result.update) return;
           setInfo(result.update);
           setPhase('ready');
-          // APK не скачивается в фоне без ведома пользователя: на мобильной
-          // сети это несколько мегабайт, а установщик не должен неожиданно
-          // перекрывать первый экран разрешений.
         })
         .catch(() => undefined);
     }, 800);
@@ -80,36 +85,76 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     }
   };
 
+  /**
+   * Запуск установки с automatikой по разрешающей системе.
+   * 1) Если разрешения на установку ещё нет — запрашиваем их (разрешающая
+   *    система ACTION_REQUEST_INSTALL_PACKAGES), ставим phase 'granting'.
+   *    После возврата из системного окна listener сам вызовет этот метод
+   *    снова — и установка пойдёт без дополнительного тапа.
+   * 2) Если разрешение есть — открываем установщик. Если система все равно
+   *    говорит, что разрешения нет — снова запрашиваем, ставим 'permission'.
+   */
   const startInstall = async () => {
     if (downloadId.current == null || !downloadReady.current || installLaunching.current) return;
-    const generation = downloadGeneration.current;
+    const generation = installGeneration.current;
     installLaunching.current = true;
-    setPhase('installing');
     setError('');
     try {
+      const perm = await ApkUpdater.getPermissionState();
+      if (generation !== installGeneration.current) return;
+      if (!perm.canInstall) {
+        // Запрашиваем все нужные разрешения и ждем возврата.
+        setPhase('granting');
+        showToast(
+          'info',
+          'Нужно разрешение на установку: подтвердите его в системе и вернитесь в ПульсСети — обновление установится само'
+        );
+        try {
+          await ApkUpdater.requestInstallPermission();
+        } catch (e) {
+          // Переход в 'permission' ниже всё равно оставляет кнопку повтора.
+          if (generation !== installGeneration.current) return;
+          setPhase('permission');
+          setError(e instanceof Error ? e.message : 'Не удалось запросить разрешение');
+        }
+        return;
+      }
+
+      setPhase('installing');
       const res = await ApkUpdater.install({ downloadId: String(downloadId.current) });
-      if (generation !== downloadGeneration.current) return;
+      if (generation !== installGeneration.current) return;
       if (res.needsPermission) {
+        // Система не пустила установщик: запрашиваем разрешение повторно.
         setPhase('permission');
-        showToast('info', 'Разрешите установку из этого источника и вернитесь в ПульсСети');
+        try {
+          const again = await ApkUpdater.requestInstallPermission();
+          if (generation !== installGeneration.current) return;
+          if (again.canInstall) {
+            showToast('info', 'Разрешение получено — вернитесь, обновление установится само');
+          } else {
+            showToast('warning', 'Разрешение ещё не выдано: разрешите установку в системе');
+          }
+        } catch {
+          // Кнопка «Разрешить/Установить» остаётся доступна для следующей попытки.
+        }
       } else {
         showToast('success', 'Установщик открыт — подтвердите обновление в системном окне');
       }
     } catch (err) {
-      if (generation === downloadGeneration.current) {
-        setPhase('error');
+      if (generation === installGeneration.current) {
+        setPhase('permission');
         setError(err instanceof Error ? err.message : 'Не удалось открыть установщик');
       }
     } finally {
-      installLaunching.current = false;
+      if (generation === installGeneration.current) installLaunching.current = false;
     }
   };
 
-  // Возврат из системного окна не должен создавать цикл настроек или тупик
-  // после отмены установки. Разрешение сначала проверяем; если пользователь его
-  // не выдал, остаёмся в приложении. После закрытия установщика даём кнопку повтора.
+  // Возврат из системного окна (разрешение или установщик) должен продолжить
+  // цепочку, а не создавать тупик. Если разрешение выдано — автоматически
+  // запускаем установку; если нет — остаёмся на кнопке.
   useEffect(() => {
-    if (phase !== 'permission' && phase !== 'installing') return;
+    if (phase !== 'granting' && phase !== 'permission' && phase !== 'installing') return;
     let disposed = false;
     let remove: (() => void) | undefined;
     CapacitorApp.addListener('appStateChange', ({ isActive }) => {
@@ -122,9 +167,13 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
         .then(async (permission) => {
           if (disposed) return;
           if (permission.canInstall) await startInstall();
+          else {
+            setPhase('permission');
+            showToast('warning', 'Разрешение ещё не выдано: разрешите установку и вернитесь в ПульсСети');
+          }
         })
         .catch(() => {
-          // Кнопка «Установить» остаётся доступна для следующей попытки.
+          // Кнопка остаётся доступна для следующей попытки.
         });
     })
       .then((h) => {
@@ -136,6 +185,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
       disposed = true;
       remove?.();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   const beginDownload = async (target: UpdateInfo) => {
@@ -178,6 +228,9 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
             stopPolling();
             downloadReady.current = true;
             setProgress(100);
+            // Готово — запускаем установку САМОЙ: сначала разрешения, затем
+            // системный установщик. Без этого пользователь видел бы только
+            // «скачал, нажми Установить».
             await startInstall();
             return;
           }
@@ -219,9 +272,18 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     }
   };
 
+  /** Повторный запрос разрешений — кнопка «Разрешить/Установить». */
+  const requestAndInstall = async () => {
+    // Сбрасываем генерацию, чтобы прежний pending install не завершался.
+    installGeneration.current += 1;
+    setError('');
+    await startInstall();
+  };
+
   if (!info || dismissed) return null;
 
   const highlights = extractHighlights(info.notes);
+  const needsPermission = phase === 'granting' || phase === 'permission';
 
   return (
     <div
@@ -237,6 +299,8 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
             <CheckCircle2 className="w-[18px] h-[18px]" style={{ color: 'rgb(var(--success))' }} />
           ) : phase === 'downloading' ? (
             <Loader2 className="w-[18px] h-[18px] animate-spin" />
+          ) : needsPermission ? (
+            <ShieldCheck className="w-[18px] h-[18px]" />
           ) : (
             <Sparkles className="w-[18px] h-[18px]" />
           )}
@@ -245,7 +309,8 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-extrabold">
-              {phase === 'permission' ? 'Нужно разрешение'
+              {phase === 'granting' ? 'Разрешение на установку'
+                : phase === 'permission' ? 'Нужно разрешение'
                 : info.version === info.currentVersion
                 ? `Доступна новая сборка ${info.version}`
                 : `Доступно обновление ${info.version}`}
@@ -259,18 +324,20 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           </div>
 
           <p className="text-[11px] text-dim mt-1 leading-snug">
-            {phase === 'permission'
-              ? 'Разрешите «Установка неизвестных приложений» для ПульсСети и вернитесь в приложение. Если передумали, просто вернитесь — настройки сами не откроются повторно.'
+            {phase === 'granting'
+              ? 'Откроется система: разрешите установку из этого источника и уведомления. Вернитесь в ПульсСети — обновление установится само, без ручного запуска.'
+              : phase === 'permission'
+              ? 'Разрешите «Установка неизвестных приложений» для ПульсСети и вернитесь. После этого обновление запустится автоматически.'
               : phase === 'installing'
               ? 'Установщик открыт. Подтвердите обновление в системном окне — приложение обновится поверх, данные сохранятся.'
               : phase === 'downloaded'
-              ? 'APK скачан. Если вы закрыли системный установщик, откройте его ещё раз кнопкой ниже.'
+              ? 'APK скачан. Установщик открывается автоматически; если вы закрыли его, откройте ещё раз кнопкой ниже.'
               : phase === 'downloading'
               ? `Скачиваем APK: ${progress}%`
-              : 'Новая версия уже собрана. Обновитесь, чтобы получить свежие проверки и исправления.'}
+              : 'Новая версия уже собрана. Обновитесь, чтобы получить свежие проверки и исправления — приложение само скачает и установит её.'}
           </p>
 
-          {highlights.length > 0 && phase !== 'downloading' && phase !== 'permission' && (
+          {highlights.length > 0 && !needsPermission && phase !== 'downloading' && (
             <ul className="mt-2 space-y-0.5">
               {highlights.map((line, i) => (
                 <li key={i} className="text-[11px] text-dim flex gap-1.5">
@@ -317,12 +384,22 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
                 {phase === 'error' ? 'Попробовать снова' : 'Скачать и установить'}
               </Button>
             )}
-            {(phase === 'permission' || phase === 'downloaded' || (phase === 'error' && downloadReady.current)) && (
+            {needsPermission && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                onClick={() => void requestAndInstall()}
+              >
+                {phase === 'granting' ? 'Разрешить установку' : 'Разрешить и установить'}
+              </Button>
+            )}
+            {(phase === 'downloaded' || (phase === 'error' && downloadReady.current)) && (
               <Button
                 variant="soft"
                 size="sm"
-                icon={<ArrowDownToLine className="w-3.5 h-3.5" />}
-                onClick={startInstall}
+                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                onClick={() => void requestAndInstall()}
               >
                 Установить
               </Button>
@@ -347,6 +424,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
           type="button"
           onClick={() => {
             downloadGeneration.current += 1;
+            installGeneration.current += 1;
             stopPolling();
             setPhase('idle');
             setDismissed(true);

@@ -58,12 +58,46 @@ export const Sheet: React.FC<SheetProps> = ({
 }) => {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  // Двухфазная анимация: при закрытии панель сначала играет выход (slide-down),
+  // а потом цикл снимает её с рендера. Без этого она просто исчезала без анимации.
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startY = useRef(0);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  // Esc + блокировка прокрутки страницы
+  // Открытие: mount → visible (enter-анимация). Закрытие: visible=false
+  // (exit-анимация) → через 240 мс снятие с рендера.
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+      setMounted(true);
+      // два кадра, чтобы enter-анимация ловила transition из нуля
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    if (mounted) {
+      setVisible(false);
+      closeTimer.current = setTimeout(() => setMounted(false), 240);
+      return () => { if (closeTimer.current) clearTimeout(closeTimer.current); };
+    }
+  }, [open, mounted]);
+
+  useEffect(() => {
+    if (!mounted) {
+      setDragY(0);
+      setDragging(false);
+    }
+  }, [mounted]);
+
+  // Фон и панель получают класс по phase: enter (visible) или exit (!visible).
+  const sheetAnim = visible ? 'anim-sheet' : 'anim-sheet-out';
+  const overlayAnim = visible ? 'anim-overlay' : 'anim-overlay-out';
+
+  // Esc + блокировка прокрутки страницы. Держим до конца exit-анимации:
+  // иначе страница «всплывала» в момент закрытия, пока панель ещё уезжает.
+  useEffect(() => {
+    if (!mounted) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -78,7 +112,7 @@ export const Sheet: React.FC<SheetProps> = ({
       document.body.style.paddingRight = prevPadding;
       window.removeEventListener('keydown', onKey);
     };
-  }, [open, onClose]);
+  }, [mounted, onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -116,24 +150,24 @@ export const Sheet: React.FC<SheetProps> = ({
     }
   }, [dragging, dragY, onClose]);
 
-  if (!open || typeof document === 'undefined') return null;
+  if (!mounted || typeof document === 'undefined') return null;
 
   return createPortal(
     <div
-      className="overlay-root items-end sm:items-center justify-center sm:p-4"
+      className={`overlay-root items-end sm:items-center justify-center sm:p-4 ${visible ? '' : 'pointer-events-none'}`}
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === 'string' ? title : undefined}
     >
       <div
-        className="overlay-scrim anim-overlay"
-        onClick={dismissable ? onClose : undefined}
+        className={`overlay-scrim ${overlayAnim}`}
+        onClick={dismissable && visible ? onClose : undefined}
         aria-hidden="true"
       />
 
       <div
         ref={panelRef}
-        className={`sheet-panel anim-sheet flex flex-col
+        className={`sheet-panel ${sheetAnim} flex flex-col
           rounded-t-[1.75rem] sm:rounded-[1.5rem]
           max-h-[92dvh] sm:max-h-[86dvh]
           ${align === 'top' ? 'sm:mt-[-6vh]' : ''}

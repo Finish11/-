@@ -47,6 +47,24 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
 
   const stop = () => abortRef.current?.abort();
 
+  // Сводка по шагу: сразу видно, прошёл ли он, и где сейчас самопроверка стоит.
+  const countsOf = (steps: { status: string }[]) => ({
+    ok: steps.filter((s) => s.status === 'ok').length,
+    warn: steps.filter((s) => s.status === 'warn').length,
+    fail: steps.filter((s) => s.status === 'fail').length,
+    skip: steps.filter((s) => s.status === 'skip').length,
+  });
+  const summary = report ? countsOf(report.steps) : null;
+  const doneCount = report ? report.steps.filter((s) => s.status !== 'running').length : 0;
+  const currentStep = report?.steps.find((s) => s.status === 'running');
+  const totalSteps = 11;
+  const verdict = (() => {
+    if (!summary) return null;
+    if (summary.fail > 0) return { tone: 'bad' as const, text: `Нет нормы: ${summary.fail} ошибок, ${summary.warn} предупреждений` };
+    if (summary.warn > 0) return { tone: 'warn' as const, text: `Почти всё в норме: ${summary.warn} предупреждение, ошибок нет` };
+    return { tone: 'ok' as const, text: 'Все системы в норме: ошибок и предупреждений нет' };
+  })();
+
   const copyReport = async () => {
     if (!report) return;
     const text = formatDiagReport(report) + '\n\n' + formatLogs(logs);
@@ -95,7 +113,14 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
 
         {running && (
           <div className="space-y-1.5 anim-fade-up">
-            <LoadingBar label="Самопроверка идёт — шаги появятся по мере прохождения" />
+            <LoadingBar
+              label={currentStep
+                ? `Шаг ${Math.min(doneCount + 1, totalSteps)} из ${totalSteps}: ${currentStep.title}`
+                : `Самопроверка идёт — шаги появятся по мере прохождения`}
+            />
+            <div className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>
+              Пройдено {doneCount} из {totalSteps} шагов · действий не нужно — она завершится сама.
+            </div>
           </div>
         )}
 
@@ -104,6 +129,11 @@ export const DiagnosticsView: React.FC<{ showToast: (type: 'success' | 'error' |
             <div className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>
               {report.native ? 'Среда: приложение' : 'Среда: браузер'} · {report.elapsedMs != null ? `${(report.elapsedMs / 1000).toFixed(1)}с` : ''} · {report.steps.length} шагов
             </div>
+            {verdict && (
+              <Notice tone={verdict.tone}>
+                <span className="font-bold">{verdict.text}</span>
+              </Notice>
+            )}
             <div className="divide-y rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--line)' }}>
               {report.steps.map((s) => {
                 const color = s.status === 'ok' ? 'rgb(var(--success))' : s.status === 'warn' ? 'rgb(var(--warning))' : s.status === 'fail' ? 'rgb(var(--danger))' : 'var(--text-muted)';

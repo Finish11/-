@@ -496,6 +496,21 @@ html.light .glass {
 .anim-sheet {
   animation: sheetUp 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+/* Выход: панель уезжает вниз, фон гаснет — параллельно, без резкого исчезновения. */
+@keyframes sheetDown {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to   { opacity: 0; transform: translate3d(0, 30%, 0); }
+}
+.anim-sheet-out {
+  animation: sheetDown 0.22s cubic-bezier(0.4, 0, 0.6, 1) both;
+}
+@keyframes overlayOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.anim-overlay-out {
+  animation: overlayOut 0.22s ease-out both;
+}
 .anim-float {
   animation: floaty 5.5s ease-in-out infinite;
 }

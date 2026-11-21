@@ -88,7 +88,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
   /**
    * Запуск установки с automatikой по разрешающей системе.
    * 1) Если разрешения на установку ещё нет — запрашиваем их (разрешающая
-   *    система ACTION_REQUEST_INSTALL_PACKAGES), ставим phase 'granting'.
+   *    система ACTION_MANAGE_UNKNOWN_APP_SOURCES), ставим phase 'granting'.
    *    После возврата из системного окна listener сам вызовет этот метод
    *    снова — и установка пойдёт без дополнительного тапа.
    * 2) Если разрешение есть — открываем установщик. Если система все равно

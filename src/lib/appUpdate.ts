@@ -32,9 +32,10 @@ interface ApkUpdaterPlugin {
   install(options: { downloadId: string }): Promise<ApkInstallResult>;
   getPermissionState(): Promise<{ canInstall: boolean; androidSdk: number }>;
   /**
-   * Запрос разрешения на установку пакетов: на Android 8+ вызывает
-   * ACTION_REQUEST_INSTALL_PACKAGES — разрешающую систему, после которой
+   * Запрос разрешения на установку пакетов: на Android 8+ открывает
+   * ACTION_MANAGE_UNKNOWN_APP_SOURCES — разрешающую систему, после которой
    * установка может запуститься сразу, без ручного похода в настройки.
+   * Также запрашивает разрешение на уведомления для прогресса загрузки.
    */
   requestInstallPermission(): Promise<{ canInstall: boolean }>;
   openInstallSettings(): Promise<void>;

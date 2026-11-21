@@ -282,20 +282,24 @@ public class ApkUpdaterPlugin extends Plugin {
 
     /**
      * Запрос всех разрешений, нужных обновлению: уведомлений (на Android 13+
-     * — чтобы показывать прогресс загрузки APK) и установки пакетов. На
-     * Android 8+ установка запрашивается через разрешающую систему
-     * (ACTION_REQUEST_INSTALL_PACKAGES) — после возврата в приложение
-     * установка может запуститься сразу, без ручного похода в настройки.
+     * — чтобы показывать прогресс загрузки APK) и установки пакетов.
+     * Разрешение на установку запрашивается системной страницой
+     * ACTION_MANAGE_UNKNOWN_APP_SOURCES: пользователь включает переключатель
+     * «разрешить из этого источника», и после возврата в приложение
+     * canRequestPackageInstalls() вернёт true — установка может запуститься
+     * сразу, без ручного похода в настройки.
      */
     @PluginMethod
     public void requestInstallPermission(PluginCall call) {
         try {
             // 1) Уведомления: иначе DownloadManager не покажет прогресс загрузки.
             requestNotificationPermission();
-            // 2) Установка пакетов: разрешающая система.
+            // 2) Установка пакетов: разрешающая система (страница источников).
             if (!canRequestPackageInstalls() && Build.VERSION.SDK_INT >= 26) {
-                Intent intent = new Intent(Settings.ACTION_REQUEST_INSTALL_PACKAGES,
-                        Uri.parse("package:" + getContext().getPackageName()));
+                Intent intent = new Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getContext().getPackageName())
+                );
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getContext().startActivity(intent);
             }

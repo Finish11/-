@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 
+import androidx.core.content.FileProvider;
 import androidx.core.util.AtomicFile;
 
 import java.io.ByteArrayOutputStream;
@@ -274,6 +275,46 @@ public class ApkUpdaterPlugin extends Plugin {
         }
     }
 
+    /**
+     * Путь скачанного APK. DownloadManager может отдать file:// (старые версии)
+     * или content:// (MediaStore); оба случая сводим к реальному файлу на диске.
+     */
+    private File resolveDownloadedFile(long id) {
+        // Сначала спрашиваем DownloadManager, куда именно скачался файл:
+        // COLUMN_LOCAL_FILENAME даёт имя, если URI не пригоден для прямого доступа.
+        String localName = null;
+        try (Cursor cursor = downloadManager().query(
+                new DownloadManager.Query().setFilterById(id))) {
+            if (cursor != null && cursor.moveToFirst()) {
+                localName = cursor.getString(
+                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_FILENAME));
+            }
+        } catch (Exception ignored) {
+        }
+
+        try {
+            Uri uri = downloadManager().getUriForDownloadedFile(id);
+            if (uri != null && uri.getScheme() != null && !uri.getScheme().isEmpty()) {
+                // file:// — путь прямо к файлу. content:// — реальный путь нужен
+                // через COLUMN_LOCAL_FILENAME, а не через getPath() на content-URI.
+                if ("file".equals(uri.getScheme())) {
+                    String path = uri.getPath();
+                    if (path != null && !path.isEmpty()) return new File(path);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (localName != null && !localName.isEmpty()) {
+            File guessed = new File(getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+                    localName);
+            if (guessed.exists() && guessed.length() > 0) return guessed;
+        }
+        // Заглушка по умолчанию: скачивание шло под этим именем (см. download()).
+        return new File(getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+                "pulsenet-update.apk");
+    }
+
     @PluginMethod
     public void install(PluginCall call) {
         Long id = call.getLong("downloadId");
@@ -297,9 +338,21 @@ public class ApkUpdaterPlugin extends Plugin {
                 return;
             }
 
-            Uri apkUri = downloadManager().getUriForDownloadedFile(id);
-            if (apkUri == null) {
-                call.reject("Файл ещё не скачан");
+            File apkFile = resolveDownloadedFile(id);
+            if (apkFile == null || !apkFile.exists() || apkFile.length() == 0) {
+                call.reject("Файл ещё не скачан — подождите завершения загрузки и нажмите «Установить» снова");
+                return;
+            }
+
+            // Android 7+ запрещает передавать file:// в Intent: иначе FileUriExposedException,
+            // и приложение считает установку ошибкой, хотя APK скачан. content:// через
+            // FileProvider даёт разовый read grant и открывает системный установщик.
+            Uri apkUri;
+            try {
+                apkUri = FileProvider.getUriForFile(getContext(),
+                        getContext().getPackageName() + ".fileprovider", apkFile);
+            } catch (Exception error) {
+                call.reject("Не удалось подготовить APK для установки: " + error.getMessage());
                 return;
             }
 
@@ -311,6 +364,7 @@ public class ApkUpdaterPlugin extends Plugin {
 
             JSObject ret = new JSObject();
             ret.put("needsPermission", false);
+            ret.put("size", apkFile.length());
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Не удалось открыть установщик: " + e.getMessage());

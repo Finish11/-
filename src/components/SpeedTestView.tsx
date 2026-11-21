@@ -288,7 +288,14 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
       // Цифра получена — сервис проверен. Отдельное ручное подтверждение больше
       // не требуется: статус обновится автоматически.
       if (measured.ok) onServiceMeasured?.(measured);
-      if (!measured.ok && !measured.aborted) showToast('warning', measured.note || 'YouTube не отдал данные');
+      if (!measured.ok && !measured.aborted) {
+        // Показываем причину, а не «YouTube не отдал данные» без объяснения:
+        // blocked — блокировка/протухший плеер, offline — нет сети, unsupported — CORS браузера.
+        const reason = measured.verdict === 'unsupported' ? 'В браузере YouTube не измерить (CORS)'
+          : measured.verdict === 'offline' ? 'YouTube не открывается'
+          : 'YouTube не отдал ни байта — похоже на блокировку';
+        showToast('warning', measured.note || reason);
+      }
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Замер до YouTube не состоялся');
     } finally { setYtBusy(false); setYtStatus(''); ytAbortRef.current = null; }
@@ -603,6 +610,7 @@ export const SpeedTestView: React.FC<SpeedTestViewProps> = ({ connection, profil
           const tone = ytResult.verdict === 'unsupported' ? 'info' : ytResult.verdict === 'offline' ? 'warning' : 'danger';
           const title = ytResult.verdict === 'unsupported' ? 'В браузере YouTube не измерить'
             : ytResult.verdict === 'offline' ? 'YouTube не открывается'
+            : ytResult.verdict === 'blocked' ? 'YouTube не отдал ни байта — похоже на блокировку'
             : 'YouTube не отдал данные';
           return (
             <div className="space-y-2">

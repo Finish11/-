@@ -13,6 +13,7 @@ import android.telephony.TelephonyManager;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
+import android.util.Log;
 
 import androidx.core.content.FileProvider;
 import androidx.core.util.AtomicFile;
@@ -213,9 +214,31 @@ public class ApkUpdaterPlugin extends Plugin {
         }
     }
 
+    /**
+     * downloadId может приходить числом или строкой. На реальном устройстве bridge
+     * Capacitor не отдаёт длинный ID через call.getLong (возвращает null, и статус
+     * загрузки падает в «Не передан downloadId»), поэтому JS передаёт его строкой.
+     * Читаем оба способа и логируем сырое значение, если его нет — чтобы пустой
+     * downloadId больше не трактовался как неизвестная ошибка.
+     */
+    private Long readDownloadId(PluginCall call) {
+        Long asLong = call.getLong("downloadId");
+        if (asLong != null) return asLong;
+        String asString = call.getString("downloadId", null);
+        if (asString != null && !asString.isEmpty()) {
+            try {
+                return Long.parseLong(asString.trim());
+            } catch (NumberFormatException error) {
+                Log.w("ApkUpdater", "downloadId не парсится как число: " + asString);
+            }
+        }
+        Log.w("ApkUpdater", "downloadId не передан в вызове status/install");
+        return null;
+    }
+
     @PluginMethod
     public void status(PluginCall call) {
-        Long id = call.getLong("downloadId");
+        Long id = readDownloadId(call);
         if (id == null) {
             call.reject("Не передан downloadId");
             return;
@@ -317,7 +340,7 @@ public class ApkUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void install(PluginCall call) {
-        Long id = call.getLong("downloadId");
+        Long id = readDownloadId(call);
         if (id == null) {
             call.reject("Не передан downloadId");
             return;

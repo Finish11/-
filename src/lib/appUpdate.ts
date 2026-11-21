@@ -25,8 +25,11 @@ export interface ApkInstallResult {
 
 interface ApkUpdaterPlugin {
   download(options: { url: string; fileName?: string }): Promise<ApkDownloadStart>;
-  status(options: { downloadId: number }): Promise<ApkDownloadStatus>;
-  install(options: { downloadId: number }): Promise<ApkInstallResult>;
+  // downloadId передаётся строкой: bridge Capacitor не отдаёт длинный ID через
+  // call.getLong на реальном устройстве (возвращает null), а getString переносит
+  // любое значение без потерь. Java читает строку и парсит в long.
+  status(options: { downloadId: string }): Promise<ApkDownloadStatus>;
+  install(options: { downloadId: string }): Promise<ApkInstallResult>;
   getPermissionState(): Promise<{ canInstall: boolean; androidSdk: number }>;
   openInstallSettings(): Promise<void>;
 }

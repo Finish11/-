@@ -87,7 +87,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
     setPhase('installing');
     setError('');
     try {
-      const res = await ApkUpdater.install({ downloadId: downloadId.current });
+      const res = await ApkUpdater.install({ downloadId: String(downloadId.current) });
       if (generation !== downloadGeneration.current) return;
       if (res.needsPermission) {
         setPhase('permission');
@@ -171,7 +171,7 @@ export const UpdateCard: React.FC<UpdateCardProps> = ({ showToast }) => {
       // параллельные запросы и не запускает установщик дважды.
       const poll = async () => {
         try {
-          const status = await ApkUpdater.status({ downloadId: id });
+          const status = await ApkUpdater.status({ downloadId: String(id) });
           if (generation !== downloadGeneration.current) return;
           setProgress(status.progress || 0);
           if (status.state === 8) {
